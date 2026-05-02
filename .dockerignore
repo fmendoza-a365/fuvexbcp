@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.git
+.expo
+.vscode
+*.log
+.env
+.DS_Store
+storage/expedientes/*
+!storage/expedientes/.gitkeep

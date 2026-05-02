@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Zone {
+  id           String   @id @default(uuid())
+  nombre       String
+  departamento String
+  distrito     String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+  users        User[]
+}
+
+model User {
+  id            String         @id @default(uuid())
+  username      String         @unique
+  nombre        String         @default("")
+  password_hash String
+  role          String
+  supervisor_id String?
+  zone_id       String?
+  activo        Boolean        @default(true)
+  created_at    DateTime       @default(now())
+  updated_at    DateTime       @updatedAt
+  avatar_url    String?
+  email         String?
+  telefono      String?
+  push_token    String?
+  auditLogs     AuditLog[]
+  documents     Document[]
+  feedbackNotes FeedbackNote[]
+  sales         Sale[]         @relation("AsesorSales")
+  zone          Zone?          @relation(fields: [zone_id], references: [id])
+  supervisor    User?          @relation("Jerarquia", fields: [supervisor_id], references: [id])
+  subordinados  User[]         @relation("Jerarquia")
+  goals         Goal[]
+  simulaciones  Simulacion[]
+}
+
+model Goal {
+  id         String   @id @default(uuid())
+  user_id    String
+  amount     Float    // MAF Objetivo
+  month      Int      // 1-12
+  year       Int
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  user       User     @relation(fields: [user_id], references: [id])
+
+  @@unique([user_id, month, year])
+}
+
+model Sale {
+  id                  String         @id @default(uuid())
+  dni_cliente         String
+  nombres_cliente     String
+  plaza               String?
+  departamento        String?        @default("LIMA")
+  convenio            String?
+  maf_neto            Float
+  estado              String         @default("POR INGRESAR")
+  fecha_filtro        DateTime?
+  fecha_ingreso       DateTime?      @default(now())
+  fecha_desembolso    DateTime?
+  estado_remesa       String?
+  carta_compra_deuda  DateTime?
+  monto_remesa        Float?
+  vencimiento_remesa  DateTime?
+  feedback            String?
+  rcc_semaforo        String?
+  rcc_monto_deuda     Float?
+  rcc_ultima_act      DateTime?
+  rcc_calificacion    String?
+  reasignacion_estado String?
+  reasignacion_de     String?
+  reasignacion_motivo String?
+  reasignacion_por    String?
+  reasignacion_fecha  DateTime?
+  asesor_id           String
+  created_at          DateTime       @default(now())
+  updated_at          DateTime       @updatedAt
+  rcc_raw_data        String?
+  audit_logs          AuditLog[]
+  documents           Document[]
+  feedbackNotes       FeedbackNote[]
+  asesor              User           @relation("AsesorSales", fields: [asesor_id], references: [id])
+}
+
+model Document {
+  id             String   @id @default(uuid())
+  sale_id        String
+  tipo_documento String
+  file_path      String
+  uploaded_by    String
+  created_at     DateTime @default(now())
+  uploader       User     @relation(fields: [uploaded_by], references: [id])
+  sale           Sale     @relation(fields: [sale_id], references: [id])
+}
+
+model AuditLog {
+  id              String   @id @default(uuid())
+  sale_id         String
+  user_id         String
+  accion          String
+  estado_anterior String?
+  estado_nuevo    String?
+  detalles        String?
+  created_at      DateTime @default(now())
+  user            User     @relation(fields: [user_id], references: [id])
+  sale            Sale     @relation(fields: [sale_id], references: [id])
+}
+
+model FeedbackNote {
+  id         String   @id @default(uuid())
+  sale_id    String
+  user_id    String
+  nota       String
+  created_at DateTime @default(now())
+  user       User     @relation(fields: [user_id], references: [id])
+  sale       Sale     @relation(fields: [sale_id], references: [id])
+}
+
+// ══════════════════════════════════════════════════
+// MÓDULO SIMULADOR BCP
+// ══════════════════════════════════════════════════
+
+model Convenio {
+  id               String               @id @default(uuid())
+  nombre           String               @unique
+  periodo_gracia   Int                  @default(0) // Ej: 1 o 2
+  rci_default      Float                @default(0.3) // Ej: 0.3 = 30%
+  variables_reserva Float               @default(0.0) // Descuentos adicionales base
+  sector           String?              @default("Otros")
+  activo           Boolean              @default(true)
+  created_at       DateTime             @default(now())
+  updated_at       DateTime             @updatedAt
+  reglas           ConvenioCargoRegla[]
+}
+
+model Cargo {
+  id         String               @id @default(uuid())
+  nombre     String               @unique
+  activo     Boolean              @default(true)
+  created_at DateTime             @default(now())
+  updated_at DateTime             @updatedAt
+  reglas     ConvenioCargoRegla[]
+}
+
+model ConvenioCargoRegla {
+  id            String   @id @default(uuid())
+  convenio_id   String
+  cargo_id      String
+  rci_especifico Float   // El RCI exacto para esta combinación (ej: 0.45)
+  edad_maxima   Int?     // Ej: 55 para Sub Oficial PNP
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  convenio Convenio @relation(fields: [convenio_id], references: [id], onDelete: Cascade)
+  cargo    Cargo    @relation(fields: [cargo_id], references: [id], onDelete: Cascade)
+
+  @@unique([convenio_id, cargo_id]) // Solo puede haber una regla por cada par Convenio/Cargo
+}
+
+model Simulacion {
+  id             String   @id @default(uuid())
+  user_id        String
+  dni_cliente    String?
+  convenio       String
+  cargo          String
+  monto_solicitado Float
+  cuotas         Int
+  tea            Float
+  cuota_mensual  Float
+  capacidad_max  Float
+  ingreso_neto   Float
+  created_at     DateTime @default(now())
+  user           User     @relation(fields: [user_id], references: [id])
+}
+
+model ConfiguracionGlobal {
+  id                  String   @id @default(uuid())
+  clave               String   @unique // Ej: "TEA_DEFAULT", "COSTO_ENVIO_FISICO", "TASA_DESGRAVAMEN"
+  valor_numerico      Float?
+  valor_texto         String?
+  descripcion         String?
+  updated_at          DateTime @updatedAt
+}
