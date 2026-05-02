@@ -42,4 +42,4 @@ USER expressjs
 EXPOSE 3001
 
 # Comando de inicio (ejecutamos el backend directamente con Node)
-CMD ["node", "apps/backend/dist/server.js"]
+CMD ["node", "apps/backend/dist/src/server.js"]

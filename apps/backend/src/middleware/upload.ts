@@ -2,8 +2,17 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 
-// Define the root storage directory
-const rootStoragePath = path.join(__dirname, '../../../../storage/expedientes');
+const firstExistingPath = (candidates: string[]) => {
+  return candidates.find(candidate => fs.existsSync(candidate)) || candidates[0];
+};
+
+// Define the root storage directory. Supports ts-node and compiled dist paths.
+const rootStoragePath = firstExistingPath([
+  path.resolve(__dirname, '../../../../storage/expedientes'),
+  path.resolve(__dirname, '../../../../../storage/expedientes'),
+  path.resolve(process.cwd(), 'storage/expedientes'),
+  path.resolve(process.cwd(), '../../storage/expedientes')
+]);
 
 // SEGURIDAD: Tipos MIME permitidos
 const ALLOWED_MIMES = [
@@ -59,4 +68,3 @@ export const upload = multer({
     files: 5 // Máximo 5 archivos por request
   }
 });
-

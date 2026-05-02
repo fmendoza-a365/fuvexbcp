@@ -19,6 +19,7 @@ import notificationsRouter from './routes/notifications';
 import simulatorRouter from './routes/simulator';
 import dniRouter from './routes/dni';
 import path from 'path';
+import fs from 'fs';
 import { consultarRCC } from './services/infoburo';
 import { authMiddleware } from './middleware/auth';
 import { logger } from './services/logger';
@@ -29,6 +30,10 @@ dotenv.config();
 const app = express();
 const prisma = new PrismaClient();
 const PORT = parseInt(process.env.PORT || '3001', 10);
+
+const firstExistingPath = (candidates: string[]) => {
+  return candidates.find(candidate => fs.existsSync(candidate)) || candidates[0];
+};
 
 // Configuración de Seguridad
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -153,14 +158,27 @@ app.get('/api/infoburo/:dni', authMiddleware, async (req: any, res: any) => {
   }
 });
 
+const expedientesPath = firstExistingPath([
+  path.resolve(__dirname, '../../../storage/expedientes'),
+  path.resolve(__dirname, '../../../../storage/expedientes'),
+  path.resolve(process.cwd(), 'storage/expedientes'),
+  path.resolve(process.cwd(), '../../storage/expedientes')
+]);
+
 // Expose static files para documentos con caché de 7 días
-app.use('/files', express.static(path.join(__dirname, '../../../storage/expedientes'), {
+app.use('/files', express.static(expedientesPath, {
   maxAge: '7d',
   immutable: true
 }));
  
  // Ruta para descargas públicas (APK, manuales, etc.)
- app.use('/download', express.static(path.resolve(process.cwd(), '../../storage/public')));
+ const publicDownloadsPath = firstExistingPath([
+  path.resolve(process.cwd(), 'storage/public'),
+  path.resolve(process.cwd(), '../../storage/public'),
+  path.resolve(__dirname, '../../../storage/public'),
+  path.resolve(__dirname, '../../../../storage/public')
+ ]);
+ app.use('/download', express.static(publicDownloadsPath));
 
 
 app.get('/api/users/me', authMiddleware, async (req: any, res: any) => {
@@ -168,9 +186,14 @@ app.get('/api/users/me', authMiddleware, async (req: any, res: any) => {
 });
 
 // === DEPLOYMENT LOCAL: Servir la Web App desde Node.js ===
-const webDistPath = path.resolve(__dirname, '../../web/dist');
+const webDistPath = firstExistingPath([
+  path.resolve(__dirname, '../../web/dist'),
+  path.resolve(__dirname, '../../../web/dist'),
+  path.resolve(process.cwd(), 'apps/web/dist'),
+  path.resolve(process.cwd(), '../web/dist')
+]);
 logger.info('SERVER', `Serving web dist from: ${webDistPath}`);
-logger.info('SERVER', `Path exists: ${require('fs').existsSync(webDistPath)}`);
+logger.info('SERVER', `Path exists: ${fs.existsSync(webDistPath)}`);
 app.use(express.static(webDistPath));
 
 // Catch-all route for SPA - MUST BE LAST
