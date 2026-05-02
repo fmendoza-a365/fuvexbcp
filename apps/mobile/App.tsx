@@ -10,26 +10,13 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-import Constants from 'expo-constants';
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
- 
- // Configuración Ngrok para saltar advertencia
- axios.defaults.headers.common['ngrok-skip-browser-warning'] = 'true';
 
 // Imports Optimizados
 import { COLORS, DARK_COLORS, API_URL, CONVENIOS } from './src/constants/theme';
 import { createStyles } from './src/styles/global';
 import { createSimStyles } from './src/styles/simulator';
 import { LoginView } from './src/components/LoginView';
+import SimulatorView from './src/components/SimulatorView';
 
 
 interface Attachment {
@@ -38,6 +25,11 @@ interface Attachment {
   type: string;
 }
 
+const normalizeSalesResponse = (payload: any): any[] => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+};
 
 export default function App() {
   const colorScheme = useColorScheme();
@@ -75,20 +67,6 @@ export default function App() {
   const [clientData, setClientData] = useState<any>(null);
   const [isSearchingDni, setIsSearchingDni] = useState(false);
 
-  // Simulator State
-  const [simConfig, setSimConfig] = useState<any>(null);
-  const [simForm, setSimForm] = useState({
-    convenioId: '',
-    cargoId: '',
-    ingresosFijos: '0',
-    ingresosVariables: '0',
-    descuentosLey: '0',
-    otrosDescuentos: '0',
-    montoSolicitado: '10000',
-    cuotas: '12',
-    envioFisico: false
-  });
-  const [simResult, setSimResult] = useState<any>(null);
 
   const fetchDniInfo = async (id: string) => {
     setIsSearchingDni(true);
@@ -113,56 +91,10 @@ export default function App() {
   useEffect(() => {
     if (token) {
       fetchData();
-      fetchSimulatorConfig();
-      registerForPushNotificationsAsync().then(pushToken => {
-        if (pushToken) {
-          axios.post(`${API_URL}/users/push-token`, { push_token: pushToken }, {
-            headers: { Authorization: `Bearer ${token}` }
-          }).then(() => {
-            console.log('Push token registered successfully');
-          }).catch(err => {
-            Alert.alert('Error de Notificación', 'No se pudo registrar el token en el servidor.');
-          });
-        }
-      }).catch(err => {
-        Alert.alert('Error de Notificación', 'No se pudieron obtener permisos.');
-      });
       const interval = setInterval(fetchData, 60000);
       return () => clearInterval(interval);
     }
   }, [token]);
-
-  async function registerForPushNotificationsAsync() {
-    let pushToken;
-    if (Device.isDevice) {
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-      if (finalStatus !== 'granted') {
-        console.log('Failed to get push token for push notification!');
-        return;
-      }
-      
-      const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
-      pushToken = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-    } else {
-      console.log('Must use physical device for Push Notifications');
-    }
-
-    if (Platform.OS === 'android') {
-      Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: theme.orange,
-      });
-    }
-
-    return pushToken;
-  }
 
   const fetchData = async () => {
     try {
@@ -171,53 +103,13 @@ export default function App() {
         axios.get(`${API_URL}/sales`, { headers }),
         axios.get(`${API_URL}/analytics/dashboard`, { headers })
       ]);
-      setMySales(salesRes.data);
+      setMySales(normalizeSalesResponse(salesRes.data));
       setKpi(kpiRes.data);
     } catch (error) {
       console.error('Fetch error:', error);
     }
   };
 
-  const fetchSimulatorConfig = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/simulator/config`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setSimConfig(res.data);
-      if (res.data.convenios.length > 0 && !simForm.convenioId) {
-        setSimForm(prev => ({ ...prev, convenioId: res.data.convenios[0].id }));
-      }
-      if (res.data.cargos.length > 0 && !simForm.cargoId) {
-        setSimForm(prev => ({ ...prev, cargoId: res.data.cargos[0].id }));
-      }
-    } catch (error) {
-      console.error('Simulator config error:', error);
-    }
-  };
-
-  const handleSimulateMobile = async () => {
-    setLoading(true);
-    setSimResult(null);
-    try {
-      const payload = {
-        ...simForm,
-        ingresosFijos: parseFloat(simForm.ingresosFijos),
-        ingresosVariables: parseFloat(simForm.ingresosVariables),
-        descuentosLey: parseFloat(simForm.descuentosLey),
-        otrosDescuentos: parseFloat(simForm.otrosDescuentos),
-        montoSolicitado: parseFloat(simForm.montoSolicitado),
-        cuotas: parseInt(simForm.cuotas)
-      };
-      const res = await axios.post(`${API_URL}/simulator/calculate`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setSimResult(res.data);
-    } catch (error: any) {
-      Alert.alert('Error en Simulación', error.response?.data?.error || 'No se pudo realizar el cálculo.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const testPush = async () => {
     try {
@@ -364,7 +256,7 @@ export default function App() {
             <View style={styles.progressBarBg}>
               <View style={[styles.progressBarFill, { width: `${Math.min(kpi?.completionRate || 0, 100)}%` }]} />
             </View>
-            <Text style={styles.metaLabel}>Meta: S/ {(kpi?.monthlyGoal || 500000).toLocaleString()}</Text>
+            <Text style={styles.metaLabel}>Meta: S/ {(kpi?.goalAmount || 500000).toLocaleString()}</Text>
           </View>
         </View>
 
@@ -540,11 +432,7 @@ export default function App() {
         </View>
         <View style={styles.pickerWrapper}>
           <Picker selectedValue={convenio} onValueChange={setConvenio} style={{ height: 50 }}>
-            {simConfig?.convenios ? [
-              { label: 'Seleccionar Convenio...', value: '' },
-              ...simConfig.convenios.map((c: any) => ({ label: c.nombre, value: c.id }))
-            ].map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />) : 
-            CONVENIOS.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}
+            {CONVENIOS.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}
           </Picker>
         </View>
         <View style={styles.inputWrapper}>
@@ -622,154 +510,7 @@ export default function App() {
   );
 
   const renderSimulator = () => (
-    <ScrollView style={styles.mainScroll} showsVerticalScrollIndicator={false}>
-      <View style={styles.header}>
-        <Text style={styles.welcomeText}>SIMULADOR BCP</Text>
-      </View>
-
-      <View style={styles.formCard}>
-        <Text style={styles.inputLabel}>CONVENIO Y CARGO</Text>
-        <View style={styles.pickerWrapper}>
-          <Picker
-            selectedValue={simForm.convenioId}
-            onValueChange={(val) => setSimForm({ ...simForm, convenioId: val })}
-            style={{ height: 50 }}
-          >
-            {simConfig?.convenios.map((c: any) => (
-              <Picker.Item key={c.id} label={c.nombre} value={c.id} />
-            ))}
-          </Picker>
-        </View>
-
-        <View style={styles.pickerWrapper}>
-          <Picker
-            selectedValue={simForm.cargoId}
-            onValueChange={(val) => setSimForm({ ...simForm, cargoId: val })}
-            style={{ height: 50 }}
-          >
-            {simConfig?.cargos.map((c: any) => (
-              <Picker.Item key={c.id} label={c.nombre} value={c.id} />
-            ))}
-          </Picker>
-        </View>
-
-        <Text style={[styles.inputLabel, { marginTop: 10 }]}>INGRESOS Y DESCUENTOS</Text>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <View style={{ width: '48%' }}>
-            <Text style={{ fontSize: 9, color: theme.subtext, marginBottom: 5 }}>ING. FIJO</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="0.00"
-              keyboardType="decimal-pad"
-              value={simForm.ingresosFijos}
-              onChangeText={(t) => setSimForm({ ...simForm, ingresosFijos: t })}
-            />
-          </View>
-          <View style={{ width: '48%' }}>
-            <Text style={{ fontSize: 9, color: theme.subtext, marginBottom: 5 }}>ING. VARIABLE</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="0.00"
-              keyboardType="decimal-pad"
-              value={simForm.ingresosVariables}
-              onChangeText={(t) => setSimForm({ ...simForm, ingresosVariables: t })}
-            />
-          </View>
-        </View>
-
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <View style={{ width: '48%' }}>
-            <Text style={{ fontSize: 9, color: theme.subtext, marginBottom: 5 }}>DESC. LEY</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="0.00"
-              keyboardType="decimal-pad"
-              value={simForm.descuentosLey}
-              onChangeText={(t) => setSimForm({ ...simForm, descuentosLey: t })}
-            />
-          </View>
-          <View style={{ width: '48%' }}>
-            <Text style={{ fontSize: 9, color: theme.subtext, marginBottom: 5 }}>OTROS DESC.</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="0.00"
-              keyboardType="decimal-pad"
-              value={simForm.otrosDescuentos}
-              onChangeText={(t) => setSimForm({ ...simForm, otrosDescuentos: t })}
-            />
-          </View>
-        </View>
-
-        <Text style={[styles.inputLabel, { marginTop: 10 }]}>SOLICITUD</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Monto a Solicitar"
-          keyboardType="decimal-pad"
-          value={simForm.montoSolicitado}
-          onChangeText={(t) => setSimForm({ ...simForm, montoSolicitado: t })}
-        />
-
-        <View style={styles.pickerWrapper}>
-          <Picker
-            selectedValue={simForm.cuotas}
-            onValueChange={(val) => setSimForm({ ...simForm, cuotas: val })}
-            style={{ height: 50 }}
-          >
-            {[12, 18, 24, 36, 48, 60, 72].map(n => (
-              <Picker.Item key={n} label={`${n} Meses`} value={n.toString()} />
-            ))}
-          </Picker>
-        </View>
-
-        <TouchableOpacity 
-          style={[styles.primaryButton, { marginTop: 20 }]} 
-          onPress={handleSimulateMobile}
-          disabled={loading}
-        >
-          {loading ? <ActivityIndicator color="#fff" /> : (
-            <Text style={styles.buttonText}>CALCULAR CRÉDITO</Text>
-          )}
-        </TouchableOpacity>
-
-        {simResult && (
-          <View style={[simStyles.simResultCard, { marginTop: 30 }]}>
-            <Text style={simStyles.simResultTitle}>RESULTADO DE SIMULACIÓN</Text>
-            
-            <View style={simStyles.simHighlight}>
-              <Text style={simStyles.simHighlightLabel}>CUOTA MENSUAL</Text>
-              <Text style={simStyles.simHighlightValue}>S/ {simResult.resumen.cuota_mensual.toLocaleString()}</Text>
-            </View>
-
-            <View style={simStyles.simGrid}>
-              <View style={simStyles.simStat}>
-                <Text style={simStyles.simStatLabel}>TEA APLICADA</Text>
-                <Text style={simStyles.simStatValue}>{(simResult.resumen.tea * 100).toFixed(2)}%</Text>
-              </View>
-              <View style={simStyles.simStat}>
-                <Text style={simStyles.simStatLabel}>PLAZO</Text>
-                <Text style={simStyles.simStatValue}>{simResult.resumen.plazo} Meses</Text>
-              </View>
-              <View style={simStyles.simStat}>
-                <Text style={simStyles.simStatLabel}>CAPACIDAD MÁX.</Text>
-                <Text style={simStyles.simStatValue}>S/ {simResult.resumen.capacidad_maxima.toLocaleString()}</Text>
-              </View>
-              <View style={simStyles.simStat}>
-                <Text style={simStyles.simStatLabel}>INGRESO NETO</Text>
-                <Text style={simStyles.simStatValue}>S/ {simResult.resumen.ingreso_neto_disponible.toLocaleString()}</Text>
-              </View>
-            </View>
-
-            <View style={[simStyles.rciBadge, { backgroundColor: simResult.validaciones.rci_valido ? '#E1F8F0' : '#FFF1F2' }]}>
-              <Text style={[simStyles.rciBadgeText, { color: simResult.validaciones.rci_valido ? theme.emerald : theme.rose }]}>
-                {simResult.validaciones.rci_valido ? 'RCI DENTRO DEL LÍMITE' : 'EXCEDE RCI PERMITIDO'}
-              </Text>
-            </View>
-          </View>
-        )}
-        
-        <View style={{ height: 120 }} />
-      </View>
-    </ScrollView>
+    <SimulatorView isDark={isDark} token={token || ''} />
   );
 
   return (

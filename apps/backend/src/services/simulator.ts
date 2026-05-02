@@ -80,6 +80,9 @@ export async function calcularSimulacion(params: SimulationParams) {
   const saldo = params.montoSolicitado;
   const i = (((1 + tea) ** (1 / 12) - 1) * 12) * 365 / 360 / 12;
   const n = params.cuotas;
+  if (n <= pg) {
+    throw new Error('El plazo debe ser mayor que el periodo de gracia');
+  }
   const iTotal = i + tasaDesgravamenMensual;
   
   // Ajuste de cuota para amortización posterior a la gracia
@@ -137,16 +140,21 @@ export async function calcularSimulacion(params: SimulationParams) {
 
   // 8. Resultados Finales (CEM y Dictamen)
   const cem = (ingresoNeto * maxEndeudamiento) - cargaMensualActual;
-  const endeudamientoFinal = (cargaMensualActual + cuotaFija) / ingresoNeto;
+  const endeudamientoFinal = ingresoNeto > 0 ? (cargaMensualActual + cuotaFija) / ingresoNeto : Infinity;
   const dictamen = endeudamientoFinal <= maxEndeudamiento ? 'CONTINUAR' : 'SOBRE-ENDEUDADO';
+  const cuotaMensualTotal = cuotaFija + (params.envioFisico ? costoEnvio : 0);
 
   return {
     resumen: {
       monto_solicitado: params.montoSolicitado,
       cuotas: params.cuotas,
+      plazo: params.cuotas,
       tea: tea,
       tcea: tea + 0.02, // Simplificado: TEA + Seguros aprox
-      cuota_mensual: cuotaFija + (params.envioFisico ? costoEnvio : 0),
+      cuota_mensual: cuotaMensualTotal,
+      capacidad_maxima: Math.round(cem * 100) / 100,
+      ingreso_neto_disponible: Math.round(ingresoNeto * 100) / 100,
+      endeudamiento_final: Math.round(endeudamientoFinal * 10000) / 100,
       total_pagar: Math.round((params.montoSolicitado + totalInteres + totalDesgravamen + totalEnvio) * 100) / 100,
       totales_tabla: {
         interes: Math.round(totalInteres * 100) / 100,
@@ -155,6 +163,11 @@ export async function calcularSimulacion(params: SimulationParams) {
         envio: Math.round(totalEnvio * 100) / 100
       },
       dictamen
+    },
+    validaciones: {
+      rci_valido: cuotaMensualTotal <= disponibleBase,
+      cem_valido: cuotaMensualTotal <= cem,
+      endeudamiento_valido: endeudamientoFinal <= maxEndeudamiento
     },
     cronograma
   };

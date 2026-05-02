@@ -19,6 +19,8 @@ export default function Simulator() {
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [error, setError] = useState('');
+  const [simulating, setSimulating] = useState(false);
+  const [serverSimulation, setServerSimulation] = useState<any>(null);
 
   const [form, setForm] = useState({
     convenioId: '',
@@ -125,17 +127,69 @@ export default function Simulator() {
     };
   }, [form, selectedConvenio, cargaCrediticia, config]);
 
-  const handleSimulate = () => {
+  const handleSimulate = async () => {
     if (!form.convenioId || !form.cargoId) {
       setError('Por favor complete el perfil del cliente para simular.');
       return;
     }
     setError('');
-    setShowModal(true);
+    setSimulating(true);
+    try {
+      const token = localStorage.getItem('token');
+      const payload = {
+        convenioId: form.convenioId,
+        cargoId: form.cargoId,
+        ingresosFijos: Number(form.ingresosFijos) + Number(form.promedioVariables) + Number(form.cafae),
+        ingresosVariables: Number(form.ingresosVariables),
+        descuentosLey: Number(form.descuentosLey),
+        otrosDescuentos: Number(form.reserva) + Number(form.facultativos),
+        montoSolicitado: Number(form.montoSolicitado),
+        cuotas: Number(form.cuotas),
+        envioFisico: form.envioFisico,
+        teaManual: Number(form.teaManual) ? Number(form.teaManual) / 100 : undefined,
+        periodoGracia: Number(form.periodoGracia) || selectedConvenio?.periodo_gracia || 0,
+        deudaHipotecario: Number(cargaCrediticia[0]?.cuotaAct || cargaCrediticia[0]?.bcp || 0) + Number(cargaCrediticia[0]?.noBcp || 0),
+        deudaEfectivo: Number(cargaCrediticia[1]?.cuotaAct || cargaCrediticia[1]?.bcp || 0) + Number(cargaCrediticia[1]?.noBcp || 0),
+        deudaVehicular: Number(cargaCrediticia[2]?.cuotaAct || cargaCrediticia[2]?.bcp || 0) + Number(cargaCrediticia[2]?.noBcp || 0),
+        deudaPyme: Number(cargaCrediticia[3]?.cuotaAct || cargaCrediticia[3]?.bcp || 0) + Number(cargaCrediticia[3]?.noBcp || 0),
+        deudaComercial: Number(cargaCrediticia[4]?.cuotaAct || cargaCrediticia[4]?.bcp || 0) + Number(cargaCrediticia[4]?.noBcp || 0),
+        deudaIndirecta: Number(cargaCrediticia[5]?.cuotaAct || cargaCrediticia[5]?.bcp || 0) + Number(cargaCrediticia[5]?.noBcp || 0),
+        lineaUtilizadaTC: Number(cargaCrediticia[6]?.cuotaAct || cargaCrediticia[6]?.bcp || 0) + Number(cargaCrediticia[6]?.noBcp || 0),
+        lineaNoUtilizadaTC: Number(cargaCrediticia[7]?.cuotaAct || cargaCrediticia[7]?.bcp || 0) + Number(cargaCrediticia[7]?.noBcp || 0)
+      };
+      const res = await axios.post('/api/simulator/calculate', payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setServerSimulation(res.data);
+      setShowModal(true);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'No se pudo ejecutar la simulacion en el servidor.');
+    } finally {
+      setSimulating(false);
+    }
   };
 
   const cronogramaData = useMemo(() => {
     if (!showModal) return { cronograma: [], totales: { interes: 0, desgravamen: 0, cuota: 0 } };
+    if (serverSimulation?.cronograma) {
+      return {
+        cronograma: serverSimulation.cronograma.map((row: any) => ({
+          ...row,
+          capital: String(row.capital ?? ''),
+          interes: String(row.interes ?? ''),
+          desgravamen: String(row.desgravamen ?? ''),
+          amortizacion: String(row.amortizacion ?? ''),
+          envioFisico: String(row.envioFisico ?? ''),
+          cuotaTotal: String(row.cuotaTotal ?? ''),
+          saldo: String(row.saldo ?? '')
+        })),
+        totales: {
+          interes: serverSimulation.resumen?.totales_tabla?.interes || 0,
+          desgravamen: serverSimulation.resumen?.totales_tabla?.desgravamen || 0,
+          cuota: serverSimulation.resumen?.total_pagar || 0
+        }
+      };
+    }
     const result = generarCronograma(
       Number(form.montoSolicitado) || 0,
       calcTEM(calculations.tea),
@@ -145,7 +199,7 @@ export default function Simulator() {
       calculations.envioFisico
     );
     return result;
-  }, [showModal, form, calculations.tea, calculations.envioFisico]);
+  }, [showModal, serverSimulation, form, calculations.tea, calculations.envioFisico]);
 
   if (loadingConfig) return (
     <div className="h-full flex items-center justify-center">
@@ -168,10 +222,11 @@ export default function Simulator() {
         </div>
         <button
           onClick={handleSimulate}
-          className="action-button-primary bg-[var(--color-bcp-orange)] hover:bg-[#E66C00] shadow-lg shadow-orange-500/20 px-8 py-3"
+          disabled={simulating}
+          className="action-button-primary bg-[var(--color-bcp-orange)] hover:bg-[#E66C00] shadow-lg shadow-orange-500/20 px-8 py-3 disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <Zap size={18} />
-          <span className="font-bold">SIMULAR AHORA</span>
+          <span className="font-bold">{simulating ? 'SIMULANDO...' : 'SIMULAR AHORA'}</span>
         </button>
       </div>
 
@@ -511,7 +566,8 @@ export default function Simulator() {
 
               <button
                 onClick={handleSimulate}
-                className="w-full py-4 bg-surface-50 border-2 border-surface-100 rounded-2xl flex items-center justify-center gap-3 group hover:border-[var(--color-bcp-blue)] hover:bg-[var(--color-bcp-blue)] hover:text-white transition-all duration-300"
+                disabled={simulating}
+                className="w-full py-4 bg-surface-50 border-2 border-surface-100 rounded-2xl flex items-center justify-center gap-3 group hover:border-[var(--color-bcp-blue)] hover:bg-[var(--color-bcp-blue)] hover:text-white transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <Landmark size={18} className="text-[var(--color-bcp-blue)] group-hover:text-white" />
                 <span className="text-[11px] font-black uppercase tracking-widest">Cronograma Oficial</span>
@@ -537,9 +593,9 @@ export default function Simulator() {
           onClose={() => setShowModal(false)}
           cronograma={cronogramaData.cronograma}
           resumen={{
-            monto_solicitado: Number(form.montoSolicitado),
-            tea: calculations.tea,
-            tcea: calculations.tcea,
+            monto_solicitado: serverSimulation?.resumen?.monto_solicitado ?? Number(form.montoSolicitado),
+            tea: serverSimulation?.resumen?.tea ?? calculations.tea,
+            tcea: serverSimulation?.resumen?.tcea ?? calculations.tcea,
             total_pagar: cronogramaData.totales.cuota,
             totales_tabla: {
               interes: cronogramaData.totales.interes,

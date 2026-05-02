@@ -5,6 +5,7 @@ import { calcularSimulacion } from '../services/simulator';
 
 const router = Router();
 const prisma = new PrismaClient();
+const SIMULATOR_ADMIN_ROLES = ['SUPERADMIN', 'GERENTE'];
 
 // GET /api/simulator/config
 router.get('/config', authMiddleware, async (req, res, next) => {
@@ -100,7 +101,7 @@ router.post('/save', authMiddleware, async (req: any, res, next) => {
 // PATCH /api/simulator/config - Update Global Variables
 router.patch('/config', authMiddleware, async (req: any, res, next) => {
   try {
-    if (!['ADMIN', 'SUPERADMIN'].includes(req.user.role)) {
+    if (!SIMULATOR_ADMIN_ROLES.includes(req.user.role)) {
       return res.status(403).json({ error: 'No tienes permisos para realizar esta acción' });
     }
 
@@ -122,7 +123,7 @@ router.patch('/config', authMiddleware, async (req: any, res, next) => {
 // PATCH /api/simulator/convenios/:id - Update Individual Convenio
 router.patch('/convenios/:id', authMiddleware, async (req: any, res, next) => {
   try {
-    if (!['ADMIN', 'SUPERADMIN'].includes(req.user.role)) {
+    if (!SIMULATOR_ADMIN_ROLES.includes(req.user.role)) {
       return res.status(403).json({ error: 'No tienes permisos para realizar esta acción' });
     }
 
@@ -147,7 +148,7 @@ router.patch('/convenios/:id', authMiddleware, async (req: any, res, next) => {
 // POST /api/simulator/convenios - Create New Convenio
 router.post('/convenios', authMiddleware, async (req: any, res, next) => {
   try {
-    if (!['ADMIN', 'SUPERADMIN'].includes(req.user.role)) {
+    if (!SIMULATOR_ADMIN_ROLES.includes(req.user.role)) {
       return res.status(403).json({ error: 'No tienes permisos para realizar esta acción' });
     }
 

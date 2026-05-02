@@ -1,7 +1,12 @@
 import { prisma } from '../db';
 
+export interface AuthUser {
+  id: string;
+  role: string;
+}
+
 // Roles que ven todo (sin filtro jerarquico)
-const GLOBAL_ROLES = ['SUPERADMIN', 'GERENTE', 'BACK_OFFICE', 'ANALISTA'];
+export const GLOBAL_ROLES = ['SUPERADMIN', 'GERENTE', 'BACK_OFFICE', 'ANALISTA'];
 
 // ── Caché de Jerarquía ─────────────────────────────
 // Evita N+1 queries recursivas en cada request
@@ -43,7 +48,7 @@ export async function getSubordinateIds(userId: string): Promise<string[]> {
 }
 
 // Generar filtro Prisma WHERE para ventas segun el rol del usuario
-export async function getSalesFilter(user: { id: string; role: string }): Promise<any> {
+export async function getSalesFilter(user: AuthUser): Promise<any> {
   // Roles globales ven todo
   if (GLOBAL_ROLES.includes(user.role)) {
     return {};
@@ -72,6 +77,22 @@ export async function isSubordinateOf(userId: string, potentialBossId: string): 
   return subIds.includes(userId);
 }
 
+export async function canAccessSale(user: AuthUser, sale: { asesor_id: string }): Promise<boolean> {
+  if (GLOBAL_ROLES.includes(user.role)) {
+    return true;
+  }
+
+  if (sale.asesor_id === user.id) {
+    return true;
+  }
+
+  if (user.role === 'SUPERVISOR' || user.role === 'JEFE_ZONAL') {
+    return isSubordinateOf(sale.asesor_id, user.id);
+  }
+
+  return false;
+}
+
 // Obtener la cadena jerarquica hacia arriba (supervisor -> jefe zonal -> gerente)
 export async function getHierarchyChain(userId: string): Promise<string[]> {
   const chain: string[] = [];
@@ -92,4 +113,3 @@ export async function getHierarchyChain(userId: string): Promise<string[]> {
 
   return chain;
 }
-

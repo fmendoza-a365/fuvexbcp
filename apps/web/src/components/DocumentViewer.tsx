@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Check, XCircle, FileText, Download, ExternalLink, Eye, AlertCircle, RefreshCw, Loader2, Search, CheckCircle, AlertOctagon, HelpCircle, ShieldCheck } from 'lucide-react';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
@@ -12,6 +12,7 @@ interface DocumentViewerProps {
 
 export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentViewerProps) {
   const [previewDoc, setPreviewDoc] = useState<any | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showRccDetail, setShowRccDetail] = useState(false);
   const [activeRccTab, setActiveRccTab] = useState<'general' | 'historico' | 'deudas' | 'otros'>('general');
   const [loading, setLoading] = useState(false);
@@ -20,6 +21,54 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
 
   const docs = sale.documents || [];
   const rccData = sale.rcc_raw_data ? JSON.parse(sale.rcc_raw_data) : null;
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const fetchDocumentBlob = async (doc: any, download = false) => {
+    const token = localStorage.getItem('token');
+    const response = await axios.get(`${doc.url}${download ? '?download=1' : ''}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      responseType: 'blob'
+    });
+    const contentType = response.headers['content-type'];
+    return new Blob([response.data], {
+      type: typeof contentType === 'string' ? contentType : 'application/octet-stream'
+    });
+  };
+
+  const handlePreviewDocument = async (doc: any) => {
+    try {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      const blob = await fetchDocumentBlob(doc);
+      const objectUrl = URL.createObjectURL(blob);
+      setPreviewDoc({ ...doc, mimeType: blob.type });
+      setPreviewUrl(objectUrl);
+    } catch (err) {
+      console.error('Error loading document preview', err);
+      setError('No se pudo cargar el documento');
+    }
+  };
+
+  const handleDownloadDocument = async (doc: any) => {
+    try {
+      const blob = await fetchDocumentBlob(doc, true);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = doc.file_path?.split(/[\\/]/).pop() || 'documento';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error('Error downloading document', err);
+      setError('No se pudo descargar el documento');
+    }
+  };
 
   const calificacion: Record<string, any> = {
     VERDE: {
@@ -94,7 +143,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   const getStatusColor = (estado: string) => {
     switch (estado) {
       case 'APROBADA': return 'text-emerald-700 bg-emerald-50 border-emerald-200';
-      case 'OBSERVADO': return 'text-rose-700 bg-rose-50 border-rose-200';
+      case 'OBSERVADA': return 'text-rose-700 bg-rose-50 border-rose-200';
       case 'PENDIENTE_REASIGNACION': return 'text-amber-700 bg-amber-50 border-amber-200';
       default: return 'text-blue-700 bg-[rgba(0,42,141,0.1)] border-blue-200';
     }
@@ -159,20 +208,20 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                     </div>
                     <div className="flex gap-1">
                       <button 
-                        onClick={() => setPreviewDoc(doc)} 
+                        onClick={() => handlePreviewDocument(doc)} 
                         className="p-2 text-text-700 hover:text-blue-600 hover:bg-[rgba(0,42,141,0.1)] rounded-md transition-colors"
                         title="Ver Documento"
                       >
                         <Eye size={18} />
                       </button>
-                      <a 
-                        href={doc.url} 
-                        download 
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadDocument(doc)}
                         className="p-2 text-text-700 hover:text-blue-600 hover:bg-[rgba(0,42,141,0.1)] rounded-md transition-colors"
                         title="Descargar"
                       >
                         <Download size={18} />
-                      </a>
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -331,8 +380,8 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                 </button>
                 
                 <button 
-                  onClick={() => handleStateChange('OBSERVADO')}
-                  disabled={loading || sale.estado === 'OBSERVADO'}
+                  onClick={() => handleStateChange('OBSERVADA')}
+                  disabled={loading || sale.estado === 'OBSERVADA'}
                   className="w-full flex items-center justify-center gap-2 bg-surface-100 hover:bg-rose-50 text-rose-600 border border-rose-200 py-2.5 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <XCircle size={18} /> Observar Expediente
@@ -364,9 +413,9 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
             </div>
             <div className="flex items-center gap-3">
               <a 
-                href={previewDoc.url} 
-                target="_blank" 
-                rel="noreferrer" 
+                href={previewUrl || '#'}
+                target="_blank"
+                rel="noreferrer"
                 className="flex items-center gap-2 px-3 py-1.5 bg-surface-100/10 hover:bg-surface-100/20 text-white rounded-lg text-sm font-medium transition-colors"
                 title="Abrir en pestaña nueva"
               >
@@ -374,7 +423,11 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                 <span className="hidden sm:inline">Abrir en pestaña nueva</span>
               </a>
               <button 
-                onClick={() => setPreviewDoc(null)} 
+                onClick={() => {
+                  if (previewUrl) URL.revokeObjectURL(previewUrl);
+                  setPreviewUrl(null);
+                  setPreviewDoc(null);
+                }} 
                 className="p-2 bg-surface-100/10 hover:bg-surface-100/20 text-white rounded-lg transition-colors"
               >
                 <X size={20} />
@@ -383,15 +436,15 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
           </div>
           
           <div className="flex-1 bg-surface-100 rounded-xl overflow-hidden relative shadow-2xl">
-            {previewDoc.url?.toLowerCase().endsWith('.pdf') ? (
+            {previewDoc.mimeType?.includes('pdf') || previewDoc.file_path?.toLowerCase().endsWith('.pdf') ? (
               <iframe 
-                src={`${previewDoc.url.startsWith('http') ? previewDoc.url : `http://${window.location.hostname}:3001${previewDoc.url.replace(/^\/api/, '').startsWith('/') ? '' : '/'}${previewDoc.url.replace(/^\/api/, '')}`}#toolbar=0&navpanes=0`} 
+                src={`${previewUrl}#toolbar=0&navpanes=0`} 
                 className="w-full h-full border-none" 
                 title={previewDoc.tipo_documento} 
               />
             ) : (
               <img 
-                src={previewDoc.url.startsWith('http') ? previewDoc.url : `http://${window.location.hostname}:3001${previewDoc.url.replace(/^\/api/, '').startsWith('/') ? '' : '/'}${previewDoc.url.replace(/^\/api/, '')}`} 
+                src={previewUrl || ''} 
                 alt={previewDoc.tipo_documento} 
                 className="w-full h-full object-contain" 
               />

@@ -13,7 +13,7 @@ export default function SimulatorRules() {
   const [newConvenioForm, setNewConvenioForm] = useState({ nombre: '', rci: 50, gracia: 1, sector: 'Otros' });
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const isAdmin = ['ADMIN', 'SUPERADMIN'].includes(user.role);
+  const isAdmin = ['SUPERADMIN', 'GERENTE'].includes(user.role);
 
   useEffect(() => {
     fetchData();
@@ -50,7 +50,7 @@ export default function SimulatorRules() {
       });
       setIsEditingGlobal(false);
       fetchData();
-    } catch (error) {
+    } catch {
       alert('Error actualizando configuración');
     }
   };
@@ -67,7 +67,7 @@ export default function SimulatorRules() {
       });
       setEditingConvenioId(null);
       fetchData();
-    } catch (error) {
+    } catch {
       alert('Error actualizando convenio');
     }
   };
@@ -87,7 +87,7 @@ export default function SimulatorRules() {
       setIsNewModalOpen(false);
       setNewConvenioForm({ nombre: '', rci: 50, gracia: 1, sector: 'Otros' });
       fetchData();
-    } catch (error) {
+    } catch {
       alert('Error creando convenio');
     }
   };

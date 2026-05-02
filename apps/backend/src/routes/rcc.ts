@@ -3,6 +3,7 @@ import { prisma } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { authorize } from '../middleware/authorize';
 import { consultarRCC } from '../services/infoburo';
+import { canAccessSale } from '../services/hierarchy';
 
 const router = Router();
 
@@ -14,6 +15,9 @@ router.post('/:id/rcc', authMiddleware, authorize('BACK_OFFICE', 'ANALISTA', 'SU
 
     const sale = await prisma.sale.findUnique({ where: { id } });
     if (!sale) return res.status(404).json({ error: 'Expediente no encontrado' });
+    if (!(await canAccessSale(req.user, sale))) {
+      return res.status(403).json({ error: 'No tienes permisos para consultar este expediente' });
+    }
 
     console.log(`[RCC_ROUTE] Iniciando consulta para DNI: ${sale.dni_cliente} (SaleId: ${id})`);
     

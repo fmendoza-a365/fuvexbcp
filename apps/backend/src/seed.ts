@@ -5,7 +5,8 @@ const prisma = new PrismaClient();
 
 async function main() {
   // ⚠️ SOLO PARA DESARROLLO — Cambiar en producción
-  const password_hash = await bcrypt.hash('Fuvex2026!', 10);
+  const seedPassword = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe123!';
+  const password_hash = await bcrypt.hash(seedPassword, 10);
 
   // 1. Zonas
   const zoneLimaNorte = await prisma.zone.create({
@@ -65,7 +66,7 @@ async function main() {
   });
 
   console.log('✅ Seed completado con éxito!');
-  console.log('Credenciales por defecto: password -> 123456');
+  console.log('Configura SEED_ADMIN_PASSWORD para evitar credenciales por defecto.');
   console.log('Usuarios: admin, gerente1, jz_norte, sup_norte, vend_norte1, etc.');
 }
 

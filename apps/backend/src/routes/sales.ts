@@ -2,13 +2,36 @@ import { Router } from 'express';
 import { prisma } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { authorize } from '../middleware/authorize';
-import { getSalesFilter } from '../services/hierarchy';
+import { canAccessSale, getSalesFilter } from '../services/hierarchy';
 import { upload } from '../middleware/upload';
 import { getDniInfo } from '../services/dni';
 import { sendPushNotification } from '../services/push';
 import { validateCreateSale, validateEstadoChange, filterProtectedFields } from '../middleware/validate';
+import { resolveExpedienteDocumentPath } from '../services/storage';
 
 const router = Router();
+
+const saleResponse = (sale: any) => ({
+  ...sale,
+  documents: (sale.documents || []).map((doc: any) => ({
+    ...doc,
+    url: `/api/sales/${sale.id}/documentos/${doc.id}/download`
+  }))
+});
+
+async function requireSaleAccess(req: any, res: any, sale: { asesor_id: string } | null): Promise<boolean> {
+  if (!sale) {
+    res.status(404).json({ error: 'Venta no encontrada' });
+    return false;
+  }
+
+  if (!(await canAccessSale(req.user, sale))) {
+    res.status(403).json({ error: 'No tienes permisos para acceder a este expediente' });
+    return false;
+  }
+
+  return true;
+}
 
 // GET all sales (Filtered by role hierarchy)
 router.get('/', authMiddleware, async (req: any, res: any) => {
@@ -46,19 +69,8 @@ router.get('/', authMiddleware, async (req: any, res: any) => {
       prisma.sale.count({ where: whereClause })
     ]);
 
-    const salesWithUrls = sales.map(sale => ({
-      ...sale,
-      documents: sale.documents.map(doc => {
-        const filename = doc.file_path.split(/[\\/]/).pop();
-        return {
-          ...doc,
-          url: `/files/${sale.dni_cliente}/${filename}`
-        };
-      })
-    }));
-
     res.json({
-      data: salesWithUrls,
+      data: sales.map(saleResponse),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) }
     });
   } catch (error) {
@@ -190,7 +202,8 @@ router.put('/:id/reasignacion', authMiddleware, authorize('JEFE_ZONAL', 'GERENTE
     const { accion, motivo } = req.body; // accion: 'APROBAR' | 'RECHAZAR'
 
     const sale = await prisma.sale.findUnique({ where: { id } });
-    if (!sale) return res.status(404).json({ error: 'Venta no encontrada' });
+    if (!(await requireSaleAccess(req, res, sale))) return;
+    if (!sale) return;
     if (sale.reasignacion_estado !== 'PENDIENTE') {
       return res.status(400).json({ error: 'La venta no está pendiente de reasignación' });
     }
@@ -266,7 +279,8 @@ router.put('/:id/estado', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 
     const { nuevo_estado, detalles } = req.body;
 
     const sale = await prisma.sale.findUnique({ where: { id } });
-    if (!sale) return res.status(404).json({ error: 'Venta no encontrada' });
+    if (!(await requireSaleAccess(req, res, sale))) return;
+    if (!sale) return;
 
     const updatedSale = await prisma.$transaction(async (tx) => {
       const updated = await tx.sale.update({
@@ -312,6 +326,9 @@ router.put('/:id', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 'BACK_O
   try {
     const { id } = req.params;
     const data = req.body;
+    const sale = await prisma.sale.findUnique({ where: { id } });
+    if (!(await requireSaleAccess(req, res, sale))) return;
+    if (!sale) return;
 
     // Convert date strings
     if (data.fecha_filtro) data.fecha_filtro = new Date(data.fecha_filtro);
@@ -343,7 +360,21 @@ router.put('/:id', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 'BACK_O
 });
 
 // Upload Document
-router.post('/:id/documentos', authMiddleware, upload.single('documento'), async (req: any, res: any) => {
+router.post(
+  '/:id/documentos',
+  authMiddleware,
+  async (req: any, res: any, next: any) => {
+    try {
+      const sale = await prisma.sale.findUnique({ where: { id: req.params.id } });
+      if (!(await requireSaleAccess(req, res, sale))) return;
+      req.sale = sale;
+      next();
+    } catch (error) {
+      next(error);
+    }
+  },
+  upload.single('documento'),
+  async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const { tipo_documento } = req.body;
@@ -377,6 +408,41 @@ router.post('/:id/documentos', authMiddleware, upload.single('documento'), async
   }
 });
 
+// Download/view document with expediente-level authorization
+router.get('/:id/documentos/:documentId/download', authMiddleware, async (req: any, res: any) => {
+  try {
+    const { id, documentId } = req.params;
+    const sale = await prisma.sale.findUnique({
+      where: { id },
+      include: { documents: { where: { id: documentId } } }
+    });
+
+    if (!(await requireSaleAccess(req, res, sale))) return;
+    if (!sale) return;
+
+    const document = sale.documents[0];
+    if (!document) {
+      return res.status(404).json({ error: 'Documento no encontrado' });
+    }
+
+    const filePath = resolveExpedienteDocumentPath(document.file_path, sale.dni_cliente);
+    if (!filePath) {
+      return res.status(404).json({ error: 'Archivo no encontrado' });
+    }
+
+    const filename = document.file_path.split(/[\\/]/).pop() || 'documento';
+    if (req.query.download === '1') {
+      return res.download(filePath, filename);
+    }
+
+    res.setHeader('Content-Disposition', `inline; filename="${filename.replace(/"/g, '')}"`);
+    return res.sendFile(filePath);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al obtener documento' });
+  }
+});
+
 // Delete Sale (Solo GERENTE y SUPERADMIN)
 router.delete('/:id', authMiddleware, authorize('GERENTE', 'SUPERADMIN'), async (req: any, res: any) => {
   try {
@@ -403,7 +469,8 @@ router.post('/:id/feedback', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL
     const { nota } = req.body;
 
     const sale = await prisma.sale.findUnique({ where: { id } });
-    if (!sale) return res.status(404).json({ error: 'Venta no encontrada' });
+    if (!(await requireSaleAccess(req, res, sale))) return;
+    if (!sale) return;
 
     const feedback = await prisma.feedbackNote.create({
       data: {

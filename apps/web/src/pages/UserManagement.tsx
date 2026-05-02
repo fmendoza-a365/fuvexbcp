@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Plus, Edit2, Check, X, Shield, MapPin, UserCheck, UserMinus, Search } from 'lucide-react';
+import { Plus, Edit2, Check, X, Shield, MapPin, UserCheck, UserMinus, Search, Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle } from 'lucide-react';
 
 export default function UserManagement() {
   const [users, setUsers] = useState<any[]>([]);
@@ -8,6 +8,11 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [bulkResults, setBulkResults] = useState<any>(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkError, setBulkError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loggedUser = JSON.parse(localStorage.getItem('user') || '{}');
   const isJefeZonal = loggedUser.role === 'JEFE_ZONAL';
@@ -96,6 +101,78 @@ export default function UserManagement() {
     }
   };
 
+  // ---- BULK UPLOAD HANDLERS ----
+  const downloadTemplate = () => {
+    const header = 'username,nombre,password,role,zone_name,supervisor_username';
+    const example = 'jdoe,Juan Doe,Password123,VENDEDOR,,';
+    const csv = header + '\n' + example;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'plantilla_usuarios.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const parseCSV = (text: string) => {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    return lines.slice(1).map(line => {
+      const values = line.split(',').map(v => v.trim());
+      const obj: any = {};
+      headers.forEach((h, i) => { obj[h] = values[i] || ''; });
+      // Map zone_name to zone_id
+      if (obj.zone_name) {
+        const zone = zones.find(z => z.nombre.toLowerCase() === obj.zone_name.toLowerCase());
+        obj.zone_id = zone ? zone.id : '';
+        delete obj.zone_name;
+      } else {
+        delete obj.zone_name;
+      }
+      // Map supervisor_username to supervisor_id
+      if (obj.supervisor_username) {
+        const sup = users.find(u => u.username.toLowerCase() === obj.supervisor_username.toLowerCase());
+        obj.supervisor_id = sup ? sup.id : '';
+        delete obj.supervisor_username;
+      } else {
+        delete obj.supervisor_username;
+      }
+      return obj;
+    });
+  };
+
+  const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBulkError('');
+    setBulkResults(null);
+    setBulkLoading(true);
+
+    try {
+      const text = await file.text();
+      const parsedUsers = parseCSV(text);
+      if (parsedUsers.length === 0) {
+        setBulkError('El archivo CSV está vacío o no tiene el formato correcto.');
+        setBulkLoading(false);
+        return;
+      }
+
+      const token = localStorage.getItem('token');
+      const res = await axios.post('/api/users/bulk', { users: parsedUsers }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setBulkResults(res.data);
+      fetchData();
+    } catch (err: any) {
+      setBulkError(err.response?.data?.error || 'Error al procesar el archivo');
+    } finally {
+      setBulkLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const roles = isJefeZonal 
     ? ['VENDEDOR', 'SUPERVISOR'] 
     : ['VENDEDOR', 'SUPERVISOR', 'JEFE_ZONAL', 'GERENTE', 'SUPERADMIN', 'BACK_OFFICE', 'ANALISTA'];
@@ -125,9 +202,15 @@ export default function UserManagement() {
           </h1>
           <p className="text-text-700 text-sm font-medium mt-1">Control de accesos y jerarquías operativas</p>
         </div>
-        <button onClick={() => openModal()} className="action-button-primary">
-          <Plus size={18} /> Nuevo Usuario
-        </button>
+        <div className="flex gap-3">
+          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleBulkUpload} />
+          <button onClick={() => { setBulkResults(null); setBulkError(''); setIsBulkModalOpen(true); }} className="action-button-secondary">
+            <Upload size={18} /> Carga Masiva
+          </button>
+          <button onClick={() => openModal()} className="action-button-primary">
+            <Plus size={18} /> Nuevo Usuario
+          </button>
+        </div>
       </div>
 
       {/* Tabla Sincronizada */}
@@ -206,6 +289,99 @@ export default function UserManagement() {
           </table>
         </div>
       </div>
+
+      {/* Modal Carga Masiva */}
+      {isBulkModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in zoom-in duration-300">
+          <div className="bg-surface-100 rounded-[2.5rem] shadow-2xl w-full max-w-xl overflow-hidden border border-white/20">
+            <div className="p-8 border-b border-surface-200 flex justify-between items-center bg-surface-50/50">
+              <div>
+                <h3 className="text-xl font-bold text-text-900 uppercase tracking-tight">Carga Masiva de Usuarios</h3>
+                <p className="text-xs font-bold text-text-700 uppercase tracking-widest mt-1">Subir archivo CSV con datos de usuarios</p>
+              </div>
+              <button onClick={() => setIsBulkModalOpen(false)} className="w-10 h-10 flex items-center justify-center bg-surface-100 text-text-700 hover:text-text-700 rounded-2xl shadow-sm transition-all border border-surface-200">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-8 space-y-6">
+              {/* Template download */}
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 flex items-start gap-4">
+                <FileSpreadsheet size={24} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-blue-900">Formato requerido</p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    El CSV debe tener las columnas: <code className="bg-blue-100 px-1.5 py-0.5 rounded text-[11px] font-mono">username, nombre, password, role, zone_name, supervisor_username</code>
+                  </p>
+                  <button onClick={downloadTemplate} className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors">
+                    <Download size={14} /> Descargar plantilla CSV
+                  </button>
+                </div>
+              </div>
+
+              {/* Upload area */}
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-surface-300 hover:border-[var(--color-bcp-blue)] rounded-2xl p-10 text-center cursor-pointer transition-all hover:bg-[rgba(0,42,141,0.02)]"
+              >
+                {bulkLoading ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-10 h-10 border-4 border-surface-200 border-t-[var(--color-bcp-blue)] rounded-full animate-spin" />
+                    <p className="text-sm font-bold text-text-700">Procesando archivo...</p>
+                  </div>
+                ) : (
+                  <>
+                    <Upload size={32} className="mx-auto text-text-700 mb-3" />
+                    <p className="text-sm font-bold text-text-900">Haz clic aquí para seleccionar tu archivo CSV</p>
+                    <p className="text-xs text-text-700 mt-1">Máximo 500 usuarios por carga</p>
+                  </>
+                )}
+              </div>
+
+              {/* Error */}
+              {bulkError && (
+                <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-start gap-3">
+                  <AlertCircle size={18} className="text-rose-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-rose-800 font-medium">{bulkError}</p>
+                </div>
+              )}
+
+              {/* Results */}
+              {bulkResults && (
+                <div className="space-y-3">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center gap-3">
+                    <CheckCircle size={18} className="text-emerald-600" />
+                    <p className="text-sm font-bold text-emerald-800">
+                      {bulkResults.created} usuario(s) creado(s) exitosamente
+                    </p>
+                  </div>
+                  {bulkResults.errors?.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                      <p className="text-sm font-bold text-amber-800 mb-2">
+                        ⚠️ {bulkResults.errors.length} error(es) encontrado(s):
+                      </p>
+                      <div className="max-h-40 overflow-y-auto space-y-1">
+                        {bulkResults.errors.map((err: any, i: number) => (
+                          <div key={i} className="text-xs text-amber-700 bg-amber-100 rounded-lg px-3 py-2">
+                            <span className="font-bold">Fila {err.row} ({err.username}):</span> {err.error}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Close button */}
+              <button 
+                onClick={() => setIsBulkModalOpen(false)}
+                className="action-button-primary w-full justify-center"
+              >
+                <Check size={18} /> Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Form Sincronizado */}
       {isModalOpen && (

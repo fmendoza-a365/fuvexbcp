@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 export const COLORS = {
   blue: '#002A8D',
   orange: '#FF7800',
@@ -26,7 +28,21 @@ export const DARK_COLORS = {
 
 
 
-export const API_URL = 'https://yodel-thumb-veggie.ngrok-free.dev/api';
+// Para BlueStacks/Android emulator usa 10.0.2.2 (alias del host)
+// Para dispositivo físico en misma red, usar IP local de la PC
+const getApiUrl = () => {
+  // Si hay variable de entorno, usarla
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+  // BlueStacks y Android emulators: 10.0.2.2 apunta al host
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:3001/api';
+  }
+  return 'http://localhost:3001/api';
+};
+
+export const API_URL = getApiUrl();
 
 export const CONVENIOS = [
   { label: 'Seleccionar Convenio...', value: '' },

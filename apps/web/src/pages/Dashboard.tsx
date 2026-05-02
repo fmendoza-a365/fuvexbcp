@@ -98,7 +98,7 @@ export default function Dashboard() {
   }, [sales]);
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const isAdmin = ['ADMIN', 'SUPERADMIN', 'GERENTE'].includes(user.role);
+  const isAdmin = ['SUPERADMIN', 'GERENTE'].includes(user.role);
   const isJefeZonal = user.role === 'JEFE_ZONAL';
   const canExport = ['SUPERVISOR', 'JEFE_ZONAL', 'GERENTE', 'SUPERADMIN', 'BACK_OFFICE', 'ANALISTA'].includes(user.role);
 

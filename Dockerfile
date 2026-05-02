@@ -29,17 +29,18 @@ RUN adduser --system --uid 1001 expressjs
 # Copiar solo lo necesario para ejecutar
 COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 COPY --from=builder /app/apps/backend/package.json ./apps/backend/
+COPY --from=builder /app/apps/backend/prisma ./apps/backend/prisma
 COPY --from=builder /app/apps/web/dist ./apps/web/dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 
 # Directorio de almacenamiento de datos y expedientes
-RUN mkdir -p storage/expedientes
+RUN mkdir -p data storage/expedientes backups
 RUN chown -R expressjs:nodejs /app
 
 USER expressjs
 
 EXPOSE 3001
 
-# Comando de inicio (ejecutamos el backend directamente con Node)
-CMD ["node", "apps/backend/dist/src/server.js"]
+# Ejecutar migraciones antes de levantar el backend.
+CMD ["sh", "-c", "cd apps/backend && npx prisma migrate deploy && cd /app && node apps/backend/dist/src/server.js"]

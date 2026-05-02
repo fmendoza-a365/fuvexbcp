@@ -1,18 +1,7 @@
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-
-const firstExistingPath = (candidates: string[]) => {
-  return candidates.find(candidate => fs.existsSync(candidate)) || candidates[0];
-};
-
-// Define the root storage directory. Supports ts-node and compiled dist paths.
-const rootStoragePath = firstExistingPath([
-  path.resolve(__dirname, '../../../../storage/expedientes'),
-  path.resolve(__dirname, '../../../../../storage/expedientes'),
-  path.resolve(process.cwd(), 'storage/expedientes'),
-  path.resolve(process.cwd(), '../../storage/expedientes')
-]);
+import { expedientesPath } from '../services/storage';
 
 // SEGURIDAD: Tipos MIME permitidos
 const ALLOWED_MIMES = [
@@ -33,7 +22,7 @@ const storage = multer.diskStorage({
     // SEGURIDAD: Sanitizar DNI para prevenir path traversal
     const dni = String(rawDni).replace(/[^0-9a-zA-Z\-]/g, '');
     
-    const dir = path.join(rootStoragePath, dni);
+    const dir = path.join(expedientesPath, dni);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }

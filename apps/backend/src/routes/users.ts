@@ -3,7 +3,7 @@ import { prisma } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { authorize } from '../middleware/authorize';
 import bcrypt from 'bcryptjs';
-import { getSubordinateIds, getHierarchyChain } from '../services/hierarchy';
+import { getSubordinateIds, invalidateHierarchyCache } from '../services/hierarchy';
 import { validateCreateUser } from '../middleware/validate';
 
 const router = Router();
@@ -99,6 +99,7 @@ router.post('/', authMiddleware, authorize('SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'
       },
       select: { id: true, username: true, nombre: true, role: true }
     });
+    invalidateHierarchyCache();
 
     res.status(201).json(user);
   } catch (error: any) {
@@ -107,6 +108,74 @@ router.post('/', authMiddleware, authorize('SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'
     }
     console.error(error);
     res.status(500).json({ error: 'Error al crear usuario' });
+  }
+});
+
+// BULK CREATE Users (Solo SUPERADMIN y GERENTE)
+router.post('/bulk', authMiddleware, authorize('SUPERADMIN', 'GERENTE'), async (req: any, res: any) => {
+  try {
+    const { users } = req.body;
+
+    if (!Array.isArray(users) || users.length === 0) {
+      return res.status(400).json({ error: 'Se requiere un array de usuarios' });
+    }
+
+    if (users.length > 500) {
+      return res.status(400).json({ error: 'Máximo 500 usuarios por carga masiva' });
+    }
+
+    const results: any = { created: 0, errors: [] };
+
+    for (let i = 0; i < users.length; i++) {
+      const { username, nombre, password, role, zone_id, supervisor_id } = users[i];
+
+      // Validaciones individuales
+      if (!username || !/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
+        results.errors.push({ row: i + 1, username, error: 'Username inválido (3-30 caracteres alfanuméricos)' });
+        continue;
+      }
+      if (!nombre || nombre.trim().length < 2) {
+        results.errors.push({ row: i + 1, username, error: 'Nombre requerido (mínimo 2 caracteres)' });
+        continue;
+      }
+      if (!password || password.length < 8) {
+        results.errors.push({ row: i + 1, username, error: 'Password debe tener mínimo 8 caracteres' });
+        continue;
+      }
+      if (!role || !['SUPERADMIN', 'GERENTE', 'JEFE_ZONAL', 'SUPERVISOR', 'BACK_OFFICE', 'ANALISTA', 'VENDEDOR'].includes(role)) {
+        results.errors.push({ row: i + 1, username, error: `Rol inválido: ${role}` });
+        continue;
+      }
+
+      try {
+        const password_hash = await bcrypt.hash(password, 10);
+        await prisma.user.create({
+          data: {
+            username: username.trim(),
+            nombre: nombre.trim().replace(/<[^>]*>/g, ''),
+            password_hash,
+            role,
+            zone_id: zone_id || null,
+            supervisor_id: supervisor_id || null
+          }
+        });
+        results.created++;
+      } catch (err: any) {
+        if (err.code === 'P2002') {
+          results.errors.push({ row: i + 1, username, error: 'El nombre de usuario ya existe' });
+        } else if (err.code === 'P2003') {
+          results.errors.push({ row: i + 1, username, error: 'Zona o supervisor no encontrado' });
+        } else {
+          results.errors.push({ row: i + 1, username, error: err.message || 'Error desconocido' });
+        }
+      }
+    }
+
+    invalidateHierarchyCache();
+    res.status(201).json(results);
+  } catch (error: any) {
+    console.error(error);
+    res.status(500).json({ error: 'Error en carga masiva de usuarios' });
   }
 });
 
@@ -163,6 +232,7 @@ router.put('/me', authMiddleware, async (req: any, res: any) => {
         role: true
       }
     });
+    invalidateHierarchyCache();
 
     res.json(updated);
   } catch (error) {

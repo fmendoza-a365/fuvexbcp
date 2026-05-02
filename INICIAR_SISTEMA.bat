@@ -22,17 +22,26 @@ echo.
 echo  [SYSTEM] BEARLYTICS CORE PIXEL-ELITE v3.8 OPERATIVO...
 echo.
 
-:: 0. Internet Tunnel (Ngrok)
-echo  [*] Abriendo puente a internet (Remote Demo)...
-start "Ngrok Tunnel" /min cmd /c ".\ngrok.exe http 3001 --domain=yodel-thumb-veggie.ngrok-free.dev"
-echo  [OK] Puente establecido: https://yodel-thumb-veggie.ngrok-free.dev
+:: 0. Internet Tunnel (Ngrok opcional)
+if defined FUVEX_NGROK_DOMAIN (
+    if exist ".\ngrok.exe" (
+        echo  [*] Abriendo puente a internet (Remote Demo)...
+        start "Ngrok Tunnel" /min cmd /c ".\ngrok.exe http 3001 --domain=%FUVEX_NGROK_DOMAIN%"
+        echo  [OK] Puente establecido: https://%FUVEX_NGROK_DOMAIN%
+    ) else (
+        echo  [WARN] FUVEX_NGROK_DOMAIN definido, pero ngrok.exe no existe en este directorio.
+    )
+) else (
+    echo  [INFO] Tunel ngrok desactivado. Defina FUVEX_NGROK_DOMAIN para demo remota.
+)
 echo.
 
 :: 1. Database
 echo  [*] Sincronizando Nucleo de Datos...
 cd "apps\backend"
+if not exist "..\..\data" mkdir "..\..\data"
 call npx prisma generate > nul
-call npx prisma db push > nul
+call npx prisma migrate deploy > nul
 echo  [OK] Datos listos.
 
 :: 2. Backend
