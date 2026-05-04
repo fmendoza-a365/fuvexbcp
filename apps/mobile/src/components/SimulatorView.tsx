@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, DARK_COLORS, API_URL } from '../constants/theme';
+import { COLORS, DARK_COLORS, API_URL, DESIGN } from '../constants/theme';
 import {
   calcTEM, calcCuotaFrancesa, calcCEM,
   generarCronograma, calcTCEA, fmt, TASA_DESGRAVAMEN_MENSUAL
@@ -15,7 +15,7 @@ import {
 interface SimConfig {
   convenios: { id: string; nombre: string; sector: string; variables_reserva: number; rci_default: number; periodo_gracia: number }[];
   cargos: { id: string; nombre: string }[];
-  reglas: { convenio_id: string; cargo_id: string; rci_especifico: number }[];
+  reglas: { convenio_id: string; cargo_id: string; rci_especifico: number; edad_maxima?: number | null }[];
   configuracion: { TEA_DEFAULT: number; COSTO_ENVIO_FISICO: number };
 }
 
@@ -24,13 +24,18 @@ interface Props {
   token: string;
 }
 
+let cachedSimulatorConfig: SimConfig | null = null;
+
 export default function SimulatorView({ isDark, token }: Props) {
   const theme = isDark ? DARK_COLORS : COLORS;
   const { width } = Dimensions.get('window');
   const isSmall = width < 400;
+  const cachedTeaDefault = cachedSimulatorConfig?.configuracion?.TEA_DEFAULT
+    ? (cachedSimulatorConfig.configuracion.TEA_DEFAULT * 100).toString()
+    : '';
 
-  const [config, setConfig] = useState<SimConfig | null>(null);
-  const [loadingConfig, setLoadingConfig] = useState(true);
+  const [config, setConfig] = useState<SimConfig | null>(cachedSimulatorConfig);
+  const [loadingConfig, setLoadingConfig] = useState(!cachedSimulatorConfig);
   const [showCronograma, setShowCronograma] = useState(false);
   const [simulating, setSimulating] = useState(false);
   const [error, setError] = useState('');
@@ -51,7 +56,7 @@ export default function SimulatorView({ isDark, token }: Props) {
     montoSolicitado: '',
     cuotas: '12',
     envioFisico: false,
-    teaManual: '',
+    teaManual: cachedTeaDefault,
     periodoGracia: '0',
     fechaDesembolso: new Date().toISOString().split('T')[0],
     tipoDesgravamen: 'Individual',
@@ -69,8 +74,18 @@ export default function SimulatorView({ isDark, token }: Props) {
   ]);
 
   useEffect(() => {
+    if (cachedSimulatorConfig) {
+      setConfig(cachedSimulatorConfig);
+      setLoadingConfig(false);
+      return;
+    }
+
+    let mounted = true;
+
     axios.get(`${API_URL}/simulator/config`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => {
+        cachedSimulatorConfig = res.data;
+        if (!mounted) return;
         setConfig(res.data);
         if (res.data.configuracion?.TEA_DEFAULT) {
           setForm(prev => ({ ...prev, teaManual: (res.data.configuracion.TEA_DEFAULT * 100).toString() }));
@@ -79,9 +94,13 @@ export default function SimulatorView({ isDark, token }: Props) {
       })
       .catch(err => {
         console.error(err);
+        if (!mounted) return;
         setLoadingConfig(false);
       });
-  }, []);
+    return () => {
+      mounted = false;
+    };
+  }, [token]);
 
   const selectedConvenio = useMemo(() =>
     config?.convenios.find(c => c.id === form.convenioId),
@@ -95,8 +114,14 @@ export default function SimulatorView({ isDark, token }: Props) {
     return config.cargos.filter(c => validCargoIds.includes(c.id));
   }, [form.convenioId, config]);
 
+  const selectedRegla = useMemo(() =>
+    config?.reglas.find(r => r.convenio_id === form.convenioId && r.cargo_id === form.cargoId),
+    [form.convenioId, form.cargoId, config]);
+
+  const effectiveRci = selectedRegla?.rci_especifico ?? selectedConvenio?.rci_default ?? 0;
+
   const calculations = useMemo(() => {
-    const rci = selectedConvenio?.rci_default || 0;
+    const rci = effectiveRci;
     const totalIngresos = Number(form.ingresosFijos) + Number(form.promedioVariables) + Number(form.cafae);
     const disponible = totalIngresos * rci;
     const ind = disponible - Number(form.descuentosLey) - Number(form.reserva) - Number(form.facultativos);
@@ -132,7 +157,7 @@ export default function SimulatorView({ isDark, token }: Props) {
       fechaVenc: fechaVenc.toLocaleDateString('es-PE'),
       endeudamientoPorc, tem
     };
-  }, [form, selectedConvenio, cargaCrediticia, config]);
+  }, [form, effectiveRci, cargaCrediticia, config]);
 
   const handleSimulate = useCallback(async () => {
     if (!form.convenioId || !form.cargoId) {
@@ -224,12 +249,27 @@ export default function SimulatorView({ isDark, token }: Props) {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.slate }}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 108 }}>
         
         {/* HEADER */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 16, marginBottom: 20 }}>
+        <View style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginTop: 8,
+          marginBottom: 16,
+          backgroundColor: theme.white,
+          borderWidth: 1,
+          borderColor: theme.border,
+          borderRadius: DESIGN.radius.lg,
+          padding: 16,
+          shadowColor: '#0F172A',
+          shadowOpacity: isDark ? 0.22 : 0.07,
+          shadowRadius: 18,
+          elevation: 3
+        }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 20, fontWeight: '900', color: theme.blue, letterSpacing: 1, textTransform: 'uppercase' }}>
+            <Text style={{ fontSize: 20, fontWeight: '900', color: theme.blueDark, letterSpacing: 0, textTransform: 'uppercase' }}>
               SIMULADOR{' '}
               <Text style={{ color: theme.text }}>BCP PREMIUM</Text>
             </Text>
@@ -242,8 +282,8 @@ export default function SimulatorView({ isDark, token }: Props) {
             disabled={simulating}
             style={{
               backgroundColor: theme.orange,
-              paddingHorizontal: 20, paddingVertical: 14,
-              borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 8,
+              paddingHorizontal: 16, paddingVertical: 13,
+              borderRadius: DESIGN.radius.md, flexDirection: 'row', alignItems: 'center', gap: 8,
               opacity: simulating ? 0.6 : 1,
               shadowColor: theme.orange, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5,
             }}
@@ -257,9 +297,9 @@ export default function SimulatorView({ isDark, token }: Props) {
 
         {error ? (
           <View style={{
-            backgroundColor: isDark ? '#2d1515' : '#fff1f2',
+            backgroundColor: theme.roseSoft,
             borderWidth: 1, borderColor: isDark ? '#4a1515' : '#fecdd3',
-            padding: 14, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16
+            padding: 14, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16
           }}>
             <Ionicons name="shield" size={18} color={theme.rose} />
             <Text style={{ color: theme.rose, fontSize: 11, fontWeight: '900', flex: 1, letterSpacing: 0.5 }}>{error}</Text>
@@ -304,9 +344,14 @@ export default function SimulatorView({ isDark, token }: Props) {
             borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 12, marginTop: 16, gap: 8
           }}>
             <Text style={[labelStyle(theme), { marginBottom: 0 }]}>RCI</Text>
-            <Text style={{ fontSize: 20, fontWeight: '900', color: theme.blue }}>
-              {selectedConvenio ? (selectedConvenio.rci_default * 100) : 0}%
-            </Text>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: theme.blue }}>
+                {(effectiveRci * 100).toFixed(1)}%
+              </Text>
+              <Text style={{ fontSize: 8, fontWeight: '900', color: theme.subtext, letterSpacing: 0.6 }}>
+                {selectedRegla ? 'CONVENIO + CARGO' : 'BASE CONVENIO'}
+              </Text>
+            </View>
           </View>
         </Card>
 
@@ -320,7 +365,7 @@ export default function SimulatorView({ isDark, token }: Props) {
           
           <View style={{
             flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-            backgroundColor: isDark ? '#1a2332' : '#f0fdf4', padding: 14, borderRadius: 16, marginTop: 8
+            backgroundColor: theme.emeraldSoft, padding: 14, borderRadius: 10, marginTop: 8
           }}>
             <Text style={[labelStyle(theme), { marginBottom: 0 }]}>TOTAL INGRESOS</Text>
             <Text style={{ fontSize: 18, fontWeight: '900', color: theme.emerald }}>
@@ -336,9 +381,9 @@ export default function SimulatorView({ isDark, token }: Props) {
           <SimInput label="SUMATORIA DE FACULTATIVOS" value={form.facultativos} onChange={(v: string) => setForm({ ...form, facultativos: v })} theme={theme} isDark={isDark} />
           
           <View style={{
-            backgroundColor: theme.blue, padding: 14, borderRadius: 16, marginTop: 8,
+            backgroundColor: theme.blueDark, padding: 14, borderRadius: 10, marginTop: 8,
             flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-            shadowColor: theme.blue, shadowOpacity: 0.3, shadowRadius: 10, elevation: 4
+            shadowColor: theme.blueDark, shadowOpacity: 0.3, shadowRadius: 10, elevation: 4
           }}>
             <Text style={{ fontSize: 9, fontWeight: '900', color: 'rgba(255,255,255,0.7)', letterSpacing: 1, textTransform: 'uppercase', flex: 1 }}>
               INGRESO NETO DISPONIBLE (IND)
@@ -353,7 +398,7 @@ export default function SimulatorView({ isDark, token }: Props) {
         <Card theme={theme} isDark={isDark} title="3. DEUDAS EXTERNAS (RCC)" noPadding>
           {/* Table Header */}
           <View style={{
-            flexDirection: 'row', backgroundColor: isDark ? '#1a1a2e' : '#f8fafc',
+            flexDirection: 'row', backgroundColor: theme.input,
             paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: theme.border
           }}>
             <Text style={{ flex: 2, fontSize: 8, fontWeight: '900', color: theme.subtext, letterSpacing: 0.5 }}>DEUDA</Text>
@@ -367,7 +412,7 @@ export default function SimulatorView({ isDark, token }: Props) {
               flexDirection: 'row', alignItems: 'center',
               paddingVertical: 6, paddingHorizontal: 12,
               borderBottomWidth: idx < cargaCrediticia.length - 1 ? 1 : 0,
-              borderBottomColor: isDark ? '#1a1a2e' : '#f1f5f9'
+              borderBottomColor: theme.divider
             }}>
               <Text style={{ flex: 2, fontSize: 10, fontWeight: '800', color: theme.text, textTransform: 'uppercase' }}>
                 {row.tipo}
@@ -375,7 +420,7 @@ export default function SimulatorView({ isDark, token }: Props) {
               <View style={{ flex: 1, marginHorizontal: 3 }}>
                 <TextInput
                   style={{
-                    backgroundColor: isDark ? '#1a1a2e' : '#f8fafc',
+                    backgroundColor: theme.input,
                     borderWidth: 1, borderColor: theme.border, borderRadius: 10,
                     padding: 6, fontSize: 10, fontWeight: '800', color: theme.text,
                     textAlign: 'center'
@@ -390,7 +435,7 @@ export default function SimulatorView({ isDark, token }: Props) {
               <View style={{ flex: 1, marginHorizontal: 3 }}>
                 <TextInput
                   style={{
-                    backgroundColor: isDark ? '#1a1a2e' : '#f8fafc',
+                    backgroundColor: theme.input,
                     borderWidth: 1, borderColor: theme.border, borderRadius: 10,
                     padding: 6, fontSize: 10, fontWeight: '800', color: theme.text,
                     textAlign: 'center'
@@ -406,7 +451,7 @@ export default function SimulatorView({ isDark, token }: Props) {
                 <View style={{
                   flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end',
                   backgroundColor: isDark ? 'rgba(59,130,246,0.1)' : 'rgba(0,42,141,0.05)',
-                  paddingVertical: 6, paddingHorizontal: 8, borderRadius: 10
+                  paddingVertical: 6, paddingHorizontal: 8, borderRadius: 8
                 }}>
                   <Text style={{ fontSize: 9, color: theme.subtext, fontWeight: '700', marginRight: 3 }}>S/</Text>
                   <TextInput
@@ -430,7 +475,7 @@ export default function SimulatorView({ isDark, token }: Props) {
             flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
             paddingHorizontal: 16, paddingVertical: 12,
             borderTopWidth: 1, borderTopColor: theme.border,
-            backgroundColor: isDark ? '#1a1a2e' : '#f8fafc'
+            backgroundColor: theme.input
           }}>
             <Text style={{ fontSize: 9, fontWeight: '900', color: theme.subtext, letterSpacing: 0.5 }}>
               % ENDEUDAMIENTO:
@@ -476,8 +521,8 @@ export default function SimulatorView({ isDark, token }: Props) {
           <Text style={[labelStyle(theme), { marginTop: 12 }]}>TEA %</Text>
           <View style={{
             flexDirection: 'row', alignItems: 'center',
-            backgroundColor: isDark ? '#1a1a2e' : '#f8fafc',
-            borderWidth: 1.5, borderColor: theme.border, borderRadius: 16, overflow: 'hidden'
+            backgroundColor: theme.input,
+            borderWidth: 1, borderColor: theme.border, borderRadius: 10, overflow: 'hidden'
           }}>
             <TextInput
               style={{
@@ -503,8 +548,8 @@ export default function SimulatorView({ isDark, token }: Props) {
           {/* Envío Estado Cuenta */}
           <Text style={[labelStyle(theme), { marginTop: 12 }]}>ENVÍO ESTADO CUENTA</Text>
           <View style={{
-            flexDirection: 'row', backgroundColor: isDark ? '#1a1a2e' : '#f8fafc',
-            borderRadius: 14, padding: 4, borderWidth: 1, borderColor: theme.border
+            flexDirection: 'row', backgroundColor: theme.input,
+            borderRadius: 10, padding: 4, borderWidth: 1, borderColor: theme.border
           }}>
             {['VIRTUAL', 'FÍSICO'].map((opt, i) => {
               const isPhysic = i === 1;
@@ -514,7 +559,7 @@ export default function SimulatorView({ isDark, token }: Props) {
                   key={opt}
                   onPress={() => setForm({ ...form, envioFisico: isPhysic })}
                   style={{
-                    flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center',
+                    flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center',
                     backgroundColor: active ? theme.white : 'transparent',
                     shadowColor: active ? '#000' : 'transparent',
                     shadowOpacity: active ? 0.1 : 0, shadowRadius: 4, elevation: active ? 2 : 0
@@ -551,11 +596,11 @@ export default function SimulatorView({ isDark, token }: Props) {
 
         {/* RESULTADOS */}
         <View style={{
-          backgroundColor: theme.white, borderRadius: 24, overflow: 'hidden',
-          borderWidth: 2, borderColor: theme.blue, marginBottom: 20,
-          shadowColor: theme.blue, shadowOpacity: 0.15, shadowRadius: 20, elevation: 5
+          backgroundColor: theme.white, borderRadius: DESIGN.radius.lg, overflow: 'hidden',
+          borderWidth: 1, borderColor: theme.border, marginBottom: 20,
+          shadowColor: '#0F172A', shadowOpacity: isDark ? 0.24 : 0.08, shadowRadius: 20, elevation: 5
         }}>
-          <View style={{ backgroundColor: theme.blue, padding: 20 }}>
+          <View style={{ backgroundColor: theme.blueDark, padding: 18 }}>
             <Text style={{ fontSize: 9, fontWeight: '900', color: 'rgba(255,255,255,0.5)', letterSpacing: 1.5, textTransform: 'uppercase' }}>
               Resultados de Evaluación
             </Text>
@@ -567,7 +612,7 @@ export default function SimulatorView({ isDark, token }: Props) {
             {/* Dictamen */}
             <View style={{ alignItems: 'center', marginBottom: 24 }}>
               <View style={{
-                width: 80, height: 80, borderRadius: 24,
+                width: 76, height: 76, borderRadius: 12,
                 backgroundColor: calculations.dictamen === 'CONTINUAR' ? theme.emerald : theme.amber,
                 justifyContent: 'center', alignItems: 'center',
                 shadowColor: calculations.dictamen === 'CONTINUAR' ? theme.emerald : theme.amber,
@@ -580,7 +625,7 @@ export default function SimulatorView({ isDark, token }: Props) {
                 />
               </View>
               <Text style={{
-                fontSize: 28, fontWeight: '900', letterSpacing: -1,
+                fontSize: 28, fontWeight: '900', letterSpacing: 0,
                 color: calculations.dictamen === 'CONTINUAR' ? theme.emerald : theme.amber
               }}>
                 {calculations.dictamen}
@@ -610,7 +655,7 @@ export default function SimulatorView({ isDark, token }: Props) {
             </View>
 
             {/* Detalles */}
-            <View style={{ borderTopWidth: 1, borderTopColor: isDark ? '#1a1a2e' : '#f8fafc', paddingTop: 16, gap: 10 }}>
+            <View style={{ borderTopWidth: 1, borderTopColor: theme.divider, paddingTop: 16, gap: 10 }}>
               <DetailRow label="TEA Aplicada" value={`${(calculations.tea * 100).toFixed(2)}%`} theme={theme} />
               <DetailRow label="TCEA Estimada" value={`${(calculations.tcea * 100).toFixed(2)}%`} theme={theme} />
               <DetailRow label="1er Vencimiento" value={calculations.fechaVenc} theme={theme} isBlue />
@@ -625,8 +670,8 @@ export default function SimulatorView({ isDark, token }: Props) {
               onPress={handleSimulate}
               disabled={simulating}
               style={{
-                marginTop: 20, backgroundColor: isDark ? '#1a1a2e' : '#f8fafc',
-                borderWidth: 2, borderColor: theme.border, borderRadius: 16,
+                marginTop: 20, backgroundColor: theme.input,
+                borderWidth: 1, borderColor: theme.border, borderRadius: 10,
                 paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
                 opacity: simulating ? 0.6 : 1
               }}
@@ -642,9 +687,9 @@ export default function SimulatorView({ isDark, token }: Props) {
 
         {/* Nota Legal */}
         <View style={{
-          backgroundColor: isDark ? 'rgba(255,120,0,0.08)' : '#fff7ed',
+          backgroundColor: theme.orangeSoft,
           borderWidth: 1, borderColor: isDark ? 'rgba(255,120,0,0.15)' : '#fed7aa',
-          borderRadius: 20, padding: 16, marginBottom: 20
+          borderRadius: 12, padding: 16, marginBottom: 20
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <Ionicons name="information-circle" size={16} color={theme.orange} />
@@ -666,14 +711,14 @@ export default function SimulatorView({ isDark, token }: Props) {
             flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
             paddingHorizontal: 20, marginBottom: 16
           }}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: theme.blue, letterSpacing: 1 }}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: theme.blueDark, letterSpacing: 0 }}>
               CRONOGRAMA DE PAGOS
             </Text>
             <TouchableOpacity
               onPress={() => setShowCronograma(false)}
               style={{
-                width: 36, height: 36, borderRadius: 12,
-                backgroundColor: isDark ? '#1a1a2e' : 'white',
+                width: 36, height: 36, borderRadius: 10,
+                backgroundColor: theme.white,
                 justifyContent: 'center', alignItems: 'center',
                 shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, elevation: 3
               }}
@@ -685,10 +730,10 @@ export default function SimulatorView({ isDark, token }: Props) {
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}>
             {/* Resumen */}
             <View style={{
-              backgroundColor: theme.white, borderRadius: 20, padding: 16, marginBottom: 16,
+              backgroundColor: theme.white, borderRadius: 12, padding: 16, marginBottom: 16,
               borderWidth: 1, borderColor: theme.border
             }}>
-              <Text style={{ fontSize: 11, fontWeight: '900', color: theme.blue, letterSpacing: 1, marginBottom: 12 }}>
+              <Text style={{ fontSize: 11, fontWeight: '900', color: theme.blueDark, letterSpacing: 0.8, marginBottom: 12 }}>
                 RESUMEN
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10 }}>
@@ -703,12 +748,12 @@ export default function SimulatorView({ isDark, token }: Props) {
 
             {/* Cronograma Table */}
             <View style={{
-              backgroundColor: theme.white, borderRadius: 20, overflow: 'hidden',
+              backgroundColor: theme.white, borderRadius: 12, overflow: 'hidden',
               borderWidth: 1, borderColor: theme.border
             }}>
               {/* Header */}
               <View style={{
-                flexDirection: 'row', backgroundColor: theme.blue,
+                flexDirection: 'row', backgroundColor: theme.blueDark,
                 paddingVertical: 10, paddingHorizontal: 8
               }}>
                 <Text style={{ width: 28, fontSize: 8, fontWeight: '900', color: 'white', textAlign: 'center' }}>N°</Text>
@@ -723,9 +768,9 @@ export default function SimulatorView({ isDark, token }: Props) {
               {cronogramaData.cronograma.map((row: any, idx: number) => (
                 <View key={idx} style={{
                   flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 8,
-                  backgroundColor: idx % 2 === 0 ? theme.white : (isDark ? '#111' : '#f8fafc'),
+                  backgroundColor: idx % 2 === 0 ? theme.white : theme.input,
                   borderBottomWidth: idx < cronogramaData.cronograma.length - 1 ? 1 : 0,
-                  borderBottomColor: isDark ? '#1a1a2e' : '#f1f5f9'
+                  borderBottomColor: theme.divider
                 }}>
                   <Text style={{ width: 28, fontSize: 9, fontWeight: '800', color: theme.text, textAlign: 'center' }}>{row.nro}</Text>
                   <Text style={{ flex: 1.2, fontSize: 8, color: theme.subtext, textAlign: 'center' }}>{row.fecha}</Text>
@@ -749,8 +794,8 @@ export default function SimulatorView({ isDark, token }: Props) {
 function Card({ theme, isDark, title, children, noPadding }: any) {
   return (
     <View style={{
-      backgroundColor: theme.white, borderRadius: 24, marginBottom: 20,
-      shadowColor: '#000', shadowOpacity: isDark ? 0.3 : 0.06, shadowRadius: 15, elevation: 3,
+      backgroundColor: theme.white, borderRadius: DESIGN.radius.lg, marginBottom: 16,
+      shadowColor: '#0F172A', shadowOpacity: isDark ? 0.22 : 0.07, shadowRadius: 18, elevation: 3,
       borderWidth: 1, borderColor: theme.border,
       padding: noPadding ? 0 : 20
     }}>
@@ -759,7 +804,7 @@ function Card({ theme, isDark, title, children, noPadding }: any) {
         paddingBottom: noPadding ? 12 : 0, marginBottom: noPadding ? 0 : 0,
         padding: noPadding ? 16 : 0
       }}>
-        <Text style={{ fontSize: 11, fontWeight: '900', color: theme.text, letterSpacing: 1.5, textTransform: 'uppercase' }}>
+        <Text style={{ fontSize: 11, fontWeight: '900', color: theme.text, letterSpacing: 0.8, textTransform: 'uppercase' }}>
           {title}
         </Text>
       </View>
@@ -774,8 +819,8 @@ function SimInput({ label, value, onChange, theme, isDark }: any) {
       <Text style={labelStyle(theme)}>{label}</Text>
       <View style={{
         flexDirection: 'row', alignItems: 'center',
-        backgroundColor: isDark ? '#1a1a2e' : '#f8fafc',
-        borderWidth: 1.5, borderColor: theme.border, borderRadius: 16, overflow: 'hidden'
+        backgroundColor: theme.input,
+        borderWidth: 1, borderColor: theme.border, borderRadius: 10, overflow: 'hidden'
       }}>
         <Text style={{ paddingLeft: 14, fontSize: 13, fontWeight: '700', color: theme.subtext }}>S/</Text>
         <TextInput
@@ -803,7 +848,7 @@ function PickerField({ theme, isDark, selectedValue, onValueChange, options }: a
             backgroundColor: selectedValue === opt.value
               ? (isDark ? 'rgba(59,130,246,0.15)' : 'rgba(0,42,141,0.08)')
               : 'transparent',
-            borderRadius: 10, marginBottom: 2
+            borderRadius: 8, marginBottom: 2
           }}
         >
           <Text style={{
@@ -845,14 +890,14 @@ const labelStyle = (theme: any) => ({
 });
 
 const inputStyle = (theme: any, isDark: boolean) => ({
-  backgroundColor: isDark ? '#1a1a2e' : '#f8fafc',
-  borderWidth: 1.5, borderColor: theme.border, borderRadius: 16,
+  backgroundColor: theme.input,
+  borderWidth: 1, borderColor: theme.border, borderRadius: 10,
   padding: 14, fontSize: 14, fontWeight: '800' as const, color: theme.text
 });
 
 const pickerContainerStyle = (theme: any, isDark: boolean) => ({
-  backgroundColor: isDark ? '#1a1a2e' : '#f8fafc',
-  borderWidth: 1.5, borderColor: theme.border, borderRadius: 16,
+  backgroundColor: theme.input,
+  borderWidth: 1, borderColor: theme.border, borderRadius: 10,
   overflow: 'hidden' as const, maxHeight: 150
 });
 

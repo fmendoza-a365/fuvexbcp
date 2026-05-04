@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, Link, useLocation } from 'react-router-dom';
 const OutletAny = Outlet as any;
 const LinkAny = Link as any;
-import { LogOut, FileText, Menu, X, Users, MapPin, ChevronLeft, ChevronRight, User, LayoutDashboard, Target, Search, Shield, AlertCircle, Moon, Sun, Calculator, Settings } from 'lucide-react';
+import { LogOut, FileText, Menu, X, Users, MapPin, ChevronLeft, ChevronRight, User, LayoutDashboard, Target, Search, Shield, AlertCircle, Moon, Sun, Calculator, Settings, Columns3, Building2 } from 'lucide-react';
 
 import axios from 'axios';
 
@@ -124,6 +124,8 @@ export default function Layout() {
     { to: '/app/simulador', icon: <Calculator size={20} />, label: 'Simulador BCP', show: true },
     { to: '/app/reniec', icon: <Search size={20} />, label: 'Buscador RENIEC', show: true },
     { to: '/app/simulador-reglas', icon: <Settings size={20} />, label: 'Reglas Simulador', show: isAdmin },
+    { to: '/app/kanban', icon: <Columns3 size={20} />, label: 'Pipeline Visual', show: true },
+    { to: '/app/digitalizacion', icon: <Building2 size={20} />, label: 'Digitalización', show: isAdmin },
     { to: '/app/usuarios', icon: <Users size={20} />, label: 'Usuarios', show: isAdmin },
     { to: '/app/zonas', icon: <MapPin size={20} />, label: 'Zonas', show: isSuperAdminOrGerente },
   ];
@@ -241,12 +243,12 @@ export default function Layout() {
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onFocus={() => setIsSearchFocused(true)}
                     placeholder="Buscar registros..." 
-                    className={`bg-surface-50 border-none rounded-2xl pl-11 pr-4 py-3 text-xs focus:ring-2 focus:ring-orange-100 focus:bg-surface-100 transition-all outline-none font-bold uppercase tracking-tight ${isSearchFocused ? 'w-80 md:w-96 shadow-lg shadow-orange-500/5' : 'w-64 md:w-80'}`}
+                    className={`bg-surface-50 border border-surface-200 rounded-lg pl-11 pr-4 py-3 text-xs focus:ring-2 focus:ring-[var(--color-bcp-blue-light)] focus:bg-surface-100 transition-all outline-none font-bold uppercase tracking-tight ${isSearchFocused ? 'w-80 md:w-96 shadow-sm' : 'w-64 md:w-80'}`}
                   />
 
                   {/* Search Results Dropdown */}
                   {isSearchFocused && (searchQuery.length > 0 || isSearching) && (
-                    <div className="absolute top-full left-0 right-0 mt-3 bg-surface-100 rounded-[2rem] shadow-2xl border border-surface-200 p-3 z-50 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="absolute top-full left-0 right-0 mt-3 bg-surface-100 rounded-lg shadow-xl border border-surface-200 p-3 z-50 animate-in fade-in slide-in-from-top-2 duration-300">
                         <div className="px-4 py-2 text-[10px] font-black text-text-700 uppercase tracking-widest flex justify-between">
                             <span>{isSearching ? 'Buscando...' : 'Resultados Sugeridos'}</span>
                             {!isSearching && <span>{searchResults.length} encontrados</span>}
@@ -260,7 +262,7 @@ export default function Layout() {
                                   setIsSearchFocused(false);
                                   setSearchQuery('');
                                 }}
-                                className="flex items-center gap-3 p-3 hover:bg-surface-50 rounded-2xl cursor-pointer transition-all group"
+                                className="flex items-center gap-3 p-3 hover:bg-surface-50 rounded-lg cursor-pointer transition-all group"
                               >
                                   <div className="w-8 h-8 rounded-lg bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] flex items-center justify-center font-bold text-[10px] uppercase">
                                      {res.estado.substring(0, 2)}
@@ -335,14 +337,14 @@ export default function Layout() {
 
                 {/* Notifications Dropdown */}
                 {isNotificationsOpen && (
-                  <div className="absolute top-full right-0 mt-3 w-80 bg-surface-100 rounded-[2rem] shadow-2xl border border-surface-200 py-4 z-50 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="absolute top-full right-0 mt-3 w-80 bg-surface-100 rounded-lg shadow-xl border border-surface-200 py-4 z-50 animate-in fade-in slide-in-from-top-2 duration-300">
                     <div className="px-6 pb-4 border-b border-surface-200 flex justify-between items-center">
                         <div className="text-xs font-black text-text-900 uppercase tracking-tight">Alertas Fuvex</div>
                         <span className="text-[9px] font-bold text-[var(--color-bcp-blue)] cursor-pointer hover:underline">Limpiar</span>
                     </div>
                     <div className="p-2 space-y-1 max-h-[320px] overflow-y-auto">
                         {notifications.map((n) => (
-                          <div key={n.id} className="flex items-start gap-3 p-4 hover:bg-surface-50 rounded-2xl transition-all cursor-pointer group">
+                          <div key={n.id} className="flex items-start gap-3 p-4 hover:bg-surface-50 rounded-lg transition-all cursor-pointer group">
                               <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${n.estado_nuevo === 'RECHAZADO' ? 'bg-rose-500' : 'bg-[var(--color-bcp-orange)]'}`} />
                               <div>
                                   <div className="text-xs font-bold text-slate-800 uppercase tracking-tight line-clamp-1">{n.accion}: {n.sale.nombres_cliente}</div>
@@ -365,7 +367,7 @@ export default function Layout() {
              <div className="relative profile-dropdown-container">
                 <button 
                   onClick={() => setIsProfileOpen(!isProfileOpen)}
-                  className={`flex items-center gap-3 p-1.5 rounded-2xl transition-all border ${isProfileOpen ? 'bg-surface-50 border-surface-200' : 'border-transparent hover:bg-surface-50'}`}
+                  className={`flex items-center gap-3 p-1.5 rounded-lg transition-all border ${isProfileOpen ? 'bg-surface-50 border-surface-200' : 'border-transparent hover:bg-surface-50'}`}
                 >
                    <div className="hidden sm:block text-right px-2">
                       <div className="text-[11px] font-black text-slate-800 uppercase tracking-tight">{user.nombre || 'Admin'}</div>
@@ -386,7 +388,7 @@ export default function Layout() {
 
                 {/* Dropdown Menu */}
                 {isProfileOpen && (
-                  <div className="absolute right-0 mt-3 w-64 bg-surface-100 rounded-[2rem] shadow-2xl border border-surface-200 py-3 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="absolute right-0 mt-3 w-64 bg-surface-100 rounded-lg shadow-xl border border-surface-200 py-3 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="px-6 py-4 border-b border-surface-200">
                        <div className="text-xs font-black text-text-900 uppercase tracking-tight mb-1">{user.nombre || user.username}</div>
                        <div className="text-[10px] font-bold text-text-700 uppercase tracking-widest">{user.role}</div>

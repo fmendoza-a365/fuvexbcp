@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import { seedOperationalCatalogs } from './catalogSeed'
 
 const prisma = new PrismaClient()
 
@@ -18,6 +19,8 @@ async function main() {
   })
   
   console.log({ admin })
+
+  await seedOperationalCatalogs(prisma)
 }
 
 main()

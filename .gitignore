@@ -42,6 +42,8 @@ build/
 
 # Logs and debug output
 *.log
+logs/
+**/logs/
 build_log.txt
 build_error.txt
 debug_*.png

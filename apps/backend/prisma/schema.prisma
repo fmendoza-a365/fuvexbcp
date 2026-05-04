@@ -11,43 +11,47 @@ model Zone {
   id           String   @id @default(uuid())
   nombre       String
   departamento String
+  provincia    String?
   distrito     String?
+  ubigeo       String?
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
   users        User[]
 }
 
 model User {
-  id            String         @id @default(uuid())
-  username      String         @unique
-  nombre        String         @default("")
-  password_hash String
-  role          String
-  supervisor_id String?
-  zone_id       String?
-  activo        Boolean        @default(true)
-  created_at    DateTime       @default(now())
-  updated_at    DateTime       @updatedAt
-  avatar_url    String?
-  email         String?
-  telefono      String?
-  push_token    String?
-  auditLogs     AuditLog[]
-  documents     Document[]
-  feedbackNotes FeedbackNote[]
-  sales         Sale[]         @relation("AsesorSales")
-  zone          Zone?          @relation(fields: [zone_id], references: [id])
-  supervisor    User?          @relation("Jerarquia", fields: [supervisor_id], references: [id])
-  subordinados  User[]         @relation("Jerarquia")
-  goals         Goal[]
-  simulaciones  Simulacion[]
+  id                String                  @id @default(uuid())
+  username          String                  @unique
+  nombre            String                  @default("")
+  password_hash     String
+  role              String
+  supervisor_id     String?
+  zone_id           String?
+  activo            Boolean                 @default(true)
+  created_at        DateTime                @default(now())
+  updated_at        DateTime                @updatedAt
+  avatar_url        String?
+  email             String?
+  telefono          String?
+  push_token        String?
+  auditLogs         AuditLog[]
+  documents         Document[]
+  feedbackNotes     FeedbackNote[]
+  sales             Sale[]                  @relation("AsesorSales")
+  zone              Zone?                   @relation(fields: [zone_id], references: [id])
+  supervisor        User?                   @relation("Jerarquia", fields: [supervisor_id], references: [id])
+  subordinados      User[]                  @relation("Jerarquia")
+  goals             Goal[]
+  simulaciones      Simulacion[]
+  institucionEnvios ExpedienteInstitucion[]
+  expediente_bcp    ExpedienteBCP[]
 }
 
 model Goal {
   id         String   @id @default(uuid())
   user_id    String
-  amount     Float    // MAF Objetivo
-  month      Int      // 1-12
+  amount     Float // MAF Objetivo
+  month      Int // 1-12
   year       Int
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
@@ -56,40 +60,62 @@ model Goal {
   @@unique([user_id, month, year])
 }
 
+model DocumentoRequerido {
+  id          String   @id @default(uuid())
+  convenio    String // Nombre del convenio (o "GENERIC" para todos)
+  tipo_doc    String // Tipo de documento (DNI, BOLETA, TICKET, etc.)
+  nombre      String // Nombre legible del documento
+  obligatorio Boolean  @default(true)
+  orden       Int      @default(0) // Orden de presentación
+  activo      Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@unique([convenio, tipo_doc])
+}
+
 model Sale {
-  id                  String         @id @default(uuid())
-  dni_cliente         String
-  nombres_cliente     String
-  plaza               String?
-  departamento        String?        @default("LIMA")
-  convenio            String?
-  maf_neto            Float
-  estado              String         @default("POR INGRESAR")
-  fecha_filtro        DateTime?
-  fecha_ingreso       DateTime?      @default(now())
-  fecha_desembolso    DateTime?
-  estado_remesa       String?
-  carta_compra_deuda  DateTime?
-  monto_remesa        Float?
-  vencimiento_remesa  DateTime?
-  feedback            String?
-  rcc_semaforo        String?
-  rcc_monto_deuda     Float?
-  rcc_ultima_act      DateTime?
-  rcc_calificacion    String?
-  reasignacion_estado String?
-  reasignacion_de     String?
-  reasignacion_motivo String?
-  reasignacion_por    String?
-  reasignacion_fecha  DateTime?
-  asesor_id           String
-  created_at          DateTime       @default(now())
-  updated_at          DateTime       @updatedAt
-  rcc_raw_data        String?
-  audit_logs          AuditLog[]
-  documents           Document[]
-  feedbackNotes       FeedbackNote[]
-  asesor              User           @relation("AsesorSales", fields: [asesor_id], references: [id])
+  id                       String                  @id @default(uuid())
+  dni_cliente              String
+  nombres_cliente          String
+  plaza                    String?
+  departamento             String?                 @default("LIMA")
+  convenio                 String?
+  maf_neto                 Float
+  estado                   String                  @default("POR INGRESAR")
+  fecha_filtro             DateTime?
+  fecha_ingreso            DateTime?               @default(now())
+  fecha_desembolso         DateTime?
+  estado_remesa            String?
+  carta_compra_deuda       DateTime?
+  monto_remesa             Float?
+  vencimiento_remesa       DateTime?
+  feedback                 String?
+  rcc_semaforo             String?
+  rcc_monto_deuda          Float?
+  rcc_ultima_act           DateTime?
+  rcc_calificacion         String?
+  reasignacion_estado      String?
+  reasignacion_de          String?
+  reasignacion_motivo      String?
+  reasignacion_por         String?
+  reasignacion_fecha       DateTime?
+  asesor_id                String
+  fecha_estado_desde       DateTime? // Timestamp de cuándo entró al estado actual
+  created_at               DateTime                @default(now())
+  updated_at               DateTime                @updatedAt
+  rcc_raw_data             String?
+  simulacion_cuota         Float? // Cuota mensual simulada
+  simulacion_tea           Float? // TEA de la simulación
+  simulacion_plazo         Int? // Plazo (meses) de la simulación
+  simulacion_monto         Float? // Monto de la simulación
+  simulacion_id            String? // ID de la simulación vinculada
+  expediente_instituciones ExpedienteInstitucion[]
+  expediente_bcp           ExpedienteBCP?
+  audit_logs               AuditLog[]
+  documents                Document[]
+  feedbackNotes            FeedbackNote[]
+  asesor                   User                    @relation("AsesorSales", fields: [asesor_id], references: [id])
 }
 
 model Document {
@@ -127,20 +153,65 @@ model FeedbackNote {
 }
 
 // ══════════════════════════════════════════════════
+// MÓDULO DIGITALIZACIÓN — ENVÍO A INSTITUCIONES
+// ══════════════════════════════════════════════════
+
+model ExpedienteInstitucion {
+  id              String    @id @default(uuid())
+  sale_id         String
+  institucion     String // CIA, SCTR, SIS, ESSALUD, etc.
+  estado          String    @default("PENDIENTE") // PENDIENTE, ENVIADO, RECIBIDO, RECHAZADO
+  fecha_envio     DateTime?
+  fecha_respuesta DateTime?
+  observaciones   String?
+  enviado_por     String? // user_id de quien registró el envío
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  sale    Sale  @relation(fields: [sale_id], references: [id], onDelete: Cascade)
+  usuario User? @relation(fields: [enviado_por], references: [id])
+
+  @@index([sale_id])
+  @@index([estado])
+}
+
+// ══════════════════════════════════════════════════
+// MÓDULO DIGITALIZACIÓN — EXPEDIENTE BCP
+// ══════════════════════════════════════════════════
+
+model ExpedienteBCP {
+  id                String    @id @default(uuid())
+  sale_id           String    @unique
+  nro_expediente    String? // Número de expediente asignado por BCP
+  agencia           String? // Agencia BCP de destino
+  estado            String    @default("EN_PREPARACION") // EN_PREPARACION, ENVIADO_BCP, EN_EVALUACION_BCP, APROBADO_BCP, RECHAZADO_BCP, DESEMBOLSADO_BCP
+  fecha_envio_bcp   DateTime?
+  fecha_respuesta   DateTime?
+  observaciones_bcp String? // Observaciones de BCP
+  checklist_json    String? // JSON con el checklist de documentos BCP (Título, Ficha, Liquidación, etc.)
+  creado_por        String? // user_id
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  sale    Sale  @relation(fields: [sale_id], references: [id], onDelete: Cascade)
+  usuario User? @relation(fields: [creado_por], references: [id])
+}
+
+// ══════════════════════════════════════════════════
 // MÓDULO SIMULADOR BCP
 // ══════════════════════════════════════════════════
 
 model Convenio {
-  id               String               @id @default(uuid())
-  nombre           String               @unique
-  periodo_gracia   Int                  @default(0) // Ej: 1 o 2
-  rci_default      Float                @default(0.3) // Ej: 0.3 = 30%
-  variables_reserva Float               @default(0.0) // Descuentos adicionales base
-  sector           String?              @default("Otros")
-  activo           Boolean              @default(true)
-  created_at       DateTime             @default(now())
-  updated_at       DateTime             @updatedAt
-  reglas           ConvenioCargoRegla[]
+  id                String               @id @default(uuid())
+  nombre            String               @unique
+  periodo_gracia    Int                  @default(0) // Ej: 1 o 2
+  rci_default       Float                @default(0.3) // Ej: 0.3 = 30%
+  variables_reserva Float                @default(0.0) // Descuentos adicionales base
+  sector            String?              @default("Otros")
+  activo            Boolean              @default(true)
+  created_at        DateTime             @default(now())
+  updated_at        DateTime             @updatedAt
+  reglas            ConvenioCargoRegla[]
 }
 
 model Cargo {
@@ -153,13 +224,13 @@ model Cargo {
 }
 
 model ConvenioCargoRegla {
-  id            String   @id @default(uuid())
-  convenio_id   String
-  cargo_id      String
-  rci_especifico Float   // El RCI exacto para esta combinación (ej: 0.45)
-  edad_maxima   Int?     // Ej: 55 para Sub Oficial PNP
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  id             String   @id @default(uuid())
+  convenio_id    String
+  cargo_id       String
+  rci_especifico Float // El RCI exacto para esta combinación (ej: 0.45)
+  edad_maxima    Int? // Ej: 55 para Sub Oficial PNP
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
 
   convenio Convenio @relation(fields: [convenio_id], references: [id], onDelete: Cascade)
   cargo    Cargo    @relation(fields: [cargo_id], references: [id], onDelete: Cascade)
@@ -168,26 +239,26 @@ model ConvenioCargoRegla {
 }
 
 model Simulacion {
-  id             String   @id @default(uuid())
-  user_id        String
-  dni_cliente    String?
-  convenio       String
-  cargo          String
+  id               String   @id @default(uuid())
+  user_id          String
+  dni_cliente      String?
+  convenio         String
+  cargo            String
   monto_solicitado Float
-  cuotas         Int
-  tea            Float
-  cuota_mensual  Float
-  capacidad_max  Float
-  ingreso_neto   Float
-  created_at     DateTime @default(now())
-  user           User     @relation(fields: [user_id], references: [id])
+  cuotas           Int
+  tea              Float
+  cuota_mensual    Float
+  capacidad_max    Float
+  ingreso_neto     Float
+  created_at       DateTime @default(now())
+  user             User     @relation(fields: [user_id], references: [id])
 }
 
 model ConfiguracionGlobal {
-  id                  String   @id @default(uuid())
-  clave               String   @unique // Ej: "TEA_DEFAULT", "COSTO_ENVIO_FISICO", "TASA_DESGRAVAMEN"
-  valor_numerico      Float?
-  valor_texto         String?
-  descripcion         String?
-  updated_at          DateTime @updatedAt
+  id             String   @id @default(uuid())
+  clave          String   @unique // Ej: "TEA_DEFAULT", "COSTO_ENVIO_FISICO", "TASA_DESGRAVAMEN"
+  valor_numerico Float?
+  valor_texto    String?
+  descripcion    String?
+  updated_at     DateTime @updatedAt
 }

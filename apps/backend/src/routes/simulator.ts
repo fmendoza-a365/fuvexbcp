@@ -7,6 +7,19 @@ const router = Router();
 const prisma = new PrismaClient();
 const SIMULATOR_ADMIN_ROLES = ['SUPERADMIN', 'GERENTE'];
 
+const requireSimulatorAdmin = (req: any, res: any) => {
+  if (!SIMULATOR_ADMIN_ROLES.includes(req.user.role)) {
+    res.status(403).json({ error: 'No tienes permisos para realizar esta accion' });
+    return false;
+  }
+  return true;
+};
+
+const toOptionalNumber = (value: any) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  return Number(value);
+};
+
 // GET /api/simulator/config
 router.get('/config', authMiddleware, async (req, res, next) => {
   try {
@@ -101,9 +114,7 @@ router.post('/save', authMiddleware, async (req: any, res, next) => {
 // PATCH /api/simulator/config - Update Global Variables
 router.patch('/config', authMiddleware, async (req: any, res, next) => {
   try {
-    if (!SIMULATOR_ADMIN_ROLES.includes(req.user.role)) {
-      return res.status(403).json({ error: 'No tienes permisos para realizar esta acción' });
-    }
+    if (!requireSimulatorAdmin(req, res)) return;
 
     const { updates } = req.body; // { TEA_DEFAULT: 0.12, COSTO_ENVIO_FISICO: 12 }
     
@@ -123,19 +134,19 @@ router.patch('/config', authMiddleware, async (req: any, res, next) => {
 // PATCH /api/simulator/convenios/:id - Update Individual Convenio
 router.patch('/convenios/:id', authMiddleware, async (req: any, res, next) => {
   try {
-    if (!SIMULATOR_ADMIN_ROLES.includes(req.user.role)) {
-      return res.status(403).json({ error: 'No tienes permisos para realizar esta acción' });
-    }
+    if (!requireSimulatorAdmin(req, res)) return;
 
     const { id } = req.params;
-    const { rci_default, periodo_gracia } = req.body;
+    const { rci_default, periodo_gracia, variables_reserva, activo } = req.body;
 
     const updated = await prisma.convenio.update({
       where: { id },
       data: { 
         rci_default: rci_default !== undefined ? Number(rci_default) : undefined,
         periodo_gracia: periodo_gracia !== undefined ? Number(periodo_gracia) : undefined,
-        sector: req.body.sector
+        variables_reserva: variables_reserva !== undefined ? Number(variables_reserva) : undefined,
+        sector: req.body.sector,
+        activo: typeof activo === 'boolean' ? activo : undefined
       }
     });
 
@@ -148,9 +159,7 @@ router.patch('/convenios/:id', authMiddleware, async (req: any, res, next) => {
 // POST /api/simulator/convenios - Create New Convenio
 router.post('/convenios', authMiddleware, async (req: any, res, next) => {
   try {
-    if (!SIMULATOR_ADMIN_ROLES.includes(req.user.role)) {
-      return res.status(403).json({ error: 'No tienes permisos para realizar esta acción' });
-    }
+    if (!requireSimulatorAdmin(req, res)) return;
 
     const { nombre, rci_default, periodo_gracia } = req.body;
     if (!nombre) return res.status(400).json({ error: 'El nombre del convenio es obligatorio' });
@@ -166,6 +175,120 @@ router.post('/convenios', authMiddleware, async (req: any, res, next) => {
     });
 
     res.status(201).json(newConvenio);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/simulator/cargos - Create or reactivate Cargo
+router.post('/cargos', authMiddleware, async (req: any, res, next) => {
+  try {
+    if (!requireSimulatorAdmin(req, res)) return;
+
+    const nombre = String(req.body.nombre || '').trim();
+    if (!nombre) return res.status(400).json({ error: 'El nombre del cargo es obligatorio' });
+
+    const cargo = await prisma.cargo.upsert({
+      where: { nombre },
+      update: { activo: true },
+      create: { nombre, activo: true }
+    });
+
+    res.status(201).json(cargo);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PATCH /api/simulator/cargos/:id - Update Cargo
+router.patch('/cargos/:id', authMiddleware, async (req: any, res, next) => {
+  try {
+    if (!requireSimulatorAdmin(req, res)) return;
+
+    const nombre = req.body.nombre !== undefined ? String(req.body.nombre).trim() : undefined;
+    if (nombre === '') return res.status(400).json({ error: 'El nombre del cargo no puede estar vacio' });
+
+    const cargo = await prisma.cargo.update({
+      where: { id: req.params.id },
+      data: {
+        nombre,
+        activo: typeof req.body.activo === 'boolean' ? req.body.activo : undefined
+      }
+    });
+
+    res.json(cargo);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/simulator/reglas - Create or update RCI for Convenio + Cargo
+router.post('/reglas', authMiddleware, async (req: any, res, next) => {
+  try {
+    if (!requireSimulatorAdmin(req, res)) return;
+
+    const { convenio_id, cargo_id } = req.body;
+    if (!convenio_id || !cargo_id) {
+      return res.status(400).json({ error: 'Convenio y cargo son obligatorios' });
+    }
+
+    const rci = Number(req.body.rci_especifico);
+    if (!Number.isFinite(rci) || rci <= 0) {
+      return res.status(400).json({ error: 'El RCI debe ser un numero mayor a 0' });
+    }
+
+    const edadMaxima = toOptionalNumber(req.body.edad_maxima);
+    if (edadMaxima !== undefined && !Number.isFinite(edadMaxima)) {
+      return res.status(400).json({ error: 'La edad maxima debe ser un numero valido' });
+    }
+    const regla = await prisma.convenioCargoRegla.upsert({
+      where: {
+        convenio_id_cargo_id: {
+          convenio_id,
+          cargo_id
+        }
+      },
+      update: {
+        rci_especifico: rci,
+        edad_maxima: edadMaxima ?? null
+      },
+      create: {
+        convenio_id,
+        cargo_id,
+        rci_especifico: rci,
+        edad_maxima: edadMaxima ?? null
+      }
+    });
+
+    res.status(201).json(regla);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PATCH /api/simulator/reglas/:id - Update RCI rule
+router.patch('/reglas/:id', authMiddleware, async (req: any, res, next) => {
+  try {
+    if (!requireSimulatorAdmin(req, res)) return;
+
+    const rci = toOptionalNumber(req.body.rci_especifico);
+    if (rci !== undefined && (!Number.isFinite(rci) || rci <= 0)) {
+      return res.status(400).json({ error: 'El RCI debe ser un numero mayor a 0' });
+    }
+
+    const edadMaxima = toOptionalNumber(req.body.edad_maxima);
+    if (edadMaxima !== undefined && !Number.isFinite(edadMaxima)) {
+      return res.status(400).json({ error: 'La edad maxima debe ser un numero valido' });
+    }
+    const regla = await prisma.convenioCargoRegla.update({
+      where: { id: req.params.id },
+      data: {
+        rci_especifico: rci,
+        edad_maxima: req.body.edad_maxima === undefined ? undefined : (edadMaxima ?? null)
+      }
+    });
+
+    res.json(regla);
   } catch (error) {
     next(error);
   }

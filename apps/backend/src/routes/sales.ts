@@ -6,7 +6,7 @@ import { canAccessSale, getSalesFilter } from '../services/hierarchy';
 import { upload } from '../middleware/upload';
 import { getDniInfo } from '../services/dni';
 import { sendPushNotification } from '../services/push';
-import { validateCreateSale, validateEstadoChange, filterProtectedFields } from '../middleware/validate';
+import { validateCreateSale, validateEstadoChange, filterProtectedFields, validateTransition, getValidTransitions, VALID_ESTADOS, CATALOGO_MOTIVOS, getEstadoLabel } from '../middleware/validate';
 import { resolveExpedienteDocumentPath } from '../services/storage';
 
 const router = Router();
@@ -60,7 +60,18 @@ router.get('/', authMiddleware, async (req: any, res: any) => {
         where: whereClause,
         include: {
           asesor: { select: { username: true, nombre: true } },
-          documents: true
+          documents: true,
+          feedbackNotes: {
+            include: { user: { select: { username: true, nombre: true } } },
+            orderBy: { created_at: 'desc' },
+            take: 3
+          },
+          audit_logs: {
+            where: { detalles: { not: null } },
+            include: { user: { select: { username: true, nombre: true } } },
+            orderBy: { created_at: 'desc' },
+            take: 3
+          }
         },
         orderBy: { created_at: 'desc' },
         skip,
@@ -80,6 +91,7 @@ router.get('/', authMiddleware, async (req: any, res: any) => {
 });
 
 // GET reasignaciones pendientes (Solo JEFE_ZONAL y GERENTE)
+// IMPORTANTE: Esta ruta DEBE ir ANTES de /:id para que Express no la capture como id
 router.get('/reasignaciones', authMiddleware, authorize('JEFE_ZONAL', 'GERENTE', 'SUPERADMIN'), async (req: any, res: any) => {
   try {
     // If JEFE_ZONAL, filter to their zone only
@@ -122,6 +134,68 @@ router.get('/reasignaciones', authMiddleware, authorize('JEFE_ZONAL', 'GERENTE',
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al obtener reasignaciones' });
+  }
+});
+
+// ══════════════════════════════════════════════════
+// GET /api/sales/motivos/:estado
+// Catálogo de motivos frecuentes para un estado destino
+// IMPORTANTE: Debe ir ANTES de /:id para evitar conflicto de parámetros
+// ══════════════════════════════════════════════════
+router.get('/motivos/:estado', authMiddleware, (req: any, res: any) => {
+  try {
+    const { estado } = req.params;
+    const catalogo = (CATALOGO_MOTIVOS as any)[estado];
+    if (!catalogo) {
+      return res.json({ estado, motivos: [] });
+    }
+    res.json({ estado, motivos: catalogo });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al obtener catálogo de motivos' });
+  }
+});
+
+// GET DNI Info (Age, Birthdate)
+// IMPORTANTE: Debe ir ANTES de /:id para evitar conflicto de parámetros
+router.get('/dni/:dni', authMiddleware, async (req: any, res: any) => {
+  try {
+    const { dni } = req.params;
+    const info = await getDniInfo(dni);
+    res.json(info);
+  } catch (error: any) {
+    res.status(404).json({ error: error.message });
+  }
+});
+
+// GET single sale by ID (with access control)
+router.get('/:id', authMiddleware, async (req: any, res: any) => {
+  try {
+    const sale = await prisma.sale.findUnique({
+      where: { id: req.params.id },
+      include: {
+        asesor: { select: { id: true, username: true, nombre: true, role: true } },
+        documents: true,
+        feedbackNotes: {
+          include: { user: { select: { id: true, username: true, nombre: true, role: true } } },
+          orderBy: { created_at: 'desc' },
+          take: 10
+        },
+        audit_logs: {
+          where: { detalles: { not: null } },
+          include: { user: { select: { id: true, username: true, nombre: true, role: true } } },
+          orderBy: { created_at: 'desc' },
+          take: 10
+        }
+      }
+    });
+
+    if (!(await requireSaleAccess(req, res, sale))) return;
+
+    res.json(saleResponse(sale));
+  } catch (error) {
+    console.error('Error fetching sale:', error);
+    res.status(500).json({ error: 'Error al obtener el expediente' });
   }
 });
 
@@ -272,20 +346,84 @@ router.put('/:id/reasignacion', authMiddleware, authorize('JEFE_ZONAL', 'GERENTE
   }
 });
 
-// Update state machine (SUPERVISOR, JEFE_ZONAL, GERENTE, BACK_OFFICE, SUPERADMIN)
-router.put('/:id/estado', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 'GERENTE', 'BACK_OFFICE', 'SUPERADMIN'), validateEstadoChange, async (req: any, res: any) => {
+// Update state machine — con validación de StateMachine por rol (SUPERVISOR, JEFE_ZONAL, GERENTE, BACK_OFFICE, SUPERADMIN)
+router.put('/:id/estado', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 'GERENTE', 'BACK_OFFICE', 'SUPERADMIN', 'VENDEDOR'), validateEstadoChange, async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    const { nuevo_estado, detalles } = req.body;
+    const { nuevo_estado, detalles, motivo } = req.body;
 
     const sale = await prisma.sale.findUnique({ where: { id } });
     if (!(await requireSaleAccess(req, res, sale))) return;
     if (!sale) return;
 
+    // ── StateMachine: Validar transición ────────────────
+    const validation = validateTransition(sale.estado, nuevo_estado, req.user.role, motivo || detalles);
+    if (!validation.valid) {
+      return res.status(422).json({
+        error: validation.error,
+        estado_actual: sale.estado,
+        transiciones_validas: getValidTransitions(sale.estado, req.user.role).map(t => ({
+          destino: t.to,
+          descripcion: t.label,
+          requiere_motivo: t.requiresMotivo
+        }))
+      });
+    }
+
+    // ── FASE 3.1: Validar documentos obligatorios antes de avanzar ──
+    const estadosRequierenDocs = ['EN PROCESO', 'PENDIENTE_DOCUMENTAR', 'PENDIENTE_INSTITUCIONES', 'PENDIENTE_REMESA', 'PENDIENTE_BACK_OFFICE'];
+    const estadosAvanzados = ['APROBADA', 'CONFORMIDAD', 'DESEMBOLSADO', 'EN_EVALUACION_BCP'];
+    if (estadosAvanzados.includes(nuevo_estado) || (estadosRequierenDocs.includes(sale.estado) && nuevo_estado !== 'OBSERVADA' && nuevo_estado !== 'RECHAZADO' && nuevo_estado !== 'RECHAZADA_POR_SCORE' && nuevo_estado !== 'BOLETA_NO_CALIFICA')) {
+      // Buscar documentos requeridos para este convenio
+      const convenio = sale.convenio || 'GENERIC';
+      const docsRequeridos = await prisma.documentoRequerido.findMany({
+        where: {
+          activo: true,
+          obligatorio: true,
+          OR: [
+            { convenio: convenio },
+            { convenio: 'GENERIC' }
+          ]
+        }
+      });
+
+      if (docsRequeridos.length > 0) {
+        // Buscar documentos ya subidos (no destituídos)
+        const docsSubidos = await prisma.document.findMany({
+          where: {
+            sale_id: id,
+            OR: [
+              { tipo_documento: { not: 'DESTITUIDO' } }
+            ]
+          }
+        });
+
+        // Marcar destituídos
+        const docsValidos = docsSubidos.filter(d => (d as any).destituido !== true);
+        const tiposSubidos = new Set(docsValidos.map(d => d.tipo_documento));
+
+        const docsFaltantes = docsRequeridos
+          .filter(dr => !tiposSubidos.has(dr.tipo_doc))
+          .map(dr => ({ tipo: dr.tipo_doc, nombre: dr.nombre }));
+
+        if (docsFaltantes.length > 0) {
+          return res.status(422).json({
+            error: 'Faltan documentos obligatorios',
+            documentos_faltantes: docsFaltantes,
+            total_faltantes: docsFaltantes.length,
+            convenio: convenio
+          });
+        }
+      }
+    }
+
     const updatedSale = await prisma.$transaction(async (tx) => {
       const updated = await tx.sale.update({
         where: { id },
-        data: { estado: nuevo_estado }
+        data: {
+          estado: nuevo_estado,
+          fecha_estado_desde: new Date() // Actualizar timestamp del estado
+        }
       });
 
       await tx.auditLog.create({
@@ -295,7 +433,7 @@ router.put('/:id/estado', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 
           accion: "Cambio de Estado",
           estado_anterior: sale.estado,
           estado_nuevo: nuevo_estado,
-          detalles: detalles || `Estado cambiado a ${nuevo_estado}`
+          detalles: motivo || detalles || `Estado cambiado a ${nuevo_estado}`
         }
       });
 
@@ -318,6 +456,31 @@ router.put('/:id/estado', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al actualizar estado' });
+  }
+});
+
+// GET /api/sales/:id/transiciones — Retorna las transiciones válidas para el usuario actual
+router.get('/:id/transiciones', authMiddleware, async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const sale = await prisma.sale.findUnique({ where: { id } });
+    if (!(await requireSaleAccess(req, res, sale))) return;
+    if (!sale) return;
+
+    const transiciones = getValidTransitions(sale.estado, req.user.role);
+
+    res.json({
+      estado_actual: sale.estado,
+      rol_usuario: req.user.role,
+      transiciones_disponibles: transiciones.map(t => ({
+        destino: t.to,
+        descripcion: t.label,
+        requiere_motivo: t.requiresMotivo
+      }))
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al obtener transiciones' });
   }
 });
 
@@ -443,6 +606,111 @@ router.get('/:id/documentos/:documentId/download', authMiddleware, async (req: a
   }
 });
 
+// ═══════════════════════════════════════════════════
+// PATCH /api/sales/:id/documentos/:docId/destituir
+// Marcar un documento como destituído (inválido)
+// Solo SUPERVISOR, JEFE_ZONAL, GERENTE, SUPERADMIN
+// ═══════════════════════════════════════════════════
+router.patch('/:id/documentos/:docId/destituir', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 'GERENTE', 'SUPERADMIN'), async (req: any, res: any) => {
+  try {
+    const { id, docId } = req.params;
+    const { motivo } = req.body;
+
+    const sale = await prisma.sale.findUnique({ where: { id } });
+    if (!(await requireSaleAccess(req, res, sale))) return;
+    if (!sale) return;
+
+    const doc = await prisma.document.findFirst({ where: { id: docId, sale_id: id } });
+    if (!doc) {
+      return res.status(404).json({ error: 'Documento no encontrado' });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedDoc = await tx.document.update({
+        where: { id: docId },
+        data: {
+          tipo_documento: 'DESTITUIDO',
+          // Guardamos el tipo original en file_path si no existe campo mejor
+        } as any
+      });
+
+      await tx.auditLog.create({
+        data: {
+          sale_id: id,
+          user_id: req.user.id,
+          accion: "Destitución de Documento",
+          detalles: `Documento ${doc.tipo_documento} (ID: ${docId}) destituído. Motivo: ${motivo || 'No especificado'}`
+        }
+      });
+
+      return updatedDoc;
+    });
+
+    res.json({ message: 'Documento destituído', documento: updated });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al destituir documento' });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// GET /api/sales/:id/documentos/checklist
+// Estado de documentos requeridos vs subidos para un expediente
+// ═══════════════════════════════════════════════════
+router.get('/:id/documentos/checklist', authMiddleware, async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const sale = await prisma.sale.findUnique({
+      where: { id },
+      include: { documents: true }
+    });
+    if (!(await requireSaleAccess(req, res, sale))) return;
+    if (!sale) return;
+
+    const convenio = sale.convenio || 'GENERIC';
+    const docsRequeridos = await prisma.documentoRequerido.findMany({
+      where: {
+        activo: true,
+        OR: [
+          { convenio: convenio },
+          { convenio: 'GENERIC' }
+        ]
+      },
+      orderBy: { orden: 'asc' }
+    });
+
+    const docsSubidos = sale.documents.filter((d: any) => d.tipo_documento !== 'DESTITUIDO');
+    const tiposSubidos = new Map<string, number>();
+    docsSubidos.forEach((d: any) => {
+      tiposSubidos.set(d.tipo_documento, (tiposSubidos.get(d.tipo_documento) || 0) + 1);
+    });
+
+    const checklist = docsRequeridos.map(dr => ({
+      tipo: dr.tipo_doc,
+      nombre: dr.nombre,
+      obligatorio: dr.obligatorio,
+      orden: dr.orden,
+      subido: tiposSubidos.has(dr.tipo_doc),
+      cantidad: tiposSubidos.get(dr.tipo_doc) || 0
+    }));
+
+    const total = checklist.length;
+    const completados = checklist.filter(c => c.subido).length;
+    const obligatoriosFaltantes = checklist.filter(c => c.obligatorio && !c.subido);
+
+    res.json({
+      sale_id: id,
+      convenio,
+      progreso: { total, completados, porcentaje: total > 0 ? Math.round((completados / total) * 100) : 0 },
+      obligatorios_faltantes: obligatoriosFaltantes.length,
+      checklist
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al obtener checklist' });
+  }
+});
+
 // Delete Sale (Solo GERENTE y SUPERADMIN)
 router.delete('/:id', authMiddleware, authorize('GERENTE', 'SUPERADMIN'), async (req: any, res: any) => {
   try {
@@ -495,14 +763,174 @@ router.post('/:id/feedback', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL
   }
 });
 
-// GET DNI Info (Age, Birthdate)
-router.get('/dni/:dni', authMiddleware, async (req: any, res: any) => {
+// ══════════════════════════════════════════════════
+// GET /api/sales/:id/next-steps
+// Pasos guiados: qué hacer siguiente según el estado actual y rol
+// ══════════════════════════════════════════════════
+router.get('/:id/next-steps', authMiddleware, async (req: any, res: any) => {
   try {
-    const { dni } = req.params;
-    const info = await getDniInfo(dni);
-    res.json(info);
-  } catch (error: any) {
-    res.status(404).json({ error: error.message });
+    const { id } = req.params;
+    const sale = await prisma.sale.findUnique({
+      where: { id },
+      include: {
+        documents: true,
+        expediente_bcp: true,
+      }
+    });
+    if (!(await requireSaleAccess(req, res, sale))) return;
+    if (!sale) return;
+
+    const transiciones = getValidTransitions(sale.estado, req.user.role);
+    const diasEnEstado = (sale as any).fecha_estado_desde
+      ? Math.floor((Date.now() - new Date((sale as any).fecha_estado_desde).getTime()) / 86400000)
+      : null;
+
+    // Determinar acciones guiadas según estado
+    let acciones: { icono: string; texto: string; urgente: boolean }[] = [];
+    let mensaje = '';
+
+    switch (sale.estado) {
+      case 'POR INGRESAR':
+        mensaje = 'Nuevo prospecto. Inicie el trámite cuando tenga la documentación lista.';
+        acciones = [
+          { icono: '📋', texto: 'Verificar DNI y datos del cliente', urgente: false },
+          { icono: '📄', texto: 'Solicitar boletas de pago y certificado de trabajo', urgente: false },
+          { icono: '▶️', texto: 'Cambiar a "En Proceso" cuando inicie evaluación', urgente: false },
+        ];
+        break;
+
+      case 'EN PROCESO':
+        mensaje = 'Expediente en evaluación. Revise documentos y RCC antes de aprobar.';
+        acciones = [
+          { icono: '🔍', texto: 'Verificar RCC y score crediticio', urgente: true },
+          { icono: '📎', texto: 'Confirmar que todos los documentos estén cargados', urgente: true },
+          { icono: '✅', texto: 'Aprobar si todo está en orden', urgente: false },
+        ];
+        if (diasEnEstado !== null && diasEnEstado > 3) {
+          acciones.unshift({ icono: '⚠️', texto: `Lleva ${diasEnEstado} días en este estado — priorizar`, urgente: true });
+        }
+        break;
+
+      case 'OBSERVADA':
+        mensaje = 'El expediente tiene observaciones. El vendedor debe corregirlas.';
+        acciones = [
+          { icono: '📝', texto: 'Revisar las observaciones detalladas', urgente: true },
+          { icono: '📞', texto: 'Contactar al vendedor para correcciones', urgente: true },
+        ];
+        break;
+
+      case 'SUBSANADA':
+        mensaje = 'El vendedor subsanó las observaciones. Valide las correcciones.';
+        acciones = [
+          { icono: '🔎', texto: 'Revisar documentos corregidos', urgente: true },
+          { icono: '✅', texto: 'Enviar a "En Proceso" si están correctos', urgente: false },
+          { icono: '↩️', texto: 'Devolver a "Observada" si faltan correcciones', urgente: false },
+        ];
+        break;
+
+      case 'APROBADA':
+        mensaje = 'Expediente aprobado. Proceda con el desembolso.';
+        acciones = [
+          { icono: '💰', texto: 'Registrar fecha y monto de desembolso', urgente: true },
+          { icono: '🏦', texto: 'Confirmar desembolso con BCP', urgente: false },
+        ];
+        break;
+
+      case 'PENDIENTE_DOCUMENTAR':
+        mensaje = 'Falta documentación del cliente. El vendedor debe recolectarla.';
+        acciones = [
+          { icono: '📋', texto: 'Indicar qué documentos faltan', urgente: true },
+          { icono: '📞', texto: 'Coordinar con el cliente para entrega', urgente: true },
+        ];
+        break;
+
+      case 'PENDIENTE_INSTITUCIONES':
+        mensaje = 'Esperando respuesta de instituciones (RENIEC, SUNAT, ESSALUD, etc.).';
+        acciones = [
+          { icono: '🏛️', texto: 'Dar seguimiento a consultas institucionales', urgente: false },
+          { icono: '⏰', texto: 'Verificar plazos de respuesta', urgente: diasEnEstado !== null && diasEnEstado > 5 },
+        ];
+        break;
+
+      case 'PENDIENTE_REMESA':
+        mensaje = 'Expediente aprobado. Esperando documentos físicos (remesa).';
+        acciones = [
+          { icono: '📦', texto: 'Coordinar recepción de remesa', urgente: true },
+          { icono: '✅', texto: 'Registrar recepción y pasar a Back Office', urgente: false },
+        ];
+        break;
+
+      case 'PENDIENTE_BACK_OFFICE':
+        mensaje = 'Expediente en manos de Back Office para envío a BCP.';
+        acciones = [
+          { icono: '📑', texto: 'Verificar checklist de documentos BCP', urgente: true },
+          { icono: '📤', texto: 'Enviar expediente a BCP', urgente: false },
+        ];
+        break;
+
+      case 'EN_EVALUACION_BCP':
+        mensaje = 'Expediente en evaluación por BCP. Esperando respuesta.';
+        acciones = [
+          { icono: '🏦', texto: 'Dar seguimiento con BCP', urgente: diasEnEstado !== null && diasEnEstado > 7 },
+          { icono: '📞', texto: 'Contactar agencia BCP si hay demora', urgente: diasEnEstado !== null && diasEnEstado > 14 },
+        ];
+        break;
+
+      case 'OBSERVADO_BACK':
+        mensaje = 'Back Office detectó un error. Corrija antes de reenviar.';
+        acciones = [
+          { icono: '🔍', texto: 'Revisar observación de Back Office', urgente: true },
+          { icono: '✏️', texto: 'Corregir y devolver a preparación', urgente: true },
+        ];
+        break;
+
+      case 'RECHAZADO':
+        mensaje = 'Expediente rechazado. Considere reasignar o reabrir.';
+        acciones = [
+          { icono: '📊', texto: 'Revisar motivo del rechazo', urgente: false },
+          { icono: '🔄', texto: 'Evaluar si se puede reabrir (solo GERENTE/SUPERADMIN)', urgente: false },
+        ];
+        break;
+
+      case 'RECHAZADA_POR_SCORE':
+        mensaje = 'BCP rechazó por score crediticio.';
+        acciones = [
+          { icono: '📊', texto: 'Verificar score y calificación', urgente: false },
+          { icono: '📝', texto: 'Evaluar nueva documentación que respalde', urgente: false },
+        ];
+        break;
+
+      case 'BOLETA_NO_CALIFICA':
+        mensaje = 'La boleta del cliente no califica para el convenio seleccionado.';
+        acciones = [
+          { icono: '🔄', texto: 'Evaluar otro convenio o tipo de contratación', urgente: false },
+          { icono: '📋', texto: 'Solicitar nueva boleta si aplica', urgente: false },
+        ];
+        break;
+
+      default:
+        mensaje = `Estado actual: ${getEstadoLabel(sale.estado)}`;
+        break;
+    }
+
+    res.json({
+      estado_actual: sale.estado,
+      estado_label: getEstadoLabel(sale.estado),
+      rol_usuario: req.user.role,
+      dias_en_estado: diasEnEstado,
+      mensaje,
+      acciones,
+      transiciones_disponibles: transiciones.map(t => ({
+        destino: t.to,
+        destino_label: getEstadoLabel(t.to),
+        descripcion: t.label,
+        requiere_motivo: t.requiresMotivo,
+        motivos_disponibles: (CATALOGO_MOTIVOS as any)[t.to] || []
+      }))
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al obtener pasos guiados' });
   }
 });
 

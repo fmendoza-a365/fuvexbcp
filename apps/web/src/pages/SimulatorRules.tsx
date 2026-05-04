@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ShieldCheck, Save, Edit2, X, Check, Plus } from 'lucide-react';
 import axios from 'axios';
 
@@ -11,13 +11,48 @@ export default function SimulatorRules() {
   const [convenioForm, setConvenioForm] = useState({ rci: 0, gracia: 0, sector: '' });
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [newConvenioForm, setNewConvenioForm] = useState({ nombre: '', rci: 50, gracia: 1, sector: 'Otros' });
+  const [newCargoForm, setNewCargoForm] = useState({ nombre: '' });
+  const [editingCargoId, setEditingCargoId] = useState<string | null>(null);
+  const [cargoForm, setCargoForm] = useState({ nombre: '' });
+  const [selectedConvenioId, setSelectedConvenioId] = useState('');
+  const [newRuleForm, setNewRuleForm] = useState({ cargo_id: '', rci: 50, edad: '' });
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [ruleForm, setRuleForm] = useState({ rci: 50, edad: '' });
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const isAdmin = ['SUPERADMIN', 'GERENTE'].includes(user.role);
 
+  const selectedConvenio = useMemo(() => (
+    config?.convenios?.find((item: any) => item.id === selectedConvenioId) || null
+  ), [config, selectedConvenioId]);
+
+  const cargosById = useMemo(() => {
+    const map = new Map<string, any>();
+    (config?.cargos || []).forEach((cargo: any) => map.set(cargo.id, cargo));
+    return map;
+  }, [config]);
+
+  const reglasForSelectedConvenio = useMemo(() => (
+    (config?.reglas || []).filter((regla: any) => regla.convenio_id === selectedConvenioId)
+  ), [config, selectedConvenioId]);
+
+  const assignedCargoIds = useMemo(() => new Set(reglasForSelectedConvenio.map((regla: any) => regla.cargo_id)), [reglasForSelectedConvenio]);
+
+  const availableCargosForRule = useMemo(() => (
+    (config?.cargos || []).filter((cargo: any) => !assignedCargoIds.has(cargo.id))
+  ), [config, assignedCargoIds]);
+
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (!selectedConvenio) return;
+    setNewRuleForm(prev => ({
+      ...prev,
+      rci: Number((selectedConvenio.rci_default * 100).toFixed(0))
+    }));
+  }, [selectedConvenioId]);
 
   const fetchData = async () => {
     try {
@@ -26,6 +61,9 @@ export default function SimulatorRules() {
         headers: { Authorization: `Bearer ${token}` }
       });
       setConfig(res.data);
+      if (!selectedConvenioId && res.data.convenios?.[0]?.id) {
+        setSelectedConvenioId(res.data.convenios[0].id);
+      }
       setGlobalForm({
         tea: Number((res.data.configuracion?.TEA_DEFAULT * 100).toFixed(2)),
         costo: res.data.configuracion?.COSTO_ENVIO_FISICO
@@ -89,6 +127,74 @@ export default function SimulatorRules() {
       fetchData();
     } catch {
       alert('Error creando convenio');
+    }
+  };
+
+  const handleCreateCargo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post('/api/simulator/cargos', {
+        nombre: newCargoForm.nombre
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setNewCargoForm({ nombre: '' });
+      fetchData();
+    } catch {
+      alert('Error creando cargo');
+    }
+  };
+
+  const handleUpdateCargo = async (id: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.patch(`/api/simulator/cargos/${id}`, {
+        nombre: cargoForm.nombre
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setEditingCargoId(null);
+      fetchData();
+    } catch {
+      alert('Error actualizando cargo');
+    }
+  };
+
+  const handleCreateRule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedConvenioId || !newRuleForm.cargo_id) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post('/api/simulator/reglas', {
+        convenio_id: selectedConvenioId,
+        cargo_id: newRuleForm.cargo_id,
+        rci_especifico: newRuleForm.rci / 100,
+        edad_maxima: newRuleForm.edad || null
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setNewRuleForm({ cargo_id: '', rci: selectedConvenio ? Number((selectedConvenio.rci_default * 100).toFixed(0)) : 50, edad: '' });
+      fetchData();
+    } catch {
+      alert('Error guardando regla de RCI');
+    }
+  };
+
+  const handleUpdateRule = async (id: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.patch(`/api/simulator/reglas/${id}`, {
+        rci_especifico: ruleForm.rci / 100,
+        edad_maxima: ruleForm.edad || null
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setEditingRuleId(null);
+      fetchData();
+    } catch {
+      alert('Error actualizando regla de RCI');
     }
   };
 
@@ -204,6 +310,15 @@ export default function SimulatorRules() {
                     {editingConvenioId === c.id ? (
                       <div className="mt-3 space-y-3">
                         <div>
+                          <label className="text-[8px] font-black text-text-500 uppercase block mb-1">RCI Base (%)</label>
+                          <input
+                            type="number"
+                            className="w-24 bg-surface-50 border-none rounded-lg py-1 px-2 text-[11px] font-bold outline-none focus:ring-1 focus:ring-[var(--color-bcp-blue)]"
+                            value={convenioForm.rci}
+                            onChange={e => setConvenioForm({...convenioForm, rci: Number(e.target.value)})}
+                          />
+                        </div>
+                        <div>
                           <label className="text-[8px] font-black text-text-500 uppercase block mb-1">Periodo Gracia</label>
                           <input 
                             type="number" 
@@ -273,6 +388,209 @@ export default function SimulatorRules() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[0.85fr_1.15fr] gap-8">
+        <div className="premium-card">
+          <div className="flex items-start justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                <div className="w-1.5 h-6 bg-[var(--color-bcp-blue)] rounded-full"></div>
+                Cargos ({config?.cargos?.length ?? 0})
+              </h2>
+              <p className="text-xs font-bold text-text-700 mt-2">Catalogo editable usado por la calculadora.</p>
+            </div>
+          </div>
+
+          {isAdmin && (
+            <form onSubmit={handleCreateCargo} className="flex gap-3 mb-5">
+              <input
+                type="text"
+                required
+                placeholder="Nuevo cargo"
+                className="field-input flex-1"
+                value={newCargoForm.nombre}
+                onChange={e => setNewCargoForm({ nombre: e.target.value })}
+              />
+              <button type="submit" className="action-button-primary">
+                <Plus size={16} /> Agregar
+              </button>
+            </form>
+          )}
+
+          <div className="max-h-[380px] overflow-y-auto custom-scrollbar space-y-2 pr-1">
+            {(config?.cargos || []).map((cargo: any) => (
+              <div key={cargo.id} className="surface-card p-3 flex items-center justify-between gap-3">
+                {editingCargoId === cargo.id ? (
+                  <>
+                    <input
+                      className="field-input flex-1"
+                      value={cargoForm.nombre}
+                      onChange={e => setCargoForm({ nombre: e.target.value })}
+                    />
+                    <button onClick={() => setEditingCargoId(null)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg" type="button">
+                      <X size={15} />
+                    </button>
+                    <button onClick={() => handleUpdateCargo(cargo.id)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg" type="button">
+                      <Check size={15} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <div className="text-xs font-black uppercase text-text-900">{cargo.nombre}</div>
+                      <div className="text-[9px] font-bold uppercase text-text-500">{cargo.activo ? 'Activo' : 'Inactivo'}</div>
+                    </div>
+                    {isAdmin && (
+                      <button
+                        onClick={() => {
+                          setEditingCargoId(cargo.id);
+                          setCargoForm({ nombre: cargo.nombre });
+                        }}
+                        className="p-2 text-text-500 hover:bg-surface-100 rounded-lg"
+                        type="button"
+                      >
+                        <Edit2 size={15} />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="premium-card">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                <div className="w-1.5 h-6 bg-[var(--color-bcp-orange)] rounded-full"></div>
+                RCI por Convenio y Cargo
+              </h2>
+              <p className="text-xs font-bold text-text-700 mt-2">Estas reglas tienen prioridad sobre el RCI base del convenio.</p>
+            </div>
+            <select
+              className="field-input lg:w-72"
+              value={selectedConvenioId}
+              onChange={e => setSelectedConvenioId(e.target.value)}
+            >
+              {(config?.convenios || []).map((convenio: any) => (
+                <option key={convenio.id} value={convenio.id}>{convenio.nombre}</option>
+              ))}
+            </select>
+          </div>
+
+          {isAdmin && selectedConvenioId && (
+            <form onSubmit={handleCreateRule} className="filter-panel grid-cols-1 md:grid-cols-[1fr_120px_120px_auto] mb-5">
+              <select
+                required
+                className="field-input"
+                value={newRuleForm.cargo_id}
+                onChange={e => setNewRuleForm({ ...newRuleForm, cargo_id: e.target.value })}
+              >
+                <option value="">Agregar cargo al convenio</option>
+                {availableCargosForRule.map((cargo: any) => (
+                  <option key={cargo.id} value={cargo.id}>{cargo.nombre}</option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min="1"
+                step="0.1"
+                className="field-input"
+                value={newRuleForm.rci}
+                onChange={e => setNewRuleForm({ ...newRuleForm, rci: Number(e.target.value) })}
+                placeholder="RCI %"
+              />
+              <input
+                type="number"
+                min="18"
+                className="field-input"
+                value={newRuleForm.edad}
+                onChange={e => setNewRuleForm({ ...newRuleForm, edad: e.target.value })}
+                placeholder="Edad max."
+              />
+              <button type="submit" className="action-button-primary justify-center">
+                <Plus size={16} /> Vincular
+              </button>
+            </form>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="data-table-header">
+                  <th className="px-4 py-3">Cargo</th>
+                  <th className="px-4 py-3">RCI</th>
+                  <th className="px-4 py-3">Edad Max.</th>
+                  <th className="px-4 py-3 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reglasForSelectedConvenio.map((regla: any) => {
+                  const cargo = cargosById.get(regla.cargo_id);
+                  const isEditing = editingRuleId === regla.id;
+                  return (
+                    <tr key={regla.id} className="data-table-row">
+                      <td className="px-4 py-3 text-xs font-black uppercase text-text-900">{cargo?.nombre || 'Cargo no encontrado'}</td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input className="field-input w-24" type="number" value={ruleForm.rci} onChange={e => setRuleForm({ ...ruleForm, rci: Number(e.target.value) })} />
+                        ) : (
+                          <span className="status-pill bg-orange-50 border-orange-100 text-[var(--color-bcp-orange)]">{(regla.rci_especifico * 100).toFixed(1)}%</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input className="field-input w-24" type="number" value={ruleForm.edad} onChange={e => setRuleForm({ ...ruleForm, edad: e.target.value })} />
+                        ) : (
+                          <span className="text-xs font-bold text-text-700">{regla.edad_maxima || '-'}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2">
+                          {isAdmin && (
+                            isEditing ? (
+                              <>
+                                <button onClick={() => setEditingRuleId(null)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg" type="button">
+                                  <X size={15} />
+                                </button>
+                                <button onClick={() => handleUpdateRule(regla.id)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg" type="button">
+                                  <Check size={15} />
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setEditingRuleId(regla.id);
+                                  setRuleForm({
+                                    rci: Number((regla.rci_especifico * 100).toFixed(1)),
+                                    edad: regla.edad_maxima ? String(regla.edad_maxima) : ''
+                                  });
+                                }}
+                                className="p-2 text-text-500 hover:bg-surface-100 rounded-lg"
+                                type="button"
+                              >
+                                <Edit2 size={15} />
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {reglasForSelectedConvenio.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="p-10 text-center text-xs font-bold uppercase text-text-700">
+                      Este convenio todavia no tiene cargos vinculados.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

@@ -14,6 +14,8 @@ const GoalPlanning = lazy(() => import('./pages/GoalPlanning'));
 const DniSearch = lazy(() => import('./pages/DniSearch'));
 const Simulator = lazy(() => import('./pages/Simulator'));
 const SimulatorRules = lazy(() => import('./pages/SimulatorRules'));
+const Kanban = lazy(() => import('./pages/Kanban'));
+const Digitalizacion = lazy(() => import('./pages/Digitalizacion'));
 
 // Componente de carga
 const PageLoader = () => (
@@ -47,6 +49,9 @@ function App() {
             <Route path="metas" element={<GoalPlanning />} />
             <Route path="simulador" element={<Simulator />} />
             <Route path="simulador-reglas" element={<SimulatorRules />} />
+            <Route path="kanban" element={<Kanban />} />
+            <Route path="funnel" element={<Navigate to="/app/dashboard" replace />} />
+            <Route path="digitalizacion" element={<Digitalizacion />} />
             <Route path="reniec" element={<DniSearch />} />
             <Route path="usuarios" element={<UserManagement />} />
             <Route path="zonas" element={<ZoneManagement />} />

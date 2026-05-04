@@ -114,9 +114,7 @@ docker-compose up --build
 
 # O usar el script de inicio
 # Windows:
-INICIAR_SISTEMA.bat
-# Linux/Mac:
-./start-fuvex.sh
+"Iniciar Fuvex.bat"
 ```
 
 ---
@@ -277,18 +275,3 @@ docker-compose down
 |---------|-------------|
 | `npm run dev` | Iniciar backend en modo desarrollo |
 | `npm run build` | Compilar TypeScript |
-| `npm run start` | Iniciar backend en producción |
-| `npx prisma migrate dev` | Ejecutar migraciones |
-| `npx prisma studio` | Abrir Prisma Studio (GUI de BD) |
-| `npx ts-node src/seed.ts` | Seed de datos base |
-| `npx ts-node src/simulator_seed.ts` | Seed del simulador BCP |
-
----
-
-## 📄 Licencia
-
-Proyecto privado — Banco de Crédito del Perú (BCP).
-
----
-
-*Desarrollado por A365 — 2026*

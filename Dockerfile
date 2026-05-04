@@ -31,6 +31,7 @@ COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 COPY --from=builder /app/apps/backend/package.json ./apps/backend/
 COPY --from=builder /app/apps/backend/prisma ./apps/backend/prisma
 COPY --from=builder /app/apps/web/dist ./apps/web/dist
+COPY --from=builder /app/Recursos ./Recursos
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 
@@ -42,5 +43,5 @@ USER expressjs
 
 EXPOSE 3001
 
-# Ejecutar migraciones antes de levantar el backend.
-CMD ["sh", "-c", "cd apps/backend && npx prisma migrate deploy && cd /app && node apps/backend/dist/src/server.js"]
+# Ejecutar migraciones y catalogos operativos antes de levantar el backend.
+CMD ["sh", "-c", "cd apps/backend && npx prisma migrate deploy && npx prisma db seed && cd /app && node apps/backend/dist/src/server.js"]

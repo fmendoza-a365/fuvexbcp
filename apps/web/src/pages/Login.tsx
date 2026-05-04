@@ -244,7 +244,7 @@ export default function Login() {
           {/* Footer */}
           <div className="mt-10 text-center">
             <p className="text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
-              Versión 2.1.0 • Bearlytics © 2026
+              Versión 2.1.0 • Fuvex © 2026
             </p>
           </div>
         </div>

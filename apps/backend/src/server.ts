@@ -19,7 +19,10 @@ import analyticsRouter from './routes/analytics';
 import goalsRouter from './routes/goals';
 import notificationsRouter from './routes/notifications';
 import simulatorRouter from './routes/simulator';
+import geoRouter from './routes/geo';
 import dniRouter from './routes/dni';
+import checklistRouter from './routes/checklist';
+import digitalizacionRouter from './routes/digitalizacion';
 import { consultarRCC } from './services/infoburo';
 import { authMiddleware } from './middleware/auth';
 import { logger } from './services/logger';
@@ -133,7 +136,10 @@ app.use('/api/analytics', analyticsRouter);
 app.use('/api/goals', goalsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/simulator', simulatorRouter);
+app.use('/api/geo', geoRouter);
 app.use('/api/dni', dniRouter);
+app.use('/api/sales', checklistRouter);
+app.use('/api/sales', digitalizacionRouter);
 
 app.get('/api/infoburo/:dni', authMiddleware, async (req: any, res: any) => {
   try {

@@ -14,7 +14,14 @@ import {
   AlertCircle,
   Timer,
   TrendingUp,
-  Zap
+  Zap,
+  RefreshCw,
+  Download,
+  Filter,
+  TrendingDown,
+  Users as UsersIcon,
+  DollarSign,
+  Percent
 } from 'lucide-react';
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 
@@ -36,7 +43,66 @@ import {
   Pie
 } from 'recharts';
 
-const PERU_GEO_URL = "https://raw.githubusercontent.com/clucas8/peru-geojson/master/peru_departamentos.geojson";
+const PERU_GEO_URL = "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_departamental_simple.geojson";
+
+interface FunnelStage {
+  etapa: string;
+  label: string;
+  cantidad: number;
+  monto_total: number;
+  porcentaje_del_total: number;
+  tasa_conversion_desde_anterior: number;
+}
+
+interface FunnelData {
+  total_expedientes: number;
+  funnel: FunnelStage[];
+  conversion_global: number;
+}
+
+interface ApiFunnelStage {
+  etapa?: string;
+  cantidad?: number;
+  monto_total?: number;
+  tasa_entrada_pct?: number;
+  tasa_conversion_pct?: number;
+}
+
+interface ApiFunnelResponse {
+  funnel?: ApiFunnelStage[];
+  resumen?: {
+    total_expedientes?: number;
+    conversion_global_pct?: number;
+  };
+}
+
+const FUNNEL_COLORS = ['#002A8D', '#3159B8', '#64748B', '#FF7800', '#10B981', '#0EA5E9', '#EF4444'];
+
+const toNumber = (value: unknown) => {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : 0;
+};
+
+const normalizeFunnelData = (payload: ApiFunnelResponse): FunnelData => ({
+  total_expedientes: toNumber(payload.resumen?.total_expedientes),
+  conversion_global: toNumber(payload.resumen?.conversion_global_pct),
+  funnel: (payload.funnel ?? []).map((stage) => ({
+    etapa: stage.etapa ?? 'Sin etapa',
+    label: stage.etapa ?? 'Sin etapa',
+    cantidad: toNumber(stage.cantidad),
+    monto_total: toNumber(stage.monto_total),
+    porcentaje_del_total: toNumber(stage.tasa_entrada_pct),
+    tasa_conversion_desde_anterior: toNumber(stage.tasa_conversion_pct),
+  }))
+});
+
+const normalizeGeoName = (value?: string) => (
+  (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Z0-9]/gi, '')
+    .toUpperCase()
+);
 
 const Analytics = () => {
   const [loading, setLoading] = useState(true);
@@ -46,6 +112,12 @@ const Analytics = () => {
   const [rankings, setRankings] = useState<any>(null);
   const [opsData, setOpsData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('asesores');
+  const [funnelData, setFunnelData] = useState<FunnelData | null>(null);
+  const [funnelLoading, setFunnelLoading] = useState(false);
+  const [funnelFilters, setFunnelFilters] = useState({ fecha_inicio: '', fecha_fin: '', convenio: '' });
+  const [showFunnelFilters, setShowFunnelFilters] = useState(false);
+  const [hoveredRegion, setHoveredRegion] = useState<any | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState<any | null>(null);
 
   useEffect(() => {
     // Try to load from cache first for instant UI
@@ -57,6 +129,7 @@ const Analytics = () => {
       setGeoData(data.geo);
       setRankings(data.rank);
       setOpsData(data.ops);
+      setFunnelData(data.funnel || null);
       setLoading(false);
     }
     
@@ -73,12 +146,13 @@ const Analytics = () => {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
 
-      const [dash, ts, geo, rank, ops] = await Promise.all([
+      const [dash, ts, geo, rank, ops, funnel] = await Promise.all([
         axios.get('/api/analytics/dashboard', { headers }),
         axios.get('/api/analytics/timeseries', { headers }),
         axios.get('/api/analytics/geography', { headers }),
         axios.get('/api/analytics/rankings', { headers }),
-        axios.get('/api/analytics/operations', { headers })
+        axios.get('/api/analytics/operations', { headers }),
+        axios.get('/api/analytics/funnel', { headers })
       ]);
 
       setDashboardData(dash.data);
@@ -86,6 +160,7 @@ const Analytics = () => {
       setGeoData(Array.isArray(geo.data) ? geo.data : []);
       setRankings(rank.data);
       setOpsData(ops.data);
+      setFunnelData(normalizeFunnelData(funnel.data));
       
       // Save to cache
       localStorage.setItem('analytics_cache', JSON.stringify({
@@ -94,12 +169,56 @@ const Analytics = () => {
         geo: geo.data,
         rank: rank.data,
         ops: ops.data,
+        funnel: normalizeFunnelData(funnel.data),
         timestamp: Date.now()
       }));
     } catch (error) {
       console.error('Error fetching analytics data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const buildFunnelParams = () => {
+    const params = new URLSearchParams();
+    if (funnelFilters.fecha_inicio) params.append('fecha_inicio', funnelFilters.fecha_inicio);
+    if (funnelFilters.fecha_fin) params.append('fecha_fin', funnelFilters.fecha_fin);
+    if (funnelFilters.convenio) params.append('convenio', funnelFilters.convenio);
+    return params;
+  };
+
+  const fetchFunnel = async () => {
+    setFunnelLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`/api/analytics/funnel?${buildFunnelParams()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setFunnelData(normalizeFunnelData(res.data));
+    } catch (error) {
+      console.error('Error fetching funnel:', error);
+    } finally {
+      setFunnelLoading(false);
+    }
+  };
+
+  const exportFunnelExcel = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`/api/analytics/export/excel?${buildFunnelParams()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `funnel_fuvex_${new Date().toISOString().split('T')[0]}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error exportando funnel:', err);
     }
   };
 
@@ -119,6 +238,14 @@ const Analytics = () => {
   );
 
   const COLORS = ['#002A8D', '#FF7800', '#10b981', '#64748b', '#3b82f6'];
+  const maxRegionValue = Math.max(...(geoData || []).map((item) => Number(item.value) || 0), 1);
+  const totalRegionValue = (geoData || []).reduce((acc, item) => acc + (Number(item.value) || 0), 0);
+  const totalRegionCount = (geoData || []).reduce((acc, item) => acc + (Number(item.count) || 0), 0);
+  const topRegions = [...(geoData || [])]
+    .sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0))
+    .slice(0, 5);
+  const activeRegion = hoveredRegion || selectedRegion || topRegions[0] || null;
+  const maxFunnelCantidad = funnelData ? Math.max(...funnelData.funnel.map(s => s.cantidad), 1) : 1;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
@@ -205,6 +332,22 @@ const Analytics = () => {
         />
       </div>
 
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)] gap-8">
+        <FunnelAnalyticsSection
+          data={funnelData}
+          loading={funnelLoading}
+          filters={funnelFilters}
+          setFilters={setFunnelFilters}
+          showFilters={showFunnelFilters}
+          setShowFilters={setShowFunnelFilters}
+          onRefresh={fetchFunnel}
+          onExport={exportFunnelExcel}
+          maxCantidad={maxFunnelCantidad}
+          formatCurrency={formatCurrency}
+        />
+        <OperationalHealthPanel opsData={opsData} />
+      </div>
+
       {/* 3. LÍNEA DE TIEMPO VS META */}
       <div className="premium-card">
         <div className="flex justify-between items-center mb-8">
@@ -241,35 +384,125 @@ const Analytics = () => {
 
       {/* 4. MAPA ESTRATÉGICO Y PIPELINE */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="premium-card flex flex-col items-center">
-          <h3 className="stat-label self-start flex items-center gap-2 mb-8">
-            <MapIcon size={16} className="text-[var(--accent-blue)]" /> Market Intelligence: Calor por Región
-          </h3>
-          <div className="h-96 w-full flex items-center justify-center">
-            <ComposableMapAny projectionConfig={{ scale: 1300, center: [-75, -9] }} className="w-full h-full">
-              <GeographiesAny geography={PERU_GEO_URL}>
-                {({ geographies }: { geographies: any[] }) =>
-                  (geographies || []).map((geo: any) => {
-                    const departmentName = geo.properties.NOMBDEP;
-                    const data = (geoData || []).find(d => d.region?.toUpperCase() === departmentName?.toUpperCase());
-                    const intensity = data ? Math.min(data.value / 100000, 1) : 0;
-                    return (
-                      <GeographyAny
-                        key={geo.rsmKey}
-                        geography={geo}
-                        fill={data ? `rgba(59, 130, 246, ${0.1 + intensity * 0.9})` : "var(--bg-card)"}
-                        stroke="var(--border-main)"
-                        strokeWidth={0.5}
-                        style={{
-                          default: { outline: "none" },
-                          hover: { fill: "var(--color-bcp-orange)", outline: "none", cursor: 'pointer' },
-                        }}
-                      />
-                    );
-                  })
-                }
-              </GeographiesAny>
-            </ComposableMapAny>
+        <div className="premium-card">
+          <div className="flex items-start justify-between gap-4 mb-6">
+            <div>
+              <h3 className="stat-label flex items-center gap-2">
+                <MapIcon size={16} className="text-[var(--accent-blue)]" /> Market Intelligence: Calor por Región
+              </h3>
+              <p className="text-xs font-semibold text-text-700 mt-2">Desembolso y volumen por departamento.</p>
+            </div>
+            <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-text-700">
+              <span>Bajo</span>
+              <div className="w-24 h-2 rounded-full bg-gradient-to-r from-slate-100 via-[#7EA6E8] to-[var(--color-bcp-orange)] border border-surface-200" />
+              <span>Alto</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-5 items-stretch">
+            <div className="relative min-h-[360px] rounded-lg border border-surface-200 bg-[#F8FAFC] overflow-hidden">
+              <ComposableMapAny projectionConfig={{ scale: 1320, center: [-75, -9.1] }} className="w-full h-[360px]">
+                <GeographiesAny geography={PERU_GEO_URL}>
+                  {({ geographies }: { geographies: any[] }) =>
+                    (geographies || []).map((geo: any) => {
+                      const departmentName = geo.properties.NOMBDEP;
+                      const data = (geoData || []).find(d => normalizeGeoName(d.region) === normalizeGeoName(departmentName));
+                      const selected = activeRegion && normalizeGeoName(activeRegion.region) === normalizeGeoName(departmentName);
+                      const ratio = data ? Math.min((Number(data.value) || 0) / maxRegionValue, 1) : 0;
+                      const fill = data
+                        ? ratio > 0.72
+                          ? '#FF7800'
+                          : ratio > 0.42
+                            ? '#2563EB'
+                            : ratio > 0.12
+                              ? '#7EA6E8'
+                              : '#D9E7FF'
+                        : '#EEF2F7';
+
+                      return (
+                        <GeographyAny
+                          key={geo.rsmKey}
+                          geography={geo}
+                          onMouseEnter={() => setHoveredRegion(data || { region: departmentName, value: 0, count: 0 })}
+                          onMouseLeave={() => setHoveredRegion(null)}
+                          onClick={() => setSelectedRegion(data || { region: departmentName, value: 0, count: 0 })}
+                          fill={selected ? '#FF7800' : fill}
+                          stroke={selected ? '#111827' : '#94A3B8'}
+                          strokeWidth={selected ? 1.2 : 0.65}
+                          style={{
+                            default: { outline: "none", transition: "all 180ms ease" },
+                            hover: { fill: "#FF7800", outline: "none", cursor: 'pointer' },
+                            pressed: { outline: "none" },
+                          }}
+                        />
+                      );
+                    })
+                  }
+                </GeographiesAny>
+              </ComposableMapAny>
+
+              {activeRegion && (
+                <div className="absolute left-4 bottom-4 bg-surface-100 border border-surface-200 rounded-lg shadow-xl p-4 min-w-[210px]">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-text-700">Región activa</div>
+                  <div className="text-sm font-black text-text-900 uppercase mt-1">{activeRegion.region}</div>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-[9px] font-bold uppercase text-text-700">Monto</div>
+                      <div className="text-sm font-black text-[var(--color-bcp-blue)]">{formatCurrency(Number(activeRegion.value) || 0)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-bold uppercase text-text-700">Casos</div>
+                      <div className="text-sm font-black text-[var(--color-bcp-orange)]">{Number(activeRegion.count) || 0}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="surface-card p-4 flex flex-col">
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="bg-surface-50 border border-surface-200 rounded-lg p-3">
+                  <div className="text-[9px] font-black uppercase tracking-widest text-text-700">Desembolso regional</div>
+                  <div className="text-lg font-black text-text-900 mt-1">{formatCurrency(totalRegionValue)}</div>
+                </div>
+                <div className="bg-surface-50 border border-surface-200 rounded-lg p-3">
+                  <div className="text-[9px] font-black uppercase tracking-widest text-text-700">Expedientes</div>
+                  <div className="text-lg font-black text-text-900 mt-1">{totalRegionCount}</div>
+                </div>
+              </div>
+
+              <div className="text-[10px] font-black uppercase tracking-widest text-text-700 mb-3">Top regiones</div>
+              <div className="space-y-3">
+                {topRegions.map((region, index) => {
+                  const pct = maxRegionValue > 0 ? Math.max(((Number(region.value) || 0) / maxRegionValue) * 100, 4) : 4;
+                  const selected = activeRegion && normalizeGeoName(activeRegion.region) === normalizeGeoName(region.region);
+                  return (
+                    <button
+                      key={region.region}
+                      type="button"
+                      onMouseEnter={() => setHoveredRegion(region)}
+                      onMouseLeave={() => setHoveredRegion(null)}
+                      onClick={() => setSelectedRegion(region)}
+                      className={`w-full text-left p-3 rounded-lg border transition-all ${selected ? 'border-[var(--color-bcp-orange)] bg-orange-50' : 'border-surface-200 hover:border-blue-200 hover:bg-surface-50'}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-xs font-black uppercase text-text-900 truncate">{index + 1}. {region.region}</div>
+                          <div className="text-[10px] font-bold text-text-700 mt-0.5">{region.count} expedientes</div>
+                        </div>
+                        <div className="text-xs font-black text-[var(--color-bcp-blue)] shrink-0">{formatCurrency(Number(region.value) || 0)}</div>
+                      </div>
+                      <div className="h-1.5 w-full bg-surface-200 rounded-full overflow-hidden mt-3">
+                        <div className="h-full bg-[var(--color-bcp-blue)] rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                    </button>
+                  );
+                })}
+                {topRegions.length === 0 && (
+                  <div className="py-12 text-center text-text-700 text-xs font-bold uppercase">Sin datos regionales</div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -413,7 +646,7 @@ const Analytics = () => {
       </div>
 
       {/* 6. SALUD OPERATIVA: SLAs Y PARETO */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-8">
+      <div className="hidden">
         <div className="premium-card">
            <h3 className="stat-label flex items-center gap-2 mb-8">
              <Timer size={16} className="text-[var(--accent-blue)]" /> Tiempos de Respuesta (SLA)
@@ -481,6 +714,207 @@ const KpiCard = ({ title, value, icon, color, footer, progress }: any) => (
     </div>
   </div>
 );
+
+const EmptyState = ({ label }: { label: string }) => (
+  <div className="py-10 text-center text-xs font-bold uppercase tracking-widest text-text-700 bg-surface-50 border border-dashed border-surface-200 rounded-lg">
+    {label}
+  </div>
+);
+
+const OperationalHealthPanel = ({ opsData }: { opsData: any }) => {
+  const responseTimes = Array.isArray(opsData?.responseTimes) ? opsData.responseTimes.slice(0, 5) : [];
+  const observations = Array.isArray(opsData?.observations) ? opsData.observations.slice(0, 6) : [];
+  const maxObservation = Math.max(...observations.map((item: any) => Number(item.value) || 0), 1);
+
+  return (
+    <div className="space-y-6">
+      <div className="premium-card">
+        <h3 className="stat-label flex items-center gap-2 mb-6">
+          <Timer size={16} className="text-[var(--accent-blue)]" /> Tiempos de Respuesta (SLA)
+        </h3>
+        <div className="space-y-4">
+          {responseTimes.map((item: any, index: number) => (
+            <div key={`${item.stage}-${index}`} className="surface-card p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs font-black uppercase text-text-900 truncate">{item.stage}</div>
+                  <div className="text-[9px] font-bold uppercase text-text-700">{item.samples || 0} muestras</div>
+                </div>
+                <div className="text-sm font-black text-[var(--accent-blue)] bg-[rgba(0,42,141,0.1)] px-3 py-1 rounded-lg">
+                  {Number(item.hours || 0).toFixed(1)}h
+                </div>
+              </div>
+            </div>
+          ))}
+          {responseTimes.length === 0 && (
+            <EmptyState label="Sin cambios de estado suficientes para calcular SLA" />
+          )}
+        </div>
+      </div>
+
+      <div className="premium-card">
+        <h3 className="stat-label flex items-center gap-2 mb-6">
+          <BarChart3 size={16} className="text-[var(--accent-blue)]" /> Pareto de Observaciones
+        </h3>
+        <div className="space-y-3">
+          {observations.map((item: any, index: number) => {
+            const value = Number(item.value) || 0;
+            const width = Math.max((value / maxObservation) * 100, 6);
+            return (
+              <div key={`${item.name}-${index}`}>
+                <div className="flex items-center justify-between gap-3 mb-1.5">
+                  <span className="text-[10px] font-black uppercase text-text-900 truncate">{item.name}</span>
+                  <span className="text-[10px] font-black text-[var(--color-bcp-orange)]">{value}</span>
+                </div>
+                <div className="h-2.5 bg-surface-200 rounded-full overflow-hidden">
+                  <div className="h-full bg-[var(--color-bcp-blue)] rounded-full" style={{ width: `${width}%` }} />
+                </div>
+              </div>
+            );
+          })}
+          {observations.length === 0 && (
+            <EmptyState label="Sin observaciones registradas en expedientes" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const FunnelAnalyticsSection = ({
+  data,
+  loading,
+  filters,
+  setFilters,
+  showFilters,
+  setShowFilters,
+  onRefresh,
+  onExport,
+  maxCantidad,
+  formatCurrency
+}: {
+  data: FunnelData | null;
+  loading: boolean;
+  filters: { fecha_inicio: string; fecha_fin: string; convenio: string };
+  setFilters: (filters: { fecha_inicio: string; fecha_fin: string; convenio: string }) => void;
+  showFilters: boolean;
+  setShowFilters: (show: boolean) => void;
+  onRefresh: () => void;
+  onExport: () => void;
+  maxCantidad: number;
+  formatCurrency: (value: number) => string;
+}) => {
+  const totalAmount = data?.funnel.reduce((acc, stage) => acc + stage.monto_total, 0) || 0;
+
+  return (
+    <div className="premium-card">
+      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-5">
+        <div>
+          <h3 className="stat-label flex items-center gap-2">
+            <TrendingDown size={16} className="text-[var(--accent-blue)]" /> Funnel de Conversion
+          </h3>
+          <p className="text-xs font-semibold text-text-700 mt-2">Vista compacta de prioridad comercial.</p>
+        </div>
+        <div className="page-actions">
+          <button onClick={() => setShowFilters(!showFilters)} className="action-button-secondary">
+            <Filter size={15} /> Filtros
+          </button>
+          <button onClick={onExport} className="action-button-secondary text-emerald-700">
+            <Download size={15} /> Excel
+          </button>
+          <button onClick={onRefresh} className="action-button-primary">
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Actualizar
+          </button>
+        </div>
+      </div>
+
+      {showFilters && (
+        <div className="filter-panel grid-cols-1 sm:grid-cols-3 mb-5">
+          <div>
+            <label className="field-label">Fecha inicio</label>
+            <input type="date" value={filters.fecha_inicio} onChange={e => setFilters({ ...filters, fecha_inicio: e.target.value })} className="field-input" />
+          </div>
+          <div>
+            <label className="field-label">Fecha fin</label>
+            <input type="date" value={filters.fecha_fin} onChange={e => setFilters({ ...filters, fecha_fin: e.target.value })} className="field-input" />
+          </div>
+          <div>
+            <label className="field-label">Convenio</label>
+            <input value={filters.convenio} onChange={e => setFilters({ ...filters, convenio: e.target.value })} placeholder="Ej: PNP" className="field-input" />
+          </div>
+          <div className="sm:col-span-3 flex justify-end">
+            <button onClick={onRefresh} className="action-button-primary">Aplicar filtros</button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+        <div className="metric-card">
+          <div className="icon-badge bg-blue-50">
+            <UsersIcon size={22} className="text-[var(--color-bcp-blue)]" />
+          </div>
+          <div>
+            <div className="stat-label">Expedientes</div>
+            <div className="stat-value">{data?.total_expedientes || 0}</div>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="icon-badge bg-emerald-50">
+            <DollarSign size={22} className="text-emerald-600" />
+          </div>
+          <div>
+            <div className="stat-label">Monto pipeline</div>
+            <div className="stat-value">{formatCurrency(totalAmount)}</div>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="icon-badge bg-orange-50">
+            <Percent size={22} className="text-[var(--color-bcp-orange)]" />
+          </div>
+          <div>
+            <div className="stat-label">Conversion global</div>
+            <div className="stat-value text-[var(--color-bcp-orange)]">{(data?.conversion_global || 0).toFixed(1)}%</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {(data?.funnel || []).map((stage, idx) => {
+          const widthPercent = maxCantidad > 0 ? Math.max((stage.cantidad / maxCantidad) * 100, 10) : 10;
+          const color = FUNNEL_COLORS[idx % FUNNEL_COLORS.length];
+          return (
+            <div key={`${stage.etapa}-${idx}`} className="grid grid-cols-1 lg:grid-cols-[145px_minmax(0,1fr)_74px] gap-3 lg:items-center">
+              <div className="lg:text-right">
+                <div className="text-xs font-black text-text-900 uppercase">{stage.label}</div>
+                <div className="text-[10px] font-bold text-text-700">{stage.cantidad} expedientes</div>
+              </div>
+              <div className="relative h-10 bg-surface-50 border border-surface-200 rounded-lg overflow-hidden">
+                <div
+                  className="h-full rounded-r-lg flex items-center px-3 transition-all duration-500"
+                  style={{ width: `${widthPercent}%`, backgroundColor: color }}
+                >
+                  <span className="text-white text-xs font-black">{stage.porcentaje_del_total.toFixed(1)}%</span>
+                </div>
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-text-900">
+                  {formatCurrency(stage.monto_total)}
+                </div>
+              </div>
+              <div className="flex lg:justify-center">
+                <span className="status-pill bg-surface-50 border-surface-200 text-text-700">
+                  {idx === 0 ? 'Base' : `${stage.tasa_conversion_desde_anterior.toFixed(1)}%`}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {!loading && (!data || data.funnel.length === 0) && (
+        <div className="py-12 text-center text-xs font-bold uppercase text-text-700">Sin datos de funnel para el filtro actual</div>
+      )}
+    </div>
+  );
+};
 
 const TabButton = ({ active, onClick, icon, label }: any) => (
   <button 

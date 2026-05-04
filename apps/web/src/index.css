@@ -7,7 +7,7 @@
   --text-main: #0f172a;
   --text-muted: #64748b;
   --border-main: #e2e8f0;
-  --shadow-color: rgba(0, 42, 141, 0.04);
+  --shadow-color: rgba(15, 23, 42, 0.06);
   --chart-grid: #f1f5f9;
   --chart-text: #94a3b8;
   --accent-blue: #002A8D;
@@ -49,12 +49,12 @@
   --color-text-700: var(--text-muted);
   --color-text-500: var(--text-muted);
   
-  --radius-xl: 1rem;
-  --radius-2xl: 1.5rem;
-  --radius-3xl: 2rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.625rem;
+  --radius-3xl: 0.75rem;
 
-  --shadow-premium: 0 10px 15px -3px var(--shadow-color), 0 4px 6px -4px var(--shadow-color);
-  --shadow-elevated: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  --shadow-premium: 0 1px 2px 0 var(--shadow-color);
+  --shadow-elevated: 0 8px 18px -14px rgba(15, 23, 42, 0.45);
 }
 
 
@@ -100,13 +100,14 @@
 /* Master Component Classes for Synchronization */
 
 .premium-card {
-  @apply border transition-all duration-300 rounded-[2rem] p-6;
+  @apply border transition-all duration-200 rounded-lg p-5;
   background-color: var(--bg-card);
   border-color: var(--border-main);
   box-shadow: var(--shadow-premium);
 }
 
 .premium-card:hover {
+  border-color: rgba(0, 42, 141, 0.18);
   box-shadow: var(--shadow-elevated);
 }
 
@@ -116,16 +117,16 @@
 }
 
 .stat-value {
-  @apply text-3xl font-bold tracking-tight;
+  @apply text-2xl font-bold tracking-tight;
   color: var(--text-main);
 }
 
 .action-button-primary {
-  @apply bg-[var(--color-bcp-orange)] text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-[#E66C00] transition-all flex items-center gap-2 shadow-lg shadow-orange-950/10;
+  @apply bg-[var(--color-bcp-blue)] text-white px-4 py-2.5 rounded-lg font-bold text-xs uppercase tracking-tight hover:bg-[var(--color-bcp-blue-dark)] transition-all flex items-center gap-2 shadow-sm;
 }
 
 .action-button-secondary {
-  @apply border px-6 py-3 rounded-2xl font-bold text-sm transition-all flex items-center gap-2 shadow-sm;
+  @apply border px-4 py-2.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-2 shadow-sm;
   background-color: var(--bg-card);
   border-color: var(--border-main);
   color: var(--text-main);
@@ -151,6 +152,67 @@
   background-color: var(--bg-main);
 }
 
+.page-shell {
+  @apply space-y-5;
+}
+
+.page-header {
+  @apply flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between;
+}
+
+.page-title {
+  @apply text-2xl font-bold text-text-900 tracking-tight uppercase;
+}
+
+.page-subtitle {
+  @apply text-sm font-medium text-text-700 mt-1;
+}
+
+.page-actions {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.surface-card {
+  @apply bg-surface-100 border border-surface-200 rounded-lg shadow-sm;
+}
+
+.metric-card {
+  @apply bg-surface-100 border border-surface-200 rounded-lg shadow-sm p-5 flex items-center gap-4;
+}
+
+.icon-badge {
+  @apply w-10 h-10 rounded-lg flex items-center justify-center shrink-0;
+}
+
+.filter-panel {
+  @apply bg-surface-100 border border-surface-200 rounded-lg shadow-sm p-4 grid gap-4;
+}
+
+.field-label {
+  @apply text-[10px] font-bold text-text-700 uppercase tracking-widest block mb-1.5;
+}
+
+.field-input {
+  @apply w-full px-3 py-2.5 text-sm font-semibold border border-surface-200 rounded-lg bg-surface-50 focus:ring-2 focus:ring-[var(--color-bcp-blue-light)] focus:border-[var(--color-bcp-blue)] outline-none transition-all;
+}
+
+.table-shell {
+  @apply bg-surface-100 border border-surface-200 rounded-lg shadow-sm overflow-hidden;
+}
+
+.status-pill {
+  @apply inline-flex items-center px-2.5 py-1 rounded-md border text-[10px] font-bold uppercase tracking-tight;
+}
+
+.modal-panel {
+  @apply bg-surface-100 rounded-lg shadow-2xl border border-surface-200 overflow-hidden;
+}
+
+[class*="rounded-[2rem]"],
+[class*="rounded-[2.5rem]"] {
+  border-radius: 0.75rem !important;
+}
+
 /* Glassmorphism Styles (UI UX PRO MAX) */
 .glass-panel {
   @apply backdrop-blur-md border border-white/10 shadow-xl;
@@ -168,7 +230,7 @@
 
 /* Simulator specific form elements - Premium BCP Style */
 .sim-input {
-  @apply w-full bg-[var(--color-surface-50)] border border-[var(--color-surface-200)] rounded-2xl py-3 px-4 text-sm font-black text-[var(--color-text-900)] outline-none transition-all duration-200;
+  @apply w-full bg-[var(--color-surface-50)] border border-[var(--color-surface-200)] rounded-lg py-3 px-4 text-sm font-bold text-[var(--color-text-900)] outline-none transition-all duration-200;
 }
 
 .sim-input:focus {
@@ -191,5 +253,17 @@ input::-webkit-inner-spin-button {
 }
 input[type=number] {
   -moz-appearance: textfield;
+}
+
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-caps-lock-indicator {
+  visibility: hidden;
+  display: none !important;
+  pointer-events: none;
 }
 

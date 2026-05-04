@@ -10,7 +10,7 @@ import CronogramaModal from '../components/CronogramaModal';
 interface SimConfig {
   convenios: { id: string; nombre: string; sector: string; variables_reserva: number; rci_default: number; periodo_gracia: number }[];
   cargos: { id: string; nombre: string }[];
-  reglas: { convenio_id: string; cargo_id: string; rci_especifico: number }[];
+  reglas: { convenio_id: string; cargo_id: string; rci_especifico: number; edad_maxima?: number | null }[];
   configuracion: { TEA_DEFAULT: number; COSTO_ENVIO_FISICO: number };
 }
 
@@ -82,8 +82,14 @@ export default function Simulator() {
     return config.cargos.filter(c => validCargoIds.includes(c.id));
   }, [form.convenioId, config]);
 
+  const selectedRegla = useMemo(() =>
+    config?.reglas.find(r => r.convenio_id === form.convenioId && r.cargo_id === form.cargoId),
+    [form.convenioId, form.cargoId, config]);
+
+  const effectiveRci = selectedRegla?.rci_especifico ?? selectedConvenio?.rci_default ?? 0;
+
   const calculations = useMemo(() => {
-    const rci = selectedConvenio?.rci_default || 0;
+    const rci = effectiveRci;
 
     // IND Logic from Excel:
     // Total Ingresos = Fijos + Promedio Variables + CAFAE
@@ -125,7 +131,7 @@ export default function Simulator() {
       fechaVenc: fechaVenc.toLocaleDateString('es-PE'),
       endeudamientoPorc
     };
-  }, [form, selectedConvenio, cargaCrediticia, config]);
+  }, [form, effectiveRci, cargaCrediticia, config]);
 
   const handleSimulate = async () => {
     if (!form.convenioId || !form.cargoId) {
@@ -273,7 +279,10 @@ export default function Simulator() {
             <div className="mt-6 flex justify-end gap-8 border-t border-surface-100 pt-4">
               <div className="flex flex-col items-end">
                 <span className="sim-label !mb-0">RCI</span>
-                <span className="text-lg font-black text-[var(--color-bcp-blue)]">{selectedConvenio ? (selectedConvenio.rci_default * 100) : 0}%</span>
+                <span className="text-lg font-black text-[var(--color-bcp-blue)]">{(effectiveRci * 100).toFixed(1)}%</span>
+                <span className="text-[9px] font-black text-text-500 uppercase tracking-widest">
+                  {selectedRegla ? 'Convenio + cargo' : 'Base convenio'}
+                </span>
               </div>
             </div>
           </div>

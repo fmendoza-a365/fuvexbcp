@@ -2,16 +2,42 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Plus, Edit2, MapPin, X, Map, Globe, Search, Check } from 'lucide-react';
 
+interface GeoDepartamento {
+  id: number;
+  departamento: string;
+  ubigeo: string;
+}
+
+interface GeoProvincia {
+  id: number;
+  provincia: string;
+  ubigeo: string;
+  departamento_id: number;
+}
+
+interface GeoDistrito {
+  id: number;
+  distrito: string;
+  ubigeo: string;
+  provincia_id: number;
+  departamento_id: number;
+}
+
 export default function ZoneManagement() {
   const [zones, setZones] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingZone, setEditingZone] = useState<any>(null);
+  const [departamentos, setDepartamentos] = useState<GeoDepartamento[]>([]);
+  const [provincias, setProvincias] = useState<GeoProvincia[]>([]);
+  const [distritos, setDistritos] = useState<GeoDistrito[]>([]);
 
   const [formData, setFormData] = useState({
     nombre: '',
     departamento: '',
-    distrito: ''
+    provincia: '',
+    distrito: '',
+    ubigeo: ''
   });
 
   const fetchZones = async () => {
@@ -28,7 +54,57 @@ export default function ZoneManagement() {
 
   useEffect(() => {
     fetchZones();
+    fetchDepartamentos();
   }, []);
+
+  const fetchDepartamentos = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get('/api/geo/departamentos', { headers: { Authorization: `Bearer ${token}` } });
+      setDepartamentos(Array.isArray(res.data?.data) ? res.data.data : []);
+    } catch (error) {
+      console.error('Error fetching geo departments', error);
+    }
+  };
+
+  const fetchProvincias = async (departamentoId?: number) => {
+    try {
+      const token = localStorage.getItem('token');
+      const params = departamentoId ? `?departamento_id=${departamentoId}` : '';
+      const res = await axios.get(`/api/geo/provincias${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      setProvincias(Array.isArray(res.data?.data) ? res.data.data : []);
+    } catch (error) {
+      console.error('Error fetching geo provinces', error);
+      setProvincias([]);
+    }
+  };
+
+  const fetchDistritos = async (departamentoId?: number, provinciaId?: number) => {
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams();
+      if (departamentoId) params.set('departamento_id', String(departamentoId));
+      if (provinciaId) params.set('provincia_id', String(provinciaId));
+      const res = await axios.get(`/api/geo/distritos?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+      setDistritos(Array.isArray(res.data?.data) ? res.data.data : []);
+    } catch (error) {
+      console.error('Error fetching geo districts', error);
+      setDistritos([]);
+    }
+  };
+
+  useEffect(() => {
+    if (!isModalOpen || !formData.departamento || departamentos.length === 0) return;
+    const dept = departamentos.find(item => item.departamento === formData.departamento);
+    fetchProvincias(dept?.id);
+  }, [isModalOpen, formData.departamento, departamentos.length]);
+
+  useEffect(() => {
+    if (!isModalOpen || !formData.provincia || departamentos.length === 0 || provincias.length === 0) return;
+    const dept = departamentos.find(item => item.departamento === formData.departamento);
+    const prov = provincias.find(item => item.provincia === formData.provincia);
+    fetchDistritos(dept?.id, prov?.id);
+  }, [isModalOpen, formData.provincia, provincias.length]);
 
   const openModal = (zone: any = null) => {
     if (zone) {
@@ -36,15 +112,21 @@ export default function ZoneManagement() {
       setFormData({
         nombre: zone.nombre,
         departamento: zone.departamento,
-        distrito: zone.distrito || ''
+        provincia: zone.provincia || '',
+        distrito: zone.distrito || '',
+        ubigeo: zone.ubigeo || ''
       });
     } else {
       setEditingZone(null);
       setFormData({
         nombre: '',
         departamento: '',
-        distrito: ''
+        provincia: '',
+        distrito: '',
+        ubigeo: ''
       });
+      setProvincias([]);
+      setDistritos([]);
     }
     setIsModalOpen(true);
   };
@@ -69,6 +151,40 @@ export default function ZoneManagement() {
     } catch (error: any) {
       alert(error.response?.data?.error || 'Error al guardar la zona');
     }
+  };
+
+  const handleDepartamentoChange = (departamento: string) => {
+    const dept = departamentos.find(item => item.departamento === departamento);
+    setFormData({
+      ...formData,
+      departamento,
+      provincia: '',
+      distrito: '',
+      ubigeo: dept?.ubigeo || ''
+    });
+    setDistritos([]);
+    fetchProvincias(dept?.id);
+  };
+
+  const handleProvinciaChange = (provincia: string) => {
+    const dept = departamentos.find(item => item.departamento === formData.departamento);
+    const prov = provincias.find(item => item.provincia === provincia);
+    setFormData({
+      ...formData,
+      provincia,
+      distrito: '',
+      ubigeo: prov?.ubigeo || ''
+    });
+    fetchDistritos(dept?.id, prov?.id);
+  };
+
+  const handleDistritoChange = (distrito: string) => {
+    const dist = distritos.find(item => item.distrito === distrito);
+    setFormData({
+      ...formData,
+      distrito,
+      ubigeo: dist?.ubigeo || formData.ubigeo
+    });
   };
 
   if (loading) return (
@@ -113,7 +229,9 @@ export default function ZoneManagement() {
               <tr className="data-table-header">
                 <th className="px-6 py-4">Territorio / Nombre</th>
                 <th className="px-6 py-4">Departamento</th>
+                <th className="px-6 py-4">Provincia</th>
                 <th className="px-6 py-4">Distrito Base</th>
+                <th className="px-6 py-4">Ubigeo</th>
                 <th className="px-6 py-4 text-center">Acciones</th>
               </tr>
             </thead>
@@ -140,8 +258,17 @@ export default function ZoneManagement() {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2 text-xs font-bold text-text-700">
                        <MapPin size={14} className="text-text-700" />
+                       {z.provincia || '-'}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-text-700">
+                       <MapPin size={14} className="text-text-700" />
                        {z.distrito || '-'}
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="status-pill bg-surface-50 border-surface-200 text-text-700">{z.ubigeo || '-'}</span>
                   </td>
                   <td className="px-6 py-4 text-center">
                     <div className="flex items-center justify-center gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
@@ -156,7 +283,7 @@ export default function ZoneManagement() {
               ))}
               {zones.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="p-20 text-center">
+                  <td colSpan={6} className="p-20 text-center">
                     <div className="flex flex-col items-center gap-3 opacity-20">
                        <MapPin size={48} />
                        <p className="font-bold uppercase tracking-widest text-[10px]">Sin territorios registrados</p>
@@ -195,25 +322,86 @@ export default function ZoneManagement() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="stat-label">Departamento</label>
-                  <input 
-                    type="text" required
-                    placeholder="Ej. Lima / Arequipa"
-                    className="w-full bg-surface-50 border-none rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-[var(--color-bcp-blue-light)] transition-all outline-none"
-                    value={formData.departamento}
-                    onChange={e => setFormData({...formData, departamento: e.target.value})}
-                  />
+                  {departamentos.length > 0 ? (
+                    <select
+                      required
+                      className="w-full bg-surface-50 border-none rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-[var(--color-bcp-blue-light)] transition-all outline-none"
+                      value={formData.departamento}
+                      onChange={e => handleDepartamentoChange(e.target.value)}
+                    >
+                      <option value="">Seleccionar departamento</option>
+                      {departamentos.map(item => (
+                        <option key={item.id} value={item.departamento}>{item.departamento}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej. Lima / Arequipa"
+                      className="w-full bg-surface-50 border-none rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-[var(--color-bcp-blue-light)] transition-all outline-none"
+                      value={formData.departamento}
+                      onChange={e => setFormData({...formData, departamento: e.target.value})}
+                    />
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <label className="stat-label">Provincia</label>
+                  {provincias.length > 0 ? (
+                    <select
+                      className="w-full bg-surface-50 border-none rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-[var(--color-bcp-blue-light)] transition-all outline-none"
+                      value={formData.provincia}
+                      onChange={e => handleProvinciaChange(e.target.value)}
+                    >
+                      <option value="">Seleccionar provincia</option>
+                      {provincias.map(item => (
+                        <option key={item.id} value={item.provincia}>{item.provincia}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="Ej. Lima"
+                      className="w-full bg-surface-50 border-none rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-[var(--color-bcp-blue-light)] transition-all outline-none"
+                      value={formData.provincia}
+                      onChange={e => setFormData({...formData, provincia: e.target.value})}
+                    />
+                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="stat-label">Distrito Base</label>
-                  <input 
+                  {distritos.length > 0 ? (
+                    <select
+                      className="w-full bg-surface-50 border-none rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-[var(--color-bcp-blue-light)] transition-all outline-none"
+                      value={formData.distrito}
+                      onChange={e => handleDistritoChange(e.target.value)}
+                    >
+                      <option value="">Seleccionar distrito</option>
+                      {distritos.map(item => (
+                        <option key={item.id} value={item.distrito}>{item.distrito}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="Ej. Miraflores"
+                      className="w-full bg-surface-50 border-none rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-[var(--color-bcp-blue-light)] transition-all outline-none"
+                      value={formData.distrito}
+                      onChange={e => setFormData({...formData, distrito: e.target.value})}
+                    />
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <label className="stat-label">Codigo Ubigeo</label>
+                  <input
                     type="text"
-                    placeholder="Ej. Miraflores"
+                    placeholder="Autocompletado"
                     className="w-full bg-surface-50 border-none rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-[var(--color-bcp-blue-light)] transition-all outline-none"
-                    value={formData.distrito}
-                    onChange={e => setFormData({...formData, distrito: e.target.value})}
+                    value={formData.ubigeo}
+                    onChange={e => setFormData({...formData, ubigeo: e.target.value})}
                   />
                 </div>
               </div>

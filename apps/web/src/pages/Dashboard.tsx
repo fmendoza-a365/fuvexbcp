@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { Eye, AlertTriangle, Trash2, TrendingUp, LayoutList, Clock, Search, FileSpreadsheet } from 'lucide-react';
+import { Eye, AlertTriangle, Trash2, TrendingUp, LayoutList, Clock, Search, FileSpreadsheet, MessageSquare, GitBranch } from 'lucide-react';
 import DocumentViewer from '../components/DocumentViewer';
 import ReassignmentPanel from '../components/ReassignmentPanel';
 
@@ -11,8 +11,25 @@ interface Sale {
   estado: string;
   maf_neto: number;
   vencimiento_remesa: string;
+  fecha_ingreso?: string;
+  created_at?: string;
+  feedback?: string | null;
   asesor: { username: string };
   documents: { file_path: string, tipo_documento: string }[];
+  feedbackNotes?: {
+    id: string;
+    nota: string;
+    created_at: string;
+    user?: { username?: string; nombre?: string } | null;
+  }[];
+  audit_logs?: {
+    id: string;
+    accion?: string;
+    estado_nuevo?: string | null;
+    detalles?: string | null;
+    created_at: string;
+    user?: { username?: string; nombre?: string } | null;
+  }[];
 }
 
 export default function Dashboard() {
@@ -68,6 +85,35 @@ export default function Dashboard() {
     const now = new Date();
     const diffHours = (date.getTime() - now.getTime()) / (1000 * 60 * 60);
     return diffHours > 0 && diffHours <= 24;
+  };
+
+  const getLatestTrace = (sale: Sale) => {
+    const traces = [
+      ...(sale.feedback ? [{
+        type: 'note',
+        title: 'Observacion inicial',
+        text: sale.feedback,
+        date: sale.created_at || sale.fecha_ingreso
+      }] : []),
+      ...((sale.feedbackNotes || []).map(note => ({
+        type: 'note',
+        title: 'Nota del expediente',
+        text: note.nota,
+        date: note.created_at
+      }))),
+      ...((sale.audit_logs || [])
+        .filter(log => Boolean(log.detalles))
+        .map(log => ({
+          type: 'state',
+          title: log.estado_nuevo ? `Cambio a ${log.estado_nuevo}` : (log.accion || 'Actualizacion'),
+          text: log.detalles || '',
+          date: log.created_at
+        })))
+    ];
+
+    return traces
+      .filter(trace => Boolean(trace.text))
+      .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0];
   };
 
   const handleDelete = async (id: string) => {
@@ -194,60 +240,97 @@ export default function Dashboard() {
                 <th className="px-6 py-4">Asesor</th>
                 <th className="px-6 py-4 text-right">MAF Neto</th>
                 <th className="px-6 py-4 text-center">Estado</th>
+                <th className="px-6 py-4">Trazabilidad</th>
                 <th className="px-6 py-4">Vencimiento</th>
                 <th className="px-6 py-4 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="text-sm text-slate-700">
-              {sales.map((sale) => (
-                <tr key={sale.id} className="data-table-row group/row">
-                  <td className="px-6 py-4">
-                    <div className="font-bold text-text-900">{sale.nombres_cliente}</div>
-                    <div className="text-[10px] text-text-700 font-bold">{sale.dni_cliente}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                       <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-text-700 uppercase">
-                          {sale.asesor?.username.substring(0,2)}
-                       </div>
-                       <span className="font-medium">{sale.asesor?.username}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right font-bold text-text-900">S/ {sale.maf_neto?.toLocaleString()}</td>
-                  <td className="px-6 py-4 text-center">
-                    <span className="px-3 py-1 bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] rounded-full text-[10px] font-black uppercase tracking-wider">
-                      {sale.estado}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    {sale.vencimiento_remesa && (
-                      <div className={`flex items-center gap-2 text-xs font-bold ${isExpiringSoon(sale.vencimiento_remesa) ? 'text-red-600' : 'text-text-700'}`}>
-                        {isExpiringSoon(sale.vencimiento_remesa) ? <AlertTriangle size={14} className="animate-pulse" /> : <Clock size={14} />}
-                        {new Date(sale.vencimiento_remesa).toLocaleDateString()}
+              {sales.map((sale) => {
+                const trace = getLatestTrace(sale);
+                const TraceIcon = trace?.type === 'state' ? GitBranch : MessageSquare;
+
+                return (
+                  <tr key={sale.id} className="data-table-row">
+                    <td className="px-6 py-4">
+                      <div className="font-bold text-text-900">{sale.nombres_cliente}</div>
+                      <div className="text-[10px] text-text-700 font-bold">{sale.dni_cliente}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                         <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-text-700 uppercase">
+                            {sale.asesor?.username.substring(0,2)}
+                         </div>
+                         <span className="font-medium">{sale.asesor?.username}</span>
                       </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center justify-center gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => setSelectedSale(sale)}
-                        className="p-2 text-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)] rounded-xl transition-all" title="Ver Detalle">
-                        <Eye size={18} />
-                      </button>
-                      {isAdmin && (
-                        <button 
-                          onClick={() => handleDelete(sale.id)}
-                          className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Eliminar">
-                          <Trash2 size={18} />
-                        </button>
+                    </td>
+                    <td className="px-6 py-4 text-right font-bold text-text-900">S/ {sale.maf_neto?.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="px-3 py-1 bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] rounded-full text-[10px] font-black uppercase tracking-wider">
+                        {sale.estado}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 min-w-[260px]">
+                      {trace ? (
+                        <div className="flex items-start gap-2 max-w-[340px]">
+                          <div className="mt-0.5 w-7 h-7 rounded-lg bg-[rgba(0,42,141,0.08)] text-[var(--color-bcp-blue)] flex items-center justify-center shrink-0">
+                            <TraceIcon size={14} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-[var(--color-bcp-blue)] truncate">
+                                {trace.title}
+                              </span>
+                              {trace.date && (
+                                <span className="text-[10px] font-bold text-text-700 shrink-0">
+                                  {new Date(trace.date).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs font-semibold text-text-700 line-clamp-2 leading-snug">
+                              {trace.text}
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] font-bold uppercase text-text-700">Sin trazabilidad</span>
                       )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-6 py-4">
+                      {sale.vencimiento_remesa && (
+                        <div className={`flex items-center gap-2 text-xs font-bold ${isExpiringSoon(sale.vencimiento_remesa) ? 'text-red-600' : 'text-text-700'}`}>
+                          {isExpiringSoon(sale.vencimiento_remesa) ? <AlertTriangle size={14} className="animate-pulse" /> : <Clock size={14} />}
+                          {new Date(sale.vencimiento_remesa).toLocaleDateString()}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-center gap-2">
+                        <button 
+                          onClick={() => setSelectedSale(sale)}
+                          className="inline-flex items-center gap-2 px-3 py-2 text-[11px] font-black uppercase text-[var(--color-bcp-blue)] bg-[rgba(0,42,141,0.08)] hover:bg-[rgba(0,42,141,0.14)] rounded-lg transition-all"
+                          title="Ver detalle"
+                        >
+                          <Eye size={16} />
+                          Ver
+                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleDelete(sale.id)}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                            title="Eliminar"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {sales.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-20 text-center">
+                  <td colSpan={7} className="p-20 text-center">
                     <div className="flex flex-col items-center gap-2 opacity-20">
                        <LayoutList size={48} />
                        <p className="font-bold uppercase tracking-widest text-xs">No hay expedientes registrados</p>

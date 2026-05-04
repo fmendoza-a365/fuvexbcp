@@ -21,10 +21,10 @@ router.get('/', authMiddleware, async (req: any, res: any) => {
 // CREATE Zone (Solo SUPERADMIN y GERENTE)
 router.post('/', authMiddleware, authorize('SUPERADMIN', 'GERENTE'), async (req: any, res: any) => {
   try {
-    const { nombre, departamento, distrito } = req.body;
+    const { nombre, departamento, provincia, distrito, ubigeo } = req.body;
 
     const zone = await prisma.zone.create({
-      data: { nombre, departamento, distrito }
+      data: { nombre, departamento, provincia, distrito, ubigeo }
     });
 
     res.status(201).json(zone);
@@ -38,11 +38,11 @@ router.post('/', authMiddleware, authorize('SUPERADMIN', 'GERENTE'), async (req:
 router.put('/:id', authMiddleware, authorize('SUPERADMIN', 'GERENTE'), async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    const { nombre, departamento, distrito } = req.body;
+    const { nombre, departamento, provincia, distrito, ubigeo } = req.body;
 
     const zone = await prisma.zone.update({
       where: { id },
-      data: { nombre, departamento, distrito }
+      data: { nombre, departamento, provincia, distrito, ubigeo }
     });
 
     res.json(zone);
