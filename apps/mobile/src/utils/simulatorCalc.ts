@@ -2,7 +2,9 @@
 
 export const TASA_DESGRAVAMEN_MENSUAL = 0.000767; // 0.0767%
 export const TASA_DESGRAVAMEN_CON_RETORNO = 0.000997;
-export const AJUSTE_CUOTA_CRONOGRAMA = 4;
+export const AJUSTE_CUOTA_CRONOGRAMA = 0;
+export const DIA_VENCIMIENTO_DEFAULT = 15;
+export const MESES_PRIMER_VENCIMIENTO = 3;
 
 export function calcTEM(tea: number): number {
   return Math.pow(1 + tea, 1 / 12) - 1;
@@ -19,6 +21,27 @@ export function getTasaDesgravamenMensual(tipo: string, modalidad: string): numb
   if (normalizedTipo.includes('ENDOSADO')) return 0;
   if (normalizedModalidad.includes('CON')) return TASA_DESGRAVAMEN_CON_RETORNO;
   return TASA_DESGRAVAMEN_MENSUAL;
+}
+
+function addMonthsFixedDay(date: Date, months: number, day = DIA_VENCIMIENTO_DEFAULT): Date {
+  const next = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const lastDayOfMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(day, lastDayOfMonth));
+  return next;
+}
+
+export function getPrimerVencimiento(fechaDesembolso: Date): Date {
+  return addMonthsFixedDay(fechaDesembolso, MESES_PRIMER_VENCIMIENTO, DIA_VENCIMIENTO_DEFAULT);
+}
+
+export function parseFechaLocal(value: string | Date): Date {
+  if (value instanceof Date) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+
+  const [year, month, day] = String(value).split('T')[0].split('-').map(Number);
+  if (!year || !month || !day) return new Date();
+  return new Date(year, month - 1, day);
 }
 
 export function calcCuotaFrancesa(monto: number, tem: number, n: number): number {
@@ -59,10 +82,10 @@ export function generarCronograma(
   let totalInteres = 0;
   let totalDesgravamen = 0;
   let totalCuota = 0;
+  const primerVencimiento = getPrimerVencimiento(fechaDesembolso);
 
   for (let g = 0; g < periodoGracia; g++) {
-    const fechaCuota = new Date(fechaDesembolso);
-    fechaCuota.setMonth(fechaCuota.getMonth() + g + 1);
+    const fechaCuota = addMonthsFixedDay(primerVencimiento, g - periodoGracia);
     const interes = saldo * factorInteresMensual;
     const desgravamen = saldo * factorDesgravamenMensual;
     saldo += interes + desgravamen;
@@ -85,8 +108,7 @@ export function generarCronograma(
   const cuotaPostGracia = calcCuotaFrancesa(capitalBaseCuota, factorTotalMensual, nCuotas) + ajusteCuotaCronograma;
 
   for (let i = 1; i <= nCuotas; i++) {
-    const fechaCuota = new Date(fechaDesembolso);
-    fechaCuota.setMonth(fechaCuota.getMonth() + periodoGracia + i);
+    const fechaCuota = addMonthsFixedDay(primerVencimiento, i - 1);
     const interes = saldo * factorInteresMensual;
     const desgravamen = saldo * factorDesgravamenMensual;
     const amortizacion = cuotaPostGracia - interes - desgravamen;

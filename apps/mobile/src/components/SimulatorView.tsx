@@ -10,7 +10,7 @@ import { COLORS, DARK_COLORS, API_URL, DESIGN } from '../constants/theme';
 import {
   calcCuotaFrancesa,
   generarCronograma, calcTCEA, fmt,
-  calcFactorInteresMensualExcel, getTasaDesgravamenMensual, AJUSTE_CUOTA_CRONOGRAMA
+  calcFactorInteresMensualExcel, getTasaDesgravamenMensual, AJUSTE_CUOTA_CRONOGRAMA, getPrimerVencimiento, parseFechaLocal
 } from '../utils/simulatorCalc';
 
 interface SimConfig {
@@ -176,9 +176,8 @@ export default function SimulatorView({ isDark, token }: Props) {
 
     const tcea = calcTCEA(montoSolicitado, cuotaTotal, n);
 
-    const fechaDes = new Date(form.fechaDesembolso);
-    const fechaVenc = new Date(fechaDes);
-    fechaVenc.setMonth(fechaVenc.getMonth() + periodoGracia + 1);
+    const fechaDes = parseFechaLocal(form.fechaDesembolso);
+    const fechaVenc = getPrimerVencimiento(fechaDes);
 
     const baseEndeudamiento = ingresosFijos + otrosIngresosFijos - ingresosNoConstantes - descuentosLey - facultativos;
     const endeudamientoPorc = baseEndeudamiento > 0 ? (debtTotals.ratio / baseEndeudamiento) * 100 : 0;
@@ -260,12 +259,12 @@ export default function SimulatorView({ isDark, token }: Props) {
       Number(form.montoSolicitado) || 0,
       calculations.tem,
       Number(form.cuotas) || 12,
-      new Date(form.fechaDesembolso),
-      Number(form.periodoGracia) || 0,
+      parseFechaLocal(form.fechaDesembolso),
+      Number(form.periodoGracia) || selectedConvenio?.periodo_gracia || 0,
       calculations.envioFisicoCosto,
       calculations.tasaDesgravamenMensual
     );
-  }, [serverSimulation, form, calculations]);
+  }, [serverSimulation, form, selectedConvenio, calculations]);
 
   const updateCargaCrediticia = (idx: number, field: string, value: string) => {
     const updated = [...cargaCrediticia];

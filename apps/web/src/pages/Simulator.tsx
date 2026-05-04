@@ -4,7 +4,7 @@ import axios from 'axios';
 import {
   calcCuotaFrancesa,
   generarCronograma, calcTCEA, fmt,
-  calcFactorInteresMensualExcel, getTasaDesgravamenMensual, AJUSTE_CUOTA_CRONOGRAMA
+  calcFactorInteresMensualExcel, getTasaDesgravamenMensual, AJUSTE_CUOTA_CRONOGRAMA, getPrimerVencimiento, parseFechaLocal
 } from '../utils/simulatorCalc';
 import CronogramaModal from '../components/CronogramaModal';
 
@@ -147,9 +147,8 @@ export default function Simulator() {
 
     const tcea = calcTCEA(montoSolicitado, cuotaTotal, n);
 
-    const fechaDes = new Date(form.fechaDesembolso);
-    const fechaVenc = new Date(fechaDes);
-    fechaVenc.setMonth(fechaVenc.getMonth() + periodoGracia + 1);
+    const fechaDes = parseFechaLocal(form.fechaDesembolso);
+    const fechaVenc = getPrimerVencimiento(fechaDes);
 
     const baseEndeudamiento = ingresosFijos + otrosIngresosFijos - ingresosNoConstantes - descuentosLey - facultativos;
     const endeudamientoPorc = baseEndeudamiento > 0 ? (debtTotals.ratio / baseEndeudamiento) * 100 : 0;
@@ -240,13 +239,13 @@ export default function Simulator() {
       Number(form.montoSolicitado) || 0,
       calculations.factorInteres,
       Number(form.cuotas) || 12,
-      new Date(form.fechaDesembolso),
-      Number(form.periodoGracia) || 0,
+      parseFechaLocal(form.fechaDesembolso),
+      Number(form.periodoGracia) || selectedConvenio?.periodo_gracia || 0,
       calculations.envioFisico,
       calculations.tasaDesgravamenMensual
     );
     return result;
-  }, [showModal, serverSimulation, form, calculations.factorInteres, calculations.envioFisico, calculations.tasaDesgravamenMensual]);
+  }, [showModal, serverSimulation, form, selectedConvenio, calculations.factorInteres, calculations.envioFisico, calculations.tasaDesgravamenMensual]);
 
   if (loadingConfig) return (
     <div className="h-full flex items-center justify-center">

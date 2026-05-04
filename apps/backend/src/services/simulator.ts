@@ -48,7 +48,9 @@ export interface SimulationParams {
 
 const DESGRAVAMEN_SIN_RETORNO = 0.000767;
 const DESGRAVAMEN_CON_RETORNO = 0.000997;
-const AJUSTE_CUOTA_CRONOGRAMA = 4;
+const AJUSTE_CUOTA_CRONOGRAMA = 0;
+const DIA_VENCIMIENTO_DEFAULT = 15;
+const MESES_PRIMER_VENCIMIENTO = 3;
 
 const toNumber = (value: any, fallback = 0) => {
   const parsed = Number(value);
@@ -99,11 +101,16 @@ const irr = (cashflows: number[]) => {
   return rate;
 };
 
-const addMonths = (date: Date, months: number) => {
-  const next = new Date(date);
-  next.setMonth(next.getMonth() + months);
+const addMonthsFixedDay = (date: Date, months: number, day = DIA_VENCIMIENTO_DEFAULT) => {
+  const next = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const lastDayOfMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(day, lastDayOfMonth));
   return next;
 };
+
+const getPrimerVencimiento = (fechaDesembolso: Date) => (
+  addMonthsFixedDay(fechaDesembolso, MESES_PRIMER_VENCIMIENTO, DIA_VENCIMIENTO_DEFAULT)
+);
 
 const getDebtKey = (debt: DebtInput) => {
   const raw = normalizeText(debt.key || debt.tipo);
@@ -261,13 +268,14 @@ export async function calcularSimulacion(params: SimulationParams) {
 
   const cronograma: any[] = [];
   const startDate = params.fechaDesembolso ? new Date(`${params.fechaDesembolso}T00:00:00`) : new Date();
+  const primerVencimiento = getPrimerVencimiento(startDate);
   let saldoRemanente = montoSolicitado;
   let totalInteres = 0;
   let totalDesgravamen = 0;
   let totalEnvio = 0;
 
   for (let mes = 1; mes <= periodoGracia; mes += 1) {
-    const fechaCuota = addMonths(startDate, mes);
+    const fechaCuota = addMonthsFixedDay(primerVencimiento, mes - periodoGracia - 1);
     const interes = saldoRemanente * factorInteresMensual;
     const desgravamen = saldoRemanente * factorDesgravamenMensual;
     const capital = saldoRemanente;
@@ -290,7 +298,7 @@ export async function calcularSimulacion(params: SimulationParams) {
   }
 
   for (let mes = 1; mes <= cuotas; mes += 1) {
-    const fechaCuota = addMonths(startDate, periodoGracia + mes);
+    const fechaCuota = addMonthsFixedDay(primerVencimiento, mes - 1);
     const interes = saldoRemanente * factorInteresMensual;
     const desgravamen = saldoRemanente * factorDesgravamenMensual;
     const amortizacion = cuotaFija - interes - desgravamen;
@@ -341,6 +349,7 @@ export async function calcularSimulacion(params: SimulationParams) {
       endeudamiento_final: Math.round(endeudamientoConCuota * 10000) / 100,
       rci_aplicado: rci,
       periodo_gracia: periodoGracia,
+      primer_vencimiento: primerVencimiento.toLocaleDateString('es-PE'),
       tasa_desgravamen_mensual: tasaDesgravamenMensual,
       tipo_seguro_desgravamen: params.seguroDesgravamenTipo || 'Individual',
       modalidad_seguro_desgravamen: params.seguroDesgravamenModalidad || 'Sin Retorno',
