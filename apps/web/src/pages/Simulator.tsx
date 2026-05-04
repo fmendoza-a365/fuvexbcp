@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { Calculator, ShieldAlert, BadgeCheck, Zap, Info, ChevronRight, Landmark } from 'lucide-react';
 import axios from 'axios';
 import {
-  calcTEM, calcCuotaFrancesa, calcCEM,
-  generarCronograma, calcTCEA, fmt
+  calcCuotaFrancesa,
+  generarCronograma, calcTCEA, fmt,
+  calcFactorInteresMensualExcel, getTasaDesgravamenMensual, AJUSTE_CUOTA_CRONOGRAMA
 } from '../utils/simulatorCalc';
 import CronogramaModal from '../components/CronogramaModal';
 
@@ -13,6 +14,23 @@ interface SimConfig {
   reglas: { convenio_id: string; cargo_id: string; rci_especifico: number; edad_maxima?: number | null }[];
   configuracion: { TEA_DEFAULT: number; COSTO_ENVIO_FISICO: number };
 }
+
+const toNum = (value: any) => Number(value) || 0;
+
+const debtRatioFactors = [0.01, 0, 0.035, 0.022, 0, 0.0006944, 0.078, 0.003306];
+const debtCemFactors = [0.011, 0.044, 0.024, 0.088, 0.028, 0.000694, 0.007417, 0.007417];
+
+const calcDebtTotals = (rows: Array<{ bcp: string; noBcp: string; saldoAct: string; cuotaAct: string }>) => (
+  rows.reduce((acc, row, index) => {
+    const bcp = toNum(row.bcp);
+    const noBcp = toNum(row.noBcp);
+    const saldoAct = toNum(row.saldoAct);
+    const cuotaAct = toNum(row.cuotaAct);
+    acc.ratio += bcp + noBcp + (saldoAct * (debtRatioFactors[index] || 0));
+    acc.cem += bcp + (noBcp || cuotaAct || (saldoAct * (debtCemFactors[index] || 0)));
+    return acc;
+  }, { ratio: 0, cem: 0 })
+);
 
 export default function Simulator() {
   const [config, setConfig] = useState<SimConfig | null>(null);
@@ -40,7 +58,8 @@ export default function Simulator() {
     teaManual: '',
     periodoGracia: '0',
     fechaDesembolso: new Date().toISOString().split('T')[0],
-    tipoDesgravamen: 'Individual',
+    seguroDesgravamenTipo: 'Individual',
+    seguroDesgravamenModalidad: 'Sin Retorno',
   });
 
   const [cargaCrediticia, setCargaCrediticia] = useState([
@@ -90,48 +109,60 @@ export default function Simulator() {
 
   const calculations = useMemo(() => {
     const rci = effectiveRci;
+    const ingresosFijos = toNum(form.ingresosFijos);
+    const ingresoVariableMensual = toNum(form.ingresosVariables);
+    const promedioVariables = toNum(form.promedioVariables);
+    const otrosIngresosFijos = toNum(form.cafae);
+    const ingresosNoConstantes = toNum(form.ingresosNoConstantes);
+    const descuentosLey = toNum(form.descuentosLey);
+    const reserva = toNum(form.reserva);
+    const facultativos = toNum(form.facultativos);
 
-    // IND Logic from Excel:
-    // Total Ingresos = Fijos + Promedio Variables + CAFAE
-    // Disponible = Total Ingresos * RCI
-    // IND = Disponible - Descuentos Ley - Reserva - Facultativos
-    const totalIngresos = Number(form.ingresosFijos) + Number(form.promedioVariables) + Number(form.cafae);
-    const disponible = totalIngresos * rci;
-    const ind = disponible - Number(form.descuentosLey) - Number(form.reserva) - Number(form.facultativos);
+    const disponible = selectedConvenio?.nombre === 'U_San_Juan_Bautista'
+      ? ingresosFijos * rci
+      : (ingresosFijos - ingresoVariableMensual + (promedioVariables * 0.5) + otrosIngresosFijos - ingresosNoConstantes - descuentosLey) * rci;
+    const ind = disponible - reserva - facultativos;
 
-    const totalCuotasExternas = cargaCrediticia.reduce((acc, curr) => {
-      const bcp = Number(curr.bcp) || 0;
-      const noBcp = Number(curr.noBcp) || 0;
-      // Si hay una cuota manual se usa esa, sino la suma de BCP + No BCP
-      const cuotaRow = Number(curr.cuotaAct) || (bcp + noBcp);
-      return acc + cuotaRow;
-    }, 0);
-
-    const cem = calcCEM(ind, totalCuotasExternas);
+    const debtTotals = calcDebtTotals(cargaCrediticia);
+    const maxEndeudamiento = selectedConvenio?.nombre === 'UTES_N6'
+      ? 0.70
+      : ['Marina_de_Guerra', 'Ejército_del_Perú', 'Policia_Nacional_del_Perú', 'DIRIS_Lima_Norte', 'Hospital_de_apoyo_Iquitos', 'DIRIS_Lima_Centro', 'UE403_Morropon', 'Fuerza_Aerea_del_Perú', 'Red_Salud_APLAO'].includes(selectedConvenio?.nombre || '')
+        ? 0.65
+        : 0.50;
+    const baseCem = ingresosFijos - ingresoVariableMensual + promedioVariables + otrosIngresosFijos - ingresosNoConstantes - descuentosLey - facultativos;
+    const cem = (baseCem * maxEndeudamiento) - debtTotals.cem;
     const tea = (Number(form.teaManual) || 10.99) / 100;
-    const tem = calcTEM(tea);
+    const factorInteres = calcFactorInteresMensualExcel(tea);
+    const tasaDesgravamenMensual = getTasaDesgravamenMensual(form.seguroDesgravamenTipo, form.seguroDesgravamenModalidad);
+    const factorDesgravamen = (tasaDesgravamenMensual * 12 / 365) * 31;
     const n = Number(form.cuotas) || 12;
-    const cuotaBase = calcCuotaFrancesa(Number(form.montoSolicitado) || 0, tem, n);
-    const desgravamenMensual = (Number(form.montoSolicitado) || 0) * 0.000767;
+    const periodoGracia = Number(form.periodoGracia) || selectedConvenio?.periodo_gracia || 0;
+    const montoSolicitado = Number(form.montoSolicitado) || 0;
+    const capitalFinanciado = montoSolicitado * Math.pow(1 + factorInteres + factorDesgravamen, periodoGracia);
+    const capitalBaseCuota = capitalFinanciado + (montoSolicitado * factorDesgravamen * periodoGracia);
+    const cuotaBase = calcCuotaFrancesa(capitalBaseCuota, factorInteres + factorDesgravamen, n) + AJUSTE_CUOTA_CRONOGRAMA;
+    const desgravamenMensual = montoSolicitado * factorDesgravamen;
     const envioFisico = form.envioFisico ? (config?.configuracion?.COSTO_ENVIO_FISICO || 10) : 0;
-    const cuotaTotal = cuotaBase + desgravamenMensual + envioFisico;
+    const cuotaTotal = cuotaBase + envioFisico;
 
-    const tcea = calcTCEA(Number(form.montoSolicitado) || 0, cuotaTotal, n);
-    const dictamen = cuotaTotal <= cem ? 'CONTINUAR' : 'EVALUAR';
+    const tcea = calcTCEA(montoSolicitado, cuotaTotal, n);
 
     const fechaDes = new Date(form.fechaDesembolso);
     const fechaVenc = new Date(fechaDes);
-    fechaVenc.setMonth(fechaVenc.getMonth() + Number(form.periodoGracia) + 1);
+    fechaVenc.setMonth(fechaVenc.getMonth() + periodoGracia + 1);
 
-    const endeudamientoPorc = totalIngresos > 0 ? (totalCuotasExternas / totalIngresos) * 100 : 0;
+    const baseEndeudamiento = ingresosFijos + otrosIngresosFijos - ingresosNoConstantes - descuentosLey - facultativos;
+    const endeudamientoPorc = baseEndeudamiento > 0 ? (debtTotals.ratio / baseEndeudamiento) * 100 : 0;
+    const dictamen = endeudamientoPorc <= (maxEndeudamiento * 100) ? 'CONTINUAR' : 'SOBRE-ENDEUDADO';
+    const totalIngresos = ingresosFijos + otrosIngresosFijos + promedioVariables;
 
     return {
-      ind, cem, cuotaTotal, tea, tcea, dictamen, totalCuotasExternas,
+      ind, cem, cuotaTotal, tea, tcea, dictamen, totalCuotasExternas: debtTotals.cem,
       desgravamenMensual, envioFisico, totalIngresos, disponible,
       fechaVenc: fechaVenc.toLocaleDateString('es-PE'),
-      endeudamientoPorc
+      endeudamientoPorc, factorInteres, tasaDesgravamenMensual
     };
-  }, [form, effectiveRci, cargaCrediticia, config]);
+  }, [form, effectiveRci, selectedConvenio, cargaCrediticia, config]);
 
   const handleSimulate = async () => {
     if (!form.convenioId || !form.cargoId) {
@@ -145,15 +176,24 @@ export default function Simulator() {
       const payload = {
         convenioId: form.convenioId,
         cargoId: form.cargoId,
-        ingresosFijos: Number(form.ingresosFijos) + Number(form.promedioVariables) + Number(form.cafae),
+        ingresosFijos: Number(form.ingresosFijos),
         ingresosVariables: Number(form.ingresosVariables),
+        promedioVariables: Number(form.promedioVariables),
+        otrosIngresosFijos: Number(form.cafae),
+        ingresosNoConstantes: Number(form.ingresosNoConstantes),
         descuentosLey: Number(form.descuentosLey),
-        otrosDescuentos: Number(form.reserva) + Number(form.facultativos),
+        reserva: Number(form.reserva),
+        facultativos: Number(form.facultativos),
+        otrosDescuentos: Number(form.facultativos),
         montoSolicitado: Number(form.montoSolicitado),
         cuotas: Number(form.cuotas),
         envioFisico: form.envioFisico,
         teaManual: Number(form.teaManual) ? Number(form.teaManual) / 100 : undefined,
         periodoGracia: Number(form.periodoGracia) || selectedConvenio?.periodo_gracia || 0,
+        fechaDesembolso: form.fechaDesembolso,
+        seguroDesgravamenTipo: form.seguroDesgravamenTipo,
+        seguroDesgravamenModalidad: form.seguroDesgravamenModalidad,
+        cargaCrediticia,
         deudaHipotecario: Number(cargaCrediticia[0]?.cuotaAct || cargaCrediticia[0]?.bcp || 0) + Number(cargaCrediticia[0]?.noBcp || 0),
         deudaEfectivo: Number(cargaCrediticia[1]?.cuotaAct || cargaCrediticia[1]?.bcp || 0) + Number(cargaCrediticia[1]?.noBcp || 0),
         deudaVehicular: Number(cargaCrediticia[2]?.cuotaAct || cargaCrediticia[2]?.bcp || 0) + Number(cargaCrediticia[2]?.noBcp || 0),
@@ -198,14 +238,15 @@ export default function Simulator() {
     }
     const result = generarCronograma(
       Number(form.montoSolicitado) || 0,
-      calcTEM(calculations.tea),
+      calculations.factorInteres,
       Number(form.cuotas) || 12,
       new Date(form.fechaDesembolso),
       Number(form.periodoGracia) || 0,
-      calculations.envioFisico
+      calculations.envioFisico,
+      calculations.tasaDesgravamenMensual
     );
     return result;
-  }, [showModal, serverSimulation, form, calculations.tea, calculations.envioFisico]);
+  }, [showModal, serverSimulation, form, calculations.factorInteres, calculations.envioFisico, calculations.tasaDesgravamenMensual]);
 
   if (loadingConfig) return (
     <div className="h-full flex items-center justify-center">
@@ -500,10 +541,17 @@ export default function Simulator() {
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="sim-label">SEGURO DESGRAVAMEN</label>
-                  <select className="sim-input" value={form.tipoDesgravamen} onChange={e => setForm({ ...form, tipoDesgravamen: e.target.value })}>
+                  <label className="sim-label">TIPO DE SEGURO</label>
+                  <select className="sim-input" value={form.seguroDesgravamenTipo} onChange={e => setForm({ ...form, seguroDesgravamenTipo: e.target.value })}>
                     <option value="Individual">Individual</option>
-                    <option value="Sin retorno">Sin retorno</option>
+                    <option value="Endosado">Endosado</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="sim-label">MODALIDAD DESGRAVAMEN</label>
+                  <select className="sim-input" value={form.seguroDesgravamenModalidad} onChange={e => setForm({ ...form, seguroDesgravamenModalidad: e.target.value })}>
+                    <option value="Sin Retorno">Sin Retorno</option>
+                    <option value="Con Retorno">Con Retorno</option>
                   </select>
                 </div>
               </div>

@@ -1,9 +1,24 @@
 // simulatorCalc.ts — Motor de cálculo del Simulador BCP Premium
 
 export const TASA_DESGRAVAMEN_MENSUAL = 0.000767; // 0.0767%
+export const TASA_DESGRAVAMEN_CON_RETORNO = 0.000997;
+export const AJUSTE_CUOTA_CRONOGRAMA = 4;
 
 export function calcTEM(tea: number): number {
   return Math.pow(1 + tea, 1 / 12) - 1;
+}
+
+export function calcFactorInteresMensualExcel(tea: number): number {
+  const tna365 = (((1 + tea) ** (1 / 12) - 1) * 12) * 365 / 360;
+  return (tna365 / 365) * 31;
+}
+
+export function getTasaDesgravamenMensual(tipo: string, modalidad: string): number {
+  const normalizedTipo = String(tipo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  const normalizedModalidad = String(modalidad || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  if (normalizedTipo.includes('ENDOSADO')) return 0;
+  if (normalizedModalidad.includes('CON')) return TASA_DESGRAVAMEN_CON_RETORNO;
+  return TASA_DESGRAVAMEN_MENSUAL;
 }
 
 export function calcCuotaFrancesa(monto: number, tem: number, n: number): number {
@@ -42,13 +57,16 @@ export interface CronogramaRow {
 
 export function generarCronograma(
   monto: number,
-  tem: number,
+  factorInteresMensual: number,
   nCuotas: number,
   fechaDesembolso: Date,
   periodoGracia: number,
-  envioFisicoCosto: number
+  envioFisicoCosto: number,
+  tasaDesgravamenMensual: number = TASA_DESGRAVAMEN_MENSUAL,
+  ajusteCuotaCronograma: number = AJUSTE_CUOTA_CRONOGRAMA
 ): { cronograma: CronogramaRow[]; totales: { interes: number; desgravamen: number; cuota: number } } {
-  const cuotaBase = calcCuotaFrancesa(monto, tem, nCuotas);
+  const factorDesgravamenMensual = (tasaDesgravamenMensual * 12 / 365) * 31;
+  const factorTotalMensual = factorInteresMensual + factorDesgravamenMensual;
   const rows: CronogramaRow[] = [];
   let saldo = monto;
   let totalInteres = 0;
@@ -59,9 +77,9 @@ export function generarCronograma(
   for (let g = 0; g < periodoGracia; g++) {
     const fechaCuota = new Date(fechaDesembolso);
     fechaCuota.setMonth(fechaCuota.getMonth() + g + 1);
-    const interes = saldo * tem;
-    const desgravamen = saldo * TASA_DESGRAVAMEN_MENSUAL;
-    saldo += interes; // capitalización
+    const interes = saldo * factorInteresMensual;
+    const desgravamen = saldo * factorDesgravamenMensual;
+    saldo += interes + desgravamen;
     totalInteres += interes;
     totalDesgravamen += desgravamen;
     rows.push({
@@ -77,19 +95,17 @@ export function generarCronograma(
     });
   }
 
-  // Recalcular cuota post-gracia si hubo capitalización
-  const cuotaPostGracia = periodoGracia > 0
-    ? calcCuotaFrancesa(saldo, tem, nCuotas)
-    : cuotaBase;
+  const capitalBaseCuota = saldo + (monto * factorDesgravamenMensual * periodoGracia);
+  const cuotaPostGracia = calcCuotaFrancesa(capitalBaseCuota, factorTotalMensual, nCuotas) + ajusteCuotaCronograma;
 
   for (let i = 1; i <= nCuotas; i++) {
     const fechaCuota = new Date(fechaDesembolso);
     fechaCuota.setMonth(fechaCuota.getMonth() + periodoGracia + i);
-    const interes = saldo * tem;
-    const desgravamen = saldo * TASA_DESGRAVAMEN_MENSUAL;
-    const amortizacion = cuotaPostGracia - interes;
+    const interes = saldo * factorInteresMensual;
+    const desgravamen = saldo * factorDesgravamenMensual;
+    const amortizacion = cuotaPostGracia - interes - desgravamen;
     saldo = Math.max(0, saldo - amortizacion);
-    const cuotaFinal = cuotaPostGracia + desgravamen + envioFisicoCosto;
+    const cuotaFinal = cuotaPostGracia + envioFisicoCosto;
 
     totalInteres += interes;
     totalDesgravamen += desgravamen;
