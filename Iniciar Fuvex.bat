@@ -49,7 +49,7 @@ if not exist "%ROOT%apps\backend\.env" (
 echo [OK] Dependencias y entorno local encontrados.
 echo.
 
-echo [3/6] Preparando base de datos, cliente Prisma y catalogos operativos...
+echo [3/7] Preparando base de datos, cliente Prisma y catalogos operativos...
 cd /d "%ROOT%apps\backend"
 if not exist "%ROOT%data" mkdir "%ROOT%data"
 if not exist "%ROOT%logs" mkdir "%ROOT%logs"
@@ -62,9 +62,20 @@ if errorlevel 1 goto :error
 echo [OK] Base de datos lista con convenios, cargos y RCI.
 echo.
 
+echo [4/7] Verificando compilacion de Backend, Web y App Movil...
+cd /d "%ROOT%"
+call npm.cmd exec --workspace backend -- tsc --noEmit -p tsconfig.json
+if errorlevel 1 goto :error
+call npm.cmd exec --workspace web -- tsc --noEmit -p tsconfig.app.json
+if errorlevel 1 goto :error
+call npm.cmd exec --workspace mobile -- tsc --noEmit -p tsconfig.json
+if errorlevel 1 goto :error
+echo [OK] Compilacion TypeScript validada.
+echo.
+
 set "FUVEX_ROOT=%ROOT%"
 
-echo [4/6] Iniciando Backend API en segundo plano: http://localhost:3001 ...
+echo [5/7] Iniciando Backend API en segundo plano: http://localhost:3001 ...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$root=$env:FUVEX_ROOT;" ^
   "$logs=Join-Path $root 'logs';" ^
@@ -75,7 +86,7 @@ if errorlevel 1 goto :error
 echo [OK] Backend en proceso oculto. Logs: logs\backend.log
 echo.
 
-echo [5/6] Iniciando Web Dashboard en segundo plano: http://localhost:5173 ...
+echo [6/7] Iniciando Web Dashboard en segundo plano: http://localhost:5173 ...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$root=$env:FUVEX_ROOT;" ^
   "$logs=Join-Path $root 'logs';" ^
@@ -104,13 +115,18 @@ if defined FUVEX_NGROK_DOMAIN (
 )
 echo.
 
-echo [6/6] Iniciando App Movil con Expo...
+echo [7/7] Iniciando App Movil con Expo...
 set "LOCAL_IP="
-for /f "delims=" %%I in ('powershell -NoProfile -Command "$ips=[System.Net.Dns]::GetHostEntry([System.Net.Dns]::GetHostName()).AddressList;foreach($ip in $ips){if($ip.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -and -not $ip.IPAddressToString.StartsWith('169.254')){$ip.IPAddressToString;break}}"') do set "LOCAL_IP=%%I"
+for /f "delims=" %%I in ('powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinue';$socket=New-Object System.Net.Sockets.Socket([System.Net.Sockets.AddressFamily]::InterNetwork,[System.Net.Sockets.SocketType]::Dgram,[System.Net.Sockets.ProtocolType]::Udp);$socket.Connect('8.8.8.8',80);$ip=($socket.LocalEndPoint).Address.ToString();$socket.Dispose();if($ip -and -not $ip.StartsWith('169.254')){$ip}"') do set "LOCAL_IP=%%I"
+if not defined LOCAL_IP (
+  for /f "delims=" %%I in ('powershell -NoProfile -Command "$ips=[System.Net.Dns]::GetHostEntry([System.Net.Dns]::GetHostName()).AddressList;foreach($ip in $ips){if($ip.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -and -not $ip.IPAddressToString.StartsWith('169.254')){$ip.IPAddressToString;break}}"') do set "LOCAL_IP=%%I"
+)
 if not defined LOCAL_IP set "LOCAL_IP=localhost"
 
 set "MOBILE_API_URL=http://%LOCAL_IP%:3001/api"
 if defined EXPO_PUBLIC_API_URL set "MOBILE_API_URL=%EXPO_PUBLIC_API_URL%"
+set "REACT_NATIVE_PACKAGER_HOSTNAME=%LOCAL_IP%"
+set "EXPO_NO_TELEMETRY=1"
 
 set "EXPO_ARGS=--lan --clear"
 if defined FUVEX_EXPO_ARGS set "EXPO_ARGS=%FUVEX_EXPO_ARGS%"
@@ -125,6 +141,7 @@ echo   Backend: http://localhost:3001
 echo   Backend LAN para mobile: %MOBILE_API_URL%
 echo   Web:     http://localhost:5173
 echo   Mobile:  QR de Expo en esta ventana
+echo   Metro LAN host: %REACT_NATIVE_PACKAGER_HOSTNAME%
 echo.
 echo Backend y Web corren ocultos para no abrir varias ventanas de CMD.
 echo Logs:
@@ -135,6 +152,7 @@ echo Modo Expo actual: %EXPO_ARGS%
 echo Puedes cambiarlo definiendo FUVEX_EXPO_ARGS antes de ejecutar este BAT.
 echo Ejemplo tunel: set FUVEX_EXPO_ARGS=--tunnel -c
 echo Si usas tunel o una IP distinta, define EXPO_PUBLIC_API_URL antes de ejecutar.
+echo Si Expo Go queda cargando, confirma que el celular este en la misma WiFi que %LOCAL_IP%.
 echo.
 echo Iniciando Expo ahora. Para detener Expo usa Ctrl+C en esta ventana.
 echo Al volver a ejecutar este BAT, se liberan automaticamente los puertos locales.
