@@ -93,11 +93,11 @@ echo [4/7] Verificando compilacion de Backend, Web y App Movil...
 cd /d "%ROOT%"
 call npm.cmd exec --workspace backend -- tsc --noEmit -p tsconfig.json
 if errorlevel 1 goto :error
-call npm.cmd exec --workspace web -- tsc --noEmit -p tsconfig.app.json
+call npm.cmd run build --workspace web
 if errorlevel 1 goto :error
 call npm.cmd exec --workspace mobile -- tsc --noEmit -p tsconfig.json
 if errorlevel 1 goto :error
-echo [OK] Compilacion TypeScript validada.
+echo [OK] Compilacion validada y Web publica actualizada.
 echo.
 
 set "FUVEX_ROOT=%ROOT%"

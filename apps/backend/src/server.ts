@@ -34,6 +34,7 @@ dotenv.config();
 const app = express();
 const prisma = new PrismaClient();
 const PORT = parseInt(process.env.PORT || '3001', 10);
+app.set('trust proxy', 1);
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -46,17 +47,53 @@ const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:3001,http
   .map(origin => origin.trim())
   .filter(Boolean);
 
-app.use(cors({
-  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-      callback(null, true);
-      return;
+const isPrivateNetworkHost = (hostname: string) => (
+  hostname === 'localhost' ||
+  hostname === '127.0.0.1' ||
+  hostname.startsWith('192.168.') ||
+  hostname.startsWith('10.') ||
+  /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+);
+
+const isNgrokHost = (hostname: string) => (
+  hostname.endsWith('.ngrok-free.app') ||
+  hostname.endsWith('.ngrok-free.dev') ||
+  hostname.endsWith('.ngrok.app') ||
+  hostname.endsWith('.ngrok.io')
+);
+
+const isAllowedOrigin = (origin: string | undefined, requestHost: string | undefined) => {
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+    return true;
+  }
+
+  try {
+    const originUrl = new URL(origin);
+    const hostWithoutPort = String(requestHost || '').split(':')[0];
+
+    if (originUrl.host === requestHost || originUrl.hostname === hostWithoutPort) {
+      return true;
     }
 
-    console.warn(`[SECURITY] CORS bloqueado para origen: ${origin}`);
-    callback(new Error('Origen no permitido por CORS'));
-  },
-  credentials: true
+    if (process.env.NODE_ENV !== 'production' && (isPrivateNetworkHost(originUrl.hostname) || isNgrokHost(originUrl.hostname))) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+};
+
+app.use(cors((req: express.Request, callback: any) => {
+  const origin = req.header('Origin');
+  if (isAllowedOrigin(origin, req.header('Host'))) {
+    callback(null, { origin: origin ? true : false, credentials: true });
+    return;
+  }
+
+  console.warn(`[SECURITY] CORS bloqueado para origen: ${origin}`);
+  callback(new Error('Origen no permitido por CORS'), { origin: false });
 }));
 
 app.use(compression());
