@@ -78,11 +78,25 @@ model Sale {
   id                       String                  @id @default(uuid())
   dni_cliente              String
   nombres_cliente          String
+  celular                  String
+  telefono_alt             String?
+  correo                   String?
+  direccion                String?
   plaza                    String?
   departamento             String?                 @default("LIMA")
+  provincia                String?
+  distrito                 String?
+  zona_comercial           String?
   convenio                 String?
+  entidad_laboral          String?
+  cargo_laboral            String?
+  monto_solicitado         Float?
+  plazo_deseado            Int?
+  origen_prospecto         String?
+  consentimiento           Boolean                 @default(false)
+  consentimiento_at        DateTime?
   maf_neto                 Float
-  estado                   String                  @default("POR INGRESAR")
+  estado                   String                  @default("PROSPECTO_NUEVO")
   fecha_filtro             DateTime?
   fecha_ingreso            DateTime?               @default(now())
   fecha_desembolso         DateTime?

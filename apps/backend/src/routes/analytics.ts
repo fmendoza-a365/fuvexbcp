@@ -30,7 +30,7 @@ router.get('/dashboard', authMiddleware, async (req: any, res: any) => {
     const pipelineData = await prisma.sale.aggregate({
       where: {
         ...filter,
-        estado: { in: ['POR INGRESAR', 'EN PROCESO', 'APROBADA', 'OBSERVADA', 'SUBSANADA', 'PENDIENTE_DOCUMENTAR', 'PENDIENTE_INSTITUCIONES', 'PENDIENTE_REMESA', 'PENDIENTE_BACK_OFFICE', 'OBSERVADO_BACK', 'EN_EVALUACION_BCP'] },
+        estado: { in: ['PROSPECTO_NUEVO', 'PENDIENTE_DATOS', 'PENDIENTE_DOCUMENTOS', 'LISTO_SCORE', 'SCORE_APROBADO', 'SIMULACION_ACEPTADA', 'ENVIADO_CONVENIO', 'CONVENIO_APROBADO', 'PREPARANDO_BCP', 'ENVIADO_BCP', 'APROBADO_BCP', 'OBSERVADO', 'PENDIENTE_REASIGNACION'] },
         fecha_ingreso: { gte: monthStart, lte: monthEnd }
       },
       _sum: { maf_neto: true },
@@ -73,7 +73,7 @@ router.get('/dashboard', authMiddleware, async (req: any, res: any) => {
     const productivity = activeSellers.length > 0 ? totalEntered / activeSellers.length : 0;
 
     const pendingValue = await prisma.sale.aggregate({
-      where: { ...filter, estado: 'APROBADA' },
+      where: { ...filter, estado: { in: ['APROBADO_BCP', 'CONVENIO_APROBADO', 'ENVIADO_BCP'] } },
       _sum: { maf_neto: true }
     });
 
@@ -411,6 +411,18 @@ router.get('/operations', authMiddleware, async (req: any, res: any) => {
 // ═══════════════════════════════════════════════════
 
 const ETAPA_MAP: Record<string, string> = {
+  'PROSPECTO_NUEVO': 'Registro',
+  'PENDIENTE_DATOS': 'Registro',
+  'PENDIENTE_DOCUMENTOS': 'Documentacion',
+  'LISTO_SCORE': 'Score',
+  'SCORE_APROBADO': 'Score',
+  'SIMULACION_ACEPTADA': 'Simulacion',
+  'ENVIADO_CONVENIO': 'Convenio',
+  'CONVENIO_APROBADO': 'Convenio',
+  'PREPARANDO_BCP': 'Conformidad BCP',
+  'ENVIADO_BCP': 'Conformidad BCP',
+  'APROBADO_BCP': 'Conformidad BCP',
+  'OBSERVADO': 'Observado',
   'POR INGRESAR': 'Registro',
   'EN PROCESO': 'Evaluación Interna',
   'OBSERVADA': 'Evaluación Interna',
@@ -421,9 +433,7 @@ const ETAPA_MAP: Record<string, string> = {
   'APROBADA': 'Aprobación',
   'CONFORMIDAD': 'Conformidad BCP',
   'EN_PREPARACION': 'Conformidad BCP',
-  'ENVIADO_BCP': 'Conformidad BCP',
   'EN_EVALUACION_BCP': 'Conformidad BCP',
-  'APROBADO_BCP': 'Conformidad BCP',
   'DESEMBOLSADO': 'Desembolso',
   'DESEMBOLSADO_BCP': 'Desembolso',
   'RECHAZADO': 'Rechazado',
@@ -433,10 +443,15 @@ const ETAPA_MAP: Record<string, string> = {
 
 const ETAPA_ORDEN = [
   'Registro',
+  'Documentacion',
+  'Score',
+  'Simulacion',
+  'Convenio',
   'Evaluación Interna',
   'Revisión Supervisor',
   'Aprobación',
   'Conformidad BCP',
+  'Observado',
   'Desembolso',
   'Rechazado'
 ];
@@ -690,6 +705,18 @@ router.get('/kanban', authMiddleware, async (req: any, res: any) => {
 
     // Definir columnas del Kanban (14 estados — flujo BCP completo)
     const columnas = [
+      { key: 'PROSPECTO_NUEVO', label: 'Prospecto', color: '#6B7280', seccion: 'registro' },
+      { key: 'PENDIENTE_DATOS', label: 'Pte. Datos', color: '#F59E0B', seccion: 'registro' },
+      { key: 'PENDIENTE_DOCUMENTOS', label: 'Pte. Docs', color: '#D97706', seccion: 'documentos' },
+      { key: 'LISTO_SCORE', label: 'Listo Score', color: '#3B82F6', seccion: 'score' },
+      { key: 'SCORE_APROBADO', label: 'Score Aprobado', color: '#10B981', seccion: 'score' },
+      { key: 'SIMULACION_ACEPTADA', label: 'Simulacion', color: '#0891B2', seccion: 'simulacion' },
+      { key: 'ENVIADO_CONVENIO', label: 'En Convenio', color: '#4F46E5', seccion: 'convenio' },
+      { key: 'CONVENIO_APROBADO', label: 'Convenio OK', color: '#0D9488', seccion: 'convenio' },
+      { key: 'PREPARANDO_BCP', label: 'Preparando BCP', color: '#7C3AED', seccion: 'bcp' },
+      { key: 'ENVIADO_BCP', label: 'Enviado BCP', color: '#2563EB', seccion: 'bcp' },
+      { key: 'APROBADO_BCP', label: 'Aprobado BCP', color: '#10B981', seccion: 'bcp' },
+      { key: 'OBSERVADO', label: 'Observado', color: '#EA580C', seccion: 'observado' },
       // Flujo original
       { key: 'POR INGRESAR', label: 'Por Ingresar', color: '#6B7280', seccion: 'recojo' },
       { key: 'EN PROCESO', label: 'En Proceso', color: '#3B82F6', seccion: 'evaluacion' },

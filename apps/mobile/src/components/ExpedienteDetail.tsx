@@ -48,9 +48,9 @@ interface ExpedienteDetailProps {
 }
 
 const getEstadoColor = (estado: string, theme: any) => {
-  if (estado === 'DESEMBOLSADO' || estado === 'APROBADA' || estado === 'CONFORMIDAD') return theme.emerald;
-  if (estado === 'OBSERVADA' || estado === 'OBSERVADO_BACK' || estado === 'POR INGRESAR') return theme.orange;
-  if (estado?.includes('RECHAZ') || estado === 'BOLETA_NO_CALIFICA') return theme.rose;
+  if (['DESEMBOLSADO', 'APROBADO_BCP', 'CONVENIO_APROBADO', 'SCORE_APROBADO'].includes(estado)) return theme.emerald;
+  if (['OBSERVADO', 'PROSPECTO_NUEVO', 'PENDIENTE_DATOS', 'PENDIENTE_DOCUMENTOS', 'PENDIENTE_REASIGNACION'].includes(estado)) return theme.orange;
+  if (estado?.includes('RECHAZ')) return theme.rose;
   if (estado?.includes('PENDIENTE')) return theme.amber;
   return theme.blue;
 };
@@ -157,9 +157,9 @@ export default function ExpedienteDetail({ saleId, onClose, isDark, theme }: Exp
   const estadoColor = getEstadoColor(sale.estado, theme);
   const estadoBg = sale.estado?.includes('RECHAZ')
     ? theme.roseSoft
-    : sale.estado?.includes('PENDIENTE') || sale.estado === 'POR INGRESAR'
+    : sale.estado?.includes('PENDIENTE') || sale.estado === 'PROSPECTO_NUEVO' || sale.estado === 'OBSERVADO'
       ? theme.orangeSoft
-      : sale.estado === 'DESEMBOLSADO' || sale.estado === 'APROBADA' || sale.estado === 'CONFORMIDAD'
+      : ['DESEMBOLSADO', 'APROBADO_BCP', 'CONVENIO_APROBADO', 'SCORE_APROBADO'].includes(sale.estado)
         ? theme.emeraldSoft
         : theme.blueSoft;
   const diasEnEstado = sale.fecha_estado_desde
@@ -168,6 +168,14 @@ export default function ExpedienteDetail({ saleId, onClose, isDark, theme }: Exp
   const docsCompletados = checklist.filter(d => d.subido).length;
   const docsTotal = checklist.length;
   const docsProgress = docsTotal > 0 ? docsCompletados / docsTotal : 0;
+  const operationalRows = [
+    ['Celular', sale.celular || '-'],
+    ['Correo', sale.correo || '-'],
+    ['Cargo', sale.cargo_laboral || '-'],
+    ['Entidad', sale.entidad_laboral || '-'],
+    ['Ubicacion', [sale.distrito, sale.provincia, sale.departamento].filter(Boolean).join(', ') || '-'],
+    ['Plazo', sale.plazo_deseado ? `${sale.plazo_deseado} meses` : '-'],
+  ];
   const observations: ObservationItem[] = [
     ...(sale.feedback ? [{
       id: 'feedback-inicial',
@@ -227,8 +235,8 @@ export default function ExpedienteDetail({ saleId, onClose, isDark, theme }: Exp
         <View style={s.infoRow}>
           <View style={[s.infoCard, { backgroundColor: theme.white, borderColor: theme.border }]}>
             <Ionicons name="wallet-outline" size={20} color={theme.blue} />
-            <Text style={[s.infoValue, { color: theme.text }]}>S/ {sale.maf_neto?.toLocaleString()}</Text>
-            <Text style={[s.infoLabel, { color: theme.subtext }]}>MAF Neto</Text>
+            <Text style={[s.infoValue, { color: theme.text }]}>S/ {Number(sale.monto_solicitado ?? sale.maf_neto ?? 0).toLocaleString()}</Text>
+            <Text style={[s.infoLabel, { color: theme.subtext }]}>Monto</Text>
           </View>
           <View style={[s.infoCard, { backgroundColor: theme.white, borderColor: theme.border }]}>
             <Ionicons name="business-outline" size={20} color={theme.orange} />
@@ -240,6 +248,19 @@ export default function ExpedienteDetail({ saleId, onClose, isDark, theme }: Exp
             <Text style={[s.infoValue, { color: theme.text }]}>{diasEnEstado}d</Text>
             <Text style={[s.infoLabel, { color: theme.subtext }]}>En Estado</Text>
           </View>
+        </View>
+
+        <View style={[s.section, { backgroundColor: theme.white, borderColor: theme.border }]}>
+          <View style={s.sectionHeader}>
+            <Ionicons name="person-outline" size={18} color={theme.blue} />
+            <Text style={[s.sectionTitle, { color: theme.text }]}>DATOS OPERATIVOS</Text>
+          </View>
+          {operationalRows.map(([label, value]) => (
+            <View key={label} style={[s.dataRow, { borderBottomColor: theme.divider }]}>
+              <Text style={[s.dataLabel, { color: theme.subtext }]}>{label}</Text>
+              <Text style={[s.dataValue, { color: theme.text }]} numberOfLines={2}>{value}</Text>
+            </View>
+          ))}
         </View>
 
         {/* Document Progress */}
@@ -385,6 +406,9 @@ const s = StyleSheet.create({
   section: { marginHorizontal: 16, marginBottom: 16, borderRadius: DESIGN.radius.lg, padding: 16, borderWidth: 1 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 },
   sectionTitle: { fontSize: 12, fontWeight: '900', letterSpacing: 0.8 },
+  dataRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  dataLabel: { width: 86, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
+  dataValue: { flex: 1, textAlign: 'right', fontSize: 12, fontWeight: '800' },
   progressBarBg: { height: 6, borderRadius: 3, marginBottom: 12, overflow: 'hidden' },
   progressBarFill: { height: 6, borderRadius: 3 },
   checkItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },

@@ -29,6 +29,12 @@ interface Sale {
   estado: string;
   convenio?: string | null;
   maf_neto?: number | null;
+  monto_solicitado?: number | null;
+  celular?: string | null;
+  correo?: string | null;
+  entidad_laboral?: string | null;
+  cargo_laboral?: string | null;
+  plazo_deseado?: number | null;
   asesor?: { username?: string; nombre?: string } | null;
 }
 
@@ -77,9 +83,31 @@ interface UploadedChecklistItem {
   cantidad: number;
 }
 
-const INSTITUCIONES_SUGERIDAS = ['RENIEC', 'SUNAT', 'ESSALUD', 'SIS', 'SCTR', 'SBS', 'SUNARP', 'MIGRACIONES'];
+const INSTITUCIONES_BASE = ['CONVENIO', 'RENIEC', 'SUNAT', 'ESSALUD', 'SIS', 'SCTR', 'SBS', 'SUNARP', 'MIGRACIONES'];
 const ESTADOS_INSTITUCION = ['PENDIENTE', 'ENVIADO', 'RECIBIDO', 'RECHAZADO'];
 const ESTADOS_BCP = ['EN_PREPARACION', 'ENVIADO_BCP', 'EN_EVALUACION_BCP', 'APROBADO_BCP', 'RECHAZADO_BCP', 'DESEMBOLSADO_BCP'];
+const PIPELINE_STATES = [
+  { key: 'PROSPECTO_NUEVO', label: 'Registro' },
+  { key: 'LISTO_SCORE', label: 'Score' },
+  { key: 'SIMULACION_ACEPTADA', label: 'Simulacion' },
+  { key: 'ENVIADO_CONVENIO', label: 'Convenio' },
+  { key: 'PREPARANDO_BCP', label: 'BCP' },
+  { key: 'DESEMBOLSADO', label: 'Desembolso' },
+];
+const PIPELINE_STAGE_BY_STATE: Record<string, number> = {
+  PROSPECTO_NUEVO: 0,
+  PENDIENTE_DATOS: 0,
+  PENDIENTE_DOCUMENTOS: 0,
+  LISTO_SCORE: 1,
+  SCORE_APROBADO: 1,
+  SIMULACION_ACEPTADA: 2,
+  ENVIADO_CONVENIO: 3,
+  CONVENIO_APROBADO: 3,
+  PREPARANDO_BCP: 4,
+  ENVIADO_BCP: 4,
+  APROBADO_BCP: 4,
+  DESEMBOLSADO: 5,
+};
 
 const GUIDE_STEPS = [
   {
@@ -95,16 +123,16 @@ const GUIDE_STEPS = [
     result: 'Todo lo que registres despues queda asociado a ese expediente.'
   },
   {
-    title: '2. Gestiona instituciones',
+    title: '2. Gestiona convenio',
     icon: Building2,
-    focus: 'Instituciones del expediente',
-    summary: 'Sirve para controlar consultas externas o validaciones con entidades como ESSALUD, SUNAT o RENIEC.',
+    focus: 'Convenio e instituciones',
+    summary: 'Sirve para controlar el envio al convenio y las validaciones externas que acompanan el expediente.',
     actions: [
-      'Selecciona una institucion.',
+      'Selecciona el convenio o una institucion de apoyo.',
       'Agrega una observacion si necesitas contexto.',
       'Actualiza el estado: PENDIENTE, ENVIADO, RECIBIDO o RECHAZADO.'
     ],
-    result: 'Cuando marcas ENVIADO o RECIBIDO, el sistema guarda fechas de seguimiento.'
+    result: 'Cuando marcas ENVIADO o RECIBIDO, el sistema guarda fechas y actualiza el flujo del expediente.'
   },
   {
     title: '3. Registra expediente BCP',
@@ -192,13 +220,21 @@ const DigitalizacionPage = () => {
   const [showGuide, setShowGuide] = useState(false);
   const [guideStep, setGuideStep] = useState(0);
 
+  const institutionOptions = useMemo(() => {
+    const convenio = selectedSale?.convenio?.trim().toUpperCase();
+    const options = INSTITUCIONES_BASE.map((item) => item === 'CONVENIO' ? (convenio || 'CONVENIO') : item);
+    return Array.from(new Set(options));
+  }, [selectedSale?.convenio]);
+
   const filteredSales = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return sales;
     return sales.filter((sale) => (
       sale.dni_cliente.includes(q) ||
       sale.nombres_cliente.toLowerCase().includes(q) ||
-      sale.estado.toLowerCase().includes(q)
+      sale.estado.toLowerCase().includes(q) ||
+      (sale.celular || '').includes(q) ||
+      (sale.cargo_laboral || '').toLowerCase().includes(q)
     ));
   }, [sales, search]);
 
@@ -211,6 +247,7 @@ const DigitalizacionPage = () => {
       setSales(rows);
       if (!selectedSale && rows.length > 0) {
         setSelectedSale(rows[0]);
+        setNewInstitution(rows[0]?.convenio?.trim().toUpperCase() || '');
       }
     } catch (err: any) {
       console.error('Error fetching sales for digitalizacion:', err);
@@ -259,6 +296,7 @@ const DigitalizacionPage = () => {
   const handleSelectSale = (sale: Sale) => {
     setSelectedSale(sale);
     setExpanded('instituciones');
+    setNewInstitution(sale.convenio?.trim().toUpperCase() || '');
   };
 
   const handleAddInstitution = async () => {
@@ -337,13 +375,14 @@ const DigitalizacionPage = () => {
   const bcpProgress = expedienteBcp?.resumen?.completitud_pct || 0;
   const activeGuide = GUIDE_STEPS[guideStep];
   const ActiveGuideIcon = activeGuide.icon;
+  const currentPipelineIndex = selectedSale ? (PIPELINE_STAGE_BY_STATE[selectedSale.estado] ?? 0) : 0;
 
   return (
     <div className="page-shell">
       <div className="page-header">
         <div>
           <h1 className="page-title">Digitalizacion</h1>
-          <p className="page-subtitle">Gestion operativa de instituciones, expediente BCP y checklist documental</p>
+          <p className="page-subtitle">Gestion operativa del convenio, expediente BCP y checklist documental</p>
         </div>
         <div className="page-actions">
           <button onClick={() => setShowGuide(true)} className="action-button-secondary">
@@ -396,7 +435,10 @@ const DigitalizacionPage = () => {
                 </div>
                 <div className="mt-2 flex items-center justify-between text-[10px] font-bold text-text-700">
                   <span>{sale.convenio || 'Sin convenio'}</span>
-                  <span>S/ {(sale.maf_neto || 0).toLocaleString()}</span>
+                  <span>S/ {(sale.monto_solicitado || sale.maf_neto || 0).toLocaleString()}</span>
+                </div>
+                <div className="mt-1 text-[10px] font-bold text-text-700 truncate">
+                  {sale.cargo_laboral || 'Sin cargo'} {sale.celular ? `| ${sale.celular}` : ''}
                 </div>
               </button>
             ))}
@@ -426,11 +468,14 @@ const DigitalizacionPage = () => {
                       <span className="status-pill bg-surface-50 text-text-700 border-surface-200">DNI {selectedSale.dni_cliente}</span>
                       <span className={`status-pill ${getEstadoColor(selectedSale.estado)}`}>{selectedSale.estado}</span>
                       <span className="status-pill bg-blue-50 text-blue-700 border-blue-200">{selectedSale.convenio || 'Sin convenio'}</span>
+                      <span className="status-pill bg-surface-50 text-text-700 border-surface-200">{selectedSale.cargo_laboral || 'Sin cargo'}</span>
+                      <span className="status-pill bg-surface-50 text-text-700 border-surface-200">S/ {(selectedSale.monto_solicitado || selectedSale.maf_neto || 0).toLocaleString()}</span>
+                      {selectedSale.celular ? <span className="status-pill bg-surface-50 text-text-700 border-surface-200">{selectedSale.celular}</span> : null}
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 min-w-[260px]">
                     <div className="surface-card p-3">
-                      <div className="stat-label">Instituciones</div>
+                      <div className="stat-label">Convenio/inst.</div>
                       <div className="stat-value">{instituciones.length}</div>
                     </div>
                     <div className="surface-card p-3">
@@ -438,6 +483,20 @@ const DigitalizacionPage = () => {
                       <div className="stat-value text-[var(--color-bcp-blue)]">{bcpProgress}%</div>
                     </div>
                   </div>
+                </div>
+                <div className="mt-5 grid grid-cols-2 md:grid-cols-6 gap-2">
+                  {PIPELINE_STATES.map((step, index) => (
+                    <div
+                      key={step.key}
+                      className={`rounded-lg border px-3 py-2 ${
+                        index <= currentPipelineIndex
+                          ? 'bg-[rgba(0,42,141,0.08)] border-[var(--color-bcp-blue)] text-[var(--color-bcp-blue)]'
+                          : 'bg-surface-50 border-surface-200 text-text-700'
+                      }`}
+                    >
+                      <div className="text-[10px] font-black uppercase">{step.label}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -454,7 +513,7 @@ const DigitalizacionPage = () => {
                     >
                       <div className="flex items-center gap-3">
                         <Building2 size={18} className="text-[var(--color-bcp-blue)]" />
-                        <span className="text-sm font-black uppercase text-text-900">Instituciones del expediente</span>
+                        <span className="text-sm font-black uppercase text-text-900">Convenio e instituciones</span>
                       </div>
                       {expanded === 'instituciones' ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                     </button>
@@ -463,8 +522,8 @@ const DigitalizacionPage = () => {
                       <div className="p-4 space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)_auto] gap-3">
                           <select value={newInstitution} onChange={(event) => setNewInstitution(event.target.value)} className="field-input">
-                            <option value="">Seleccionar institucion</option>
-                            {INSTITUCIONES_SUGERIDAS.map((inst) => <option key={inst} value={inst}>{inst}</option>)}
+                            <option value="">Seleccionar convenio/institucion</option>
+                            {institutionOptions.map((inst) => <option key={inst} value={inst}>{inst}</option>)}
                           </select>
                           <input
                             value={newInstitutionObs}
@@ -519,7 +578,7 @@ const DigitalizacionPage = () => {
                               {instituciones.length === 0 && (
                                 <tr>
                                   <td colSpan={5} className="px-4 py-10 text-center text-[10px] font-bold text-text-700 uppercase">
-                                    No hay instituciones registradas para este expediente
+                                    No hay convenio o instituciones registradas para este expediente
                                   </td>
                                 </tr>
                               )}

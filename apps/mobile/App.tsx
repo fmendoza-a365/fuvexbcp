@@ -97,6 +97,19 @@ export default function App() {
   const [convenio, setConvenio] = useState('');
   const [convenioOptions, setConvenioOptions] = useState(CONVENIOS);
   const [maf, setMaf] = useState('');
+  const [celular, setCelular] = useState('');
+  const [telefonoAlt, setTelefonoAlt] = useState('');
+  const [correo, setCorreo] = useState('');
+  const [direccion, setDireccion] = useState('');
+  const [departamento, setDepartamento] = useState('LIMA');
+  const [provincia, setProvincia] = useState('');
+  const [distrito, setDistrito] = useState('');
+  const [zonaComercial, setZonaComercial] = useState('');
+  const [entidadLaboral, setEntidadLaboral] = useState('');
+  const [cargoLaboral, setCargoLaboral] = useState('');
+  const [plazoDeseado, setPlazoDeseado] = useState('');
+  const [origenProspecto, setOrigenProspecto] = useState('Prospeccion directa');
+  const [consentimiento, setConsentimiento] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [feedback, setFeedback] = useState('');
   const [clientAge, setClientAge] = useState<string | null>(null);
@@ -298,8 +311,8 @@ export default function App() {
   };
 
   const handleSubmit = async () => {
-    if (!dni || !nombres || !maf || !convenio) {
-      Alert.alert('Faltan datos', 'Completa los campos obligatorios.');
+    if (!dni || !nombres || !celular || !maf || !convenio || !cargoLaboral || !plazoDeseado || !consentimiento) {
+      Alert.alert('Faltan datos', 'Completa DNI, nombre, celular, convenio, cargo, monto, plazo y consentimiento.');
       return;
     }
     setLoading(true);
@@ -309,9 +322,23 @@ export default function App() {
         {
           dni_cliente: dni,
           nombres_cliente: nombres,
+          celular,
+          telefono_alt: telefonoAlt,
+          correo,
+          direccion,
           plaza,
+          departamento,
+          provincia,
+          distrito,
+          zona_comercial: zonaComercial,
           convenio,
+          entidad_laboral: entidadLaboral,
+          cargo_laboral: cargoLaboral,
           maf_neto: parseFloat(maf),
+          monto_solicitado: parseFloat(maf),
+          plazo_deseado: parseInt(plazoDeseado, 10),
+          origen_prospecto: origenProspecto,
+          consentimiento,
           fecha_ingreso: new Date().toISOString(),
           feedback
         },
@@ -336,9 +363,10 @@ export default function App() {
       resetForm();
       setActiveTab('list');
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      Alert.alert('Error', 'No se pudo registrar la operacion.');
+      const details = error.response?.data?.details;
+      Alert.alert('Error', Array.isArray(details) ? details.join('\n') : (error.response?.data?.error || 'No se pudo registrar la operacion.'));
     } finally {
       setLoading(false);
     }
@@ -350,6 +378,19 @@ export default function App() {
     setPlaza('');
     setConvenio('');
     setMaf('');
+    setCelular('');
+    setTelefonoAlt('');
+    setCorreo('');
+    setDireccion('');
+    setDepartamento('LIMA');
+    setProvincia('');
+    setDistrito('');
+    setZonaComercial('');
+    setEntidadLaboral('');
+    setCargoLaboral('');
+    setPlazoDeseado('');
+    setOrigenProspecto('Prospeccion directa');
+    setConsentimiento(false);
     setAttachments([]);
     setFeedback('');
     setClientAge(null);
@@ -357,15 +398,15 @@ export default function App() {
   };
 
   const statusColor = (estado: string) => {
-    if (estado === 'DESEMBOLSADO' || estado === 'APROBADA' || estado === 'CONFORMIDAD') return theme.emerald;
-    if (estado === 'OBSERVADA' || estado === 'OBSERVADO_BACK' || estado === 'POR INGRESAR') return theme.orange;
+    if (['DESEMBOLSADO', 'APROBADO_BCP', 'CONVENIO_APROBADO', 'SCORE_APROBADO'].includes(estado)) return theme.emerald;
+    if (['OBSERVADO', 'PENDIENTE_DATOS', 'PENDIENTE_DOCUMENTOS', 'PROSPECTO_NUEVO', 'PENDIENTE_REASIGNACION'].includes(estado)) return theme.orange;
     if (estado?.includes('RECHAZ')) return theme.rose;
     return theme.blue;
   };
 
   const statusBg = (estado: string) => {
-    if (estado === 'DESEMBOLSADO' || estado === 'APROBADA' || estado === 'CONFORMIDAD') return theme.emeraldSoft;
-    if (estado === 'OBSERVADA' || estado === 'OBSERVADO_BACK' || estado === 'POR INGRESAR') return theme.orangeSoft;
+    if (['DESEMBOLSADO', 'APROBADO_BCP', 'CONVENIO_APROBADO', 'SCORE_APROBADO'].includes(estado)) return theme.emeraldSoft;
+    if (['OBSERVADO', 'PENDIENTE_DATOS', 'PENDIENTE_DOCUMENTOS', 'PROSPECTO_NUEVO', 'PENDIENTE_REASIGNACION'].includes(estado)) return theme.orangeSoft;
     if (estado?.includes('RECHAZ')) return theme.roseSoft;
     return theme.blueSoft;
   };
@@ -494,7 +535,7 @@ export default function App() {
             <View style={{ flex: 1 }}>
               <Text style={styles.saleName}>{sale.nombres_cliente}</Text>
               <Text style={styles.saleMeta}>
-                {sale.dni_cliente} | S/ {(Number(sale.maf_neto) || 0).toLocaleString()}
+                {sale.dni_cliente} | S/ {(Number(sale.monto_solicitado ?? sale.maf_neto) || 0).toLocaleString()}
               </Text>
             </View>
             <View style={[styles.pill, { backgroundColor: statusBg(sale.estado) }]}>
@@ -540,7 +581,7 @@ export default function App() {
               <View style={styles.cardFooter}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <Ionicons name="wallet-outline" size={14} color={theme.text} style={{ marginRight: 5 }} />
-                  <Text style={styles.cardAmount}>S/ {(Number(sale.maf_neto) || 0).toLocaleString()}</Text>
+                  <Text style={styles.cardAmount}>S/ {(Number(sale.monto_solicitado ?? sale.maf_neto) || 0).toLocaleString()}</Text>
                 </View>
                 <Text style={styles.cardDate}>{new Date(sale.fecha_ingreso).toLocaleDateString()}</Text>
               </View>
@@ -557,7 +598,7 @@ export default function App() {
                 </View>
               )}
 
-              {sale.estado === 'POR INGRESAR' && (
+              {sale.estado === 'PROSPECTO_NUEVO' && (
                 <View style={styles.warningAlert}>
                   <Ionicons name="alert-circle" size={14} color={theme.amber} style={{ marginRight: 5 }} />
                   <Text style={styles.warningText}>FILE PENDIENTE (48H)</Text>
@@ -644,6 +685,81 @@ export default function App() {
           autoCapitalize="words"
         />
 
+        <TextInput
+          style={styles.input}
+          placeholder="Celular / WhatsApp"
+          placeholderTextColor={theme.subtext}
+          value={celular}
+          onChangeText={(text) => setCelular(text.replace(/[^0-9+]/g, '').slice(0, 15))}
+          keyboardType="phone-pad"
+        />
+
+        <TextInput
+          style={styles.input}
+          placeholder="Telefono alterno"
+          placeholderTextColor={theme.subtext}
+          value={telefonoAlt}
+          onChangeText={(text) => setTelefonoAlt(text.replace(/[^0-9+]/g, '').slice(0, 15))}
+          keyboardType="phone-pad"
+        />
+
+        <TextInput
+          style={styles.input}
+          placeholder="Correo del cliente"
+          placeholderTextColor={theme.subtext}
+          value={correo}
+          onChangeText={setCorreo}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, marginTop: 10 }}>
+          <Ionicons name="location" size={20} color={theme.blue} style={{ marginRight: 10 }} />
+          <Text style={styles.inputLabel}>UBICACION</Text>
+        </View>
+
+        <TextInput
+          style={styles.input}
+          placeholder="Direccion"
+          placeholderTextColor={theme.subtext}
+          value={direccion}
+          onChangeText={setDireccion}
+        />
+
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            placeholder="Departamento"
+            placeholderTextColor={theme.subtext}
+            value={departamento}
+            onChangeText={(text) => setDepartamento(text.toUpperCase())}
+          />
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            placeholder="Provincia"
+            placeholderTextColor={theme.subtext}
+            value={provincia}
+            onChangeText={(text) => setProvincia(text.toUpperCase())}
+          />
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            placeholder="Distrito"
+            placeholderTextColor={theme.subtext}
+            value={distrito}
+            onChangeText={(text) => setDistrito(text.toUpperCase())}
+          />
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            placeholder="Zona"
+            placeholderTextColor={theme.subtext}
+            value={zonaComercial}
+            onChangeText={(text) => setZonaComercial(text.toUpperCase())}
+          />
+        </View>
+
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, marginTop: 10 }}>
           <Ionicons name="briefcase" size={20} color={theme.blue} style={{ marginRight: 10 }} />
           <Text style={styles.inputLabel}>CONDICIONES</Text>
@@ -655,11 +771,27 @@ export default function App() {
           </Picker>
         </View>
 
+        <TextInput
+          style={styles.input}
+          placeholder="Entidad laboral"
+          placeholderTextColor={theme.subtext}
+          value={entidadLaboral}
+          onChangeText={(text) => setEntidadLaboral(text.toUpperCase())}
+        />
+
+        <TextInput
+          style={styles.input}
+          placeholder="Cargo laboral"
+          placeholderTextColor={theme.subtext}
+          value={cargoLaboral}
+          onChangeText={(text) => setCargoLaboral(text.toUpperCase())}
+        />
+
         <View style={styles.inputWrapper}>
           <Text style={{ fontSize: 16, fontWeight: '900', color: theme.blue, marginRight: 5 }}>S/</Text>
           <TextInput
             style={[styles.input, { marginBottom: 0, flex: 1, backgroundColor: 'transparent', borderWidth: 0 }]}
-            placeholder="0.00"
+            placeholder="Monto solicitado"
             placeholderTextColor={theme.subtext}
             value={maf}
             onChangeText={(text) => {
@@ -670,6 +802,56 @@ export default function App() {
             keyboardType="decimal-pad"
           />
         </View>
+
+        <TextInput
+          style={styles.input}
+          placeholder="Plazo deseado en meses"
+          placeholderTextColor={theme.subtext}
+          value={plazoDeseado}
+          onChangeText={(text) => setPlazoDeseado(text.replace(/[^0-9]/g, '').slice(0, 3))}
+          keyboardType="number-pad"
+        />
+
+        <TextInput
+          style={styles.input}
+          placeholder="Origen del prospecto"
+          placeholderTextColor={theme.subtext}
+          value={origenProspecto}
+          onChangeText={setOrigenProspecto}
+        />
+
+        <TextInput
+          style={[styles.input, { minHeight: 76, textAlignVertical: 'top', paddingTop: 14 }]}
+          placeholder="Observaciones iniciales"
+          placeholderTextColor={theme.subtext}
+          value={feedback}
+          onChangeText={setFeedback}
+          multiline
+        />
+
+        <TouchableOpacity
+          onPress={() => setConsentimiento(!consentimiento)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: 14,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: consentimiento ? theme.blue : theme.border,
+            backgroundColor: consentimiento ? theme.blueSoft : theme.white,
+            marginBottom: 18
+          }}
+        >
+          <Ionicons
+            name={consentimiento ? 'checkbox' : 'square-outline'}
+            size={22}
+            color={consentimiento ? theme.blue : theme.subtext}
+            style={{ marginRight: 10 }}
+          />
+          <Text style={{ flex: 1, fontSize: 12, fontWeight: '800', color: theme.text }}>
+            Cliente autoriza el tratamiento de datos y evaluacion crediticia.
+          </Text>
+        </TouchableOpacity>
 
         <View style={styles.attachmentSection}>
           <View style={styles.attachmentHeader}>

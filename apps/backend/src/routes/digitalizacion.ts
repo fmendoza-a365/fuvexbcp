@@ -124,6 +124,27 @@ router.put('/:saleId/instituciones/:instId', authMiddleware, async (req: any, re
         }
       });
 
+      if (estado === 'ENVIADO' && sale.estado === 'SIMULACION_ACEPTADA') {
+        await tx.sale.update({
+          where: { id: saleId },
+          data: {
+            estado: 'ENVIADO_CONVENIO',
+            fecha_estado_desde: new Date()
+          }
+        });
+
+        await tx.auditLog.create({
+          data: {
+            sale_id: saleId,
+            user_id: req.user.id,
+            accion: "Auto-avance: Envio a Convenio",
+            estado_anterior: sale.estado,
+            estado_nuevo: 'ENVIADO_CONVENIO',
+            detalles: `Envio registrado para ${inst.institucion}.`
+          }
+        });
+      }
+
       return result;
     });
 
@@ -311,12 +332,26 @@ router.put('/:id/expediente-bcp', authMiddleware, async (req: any, res: any) => 
 
     // ═══ AUTO-AVANCE (SPRINT 3.3) ═══
     // Si BCP aprobó → avanzar a CONFORMIDAD
+    const saleStateByBcpState: Record<string, string> = {
+      EN_PREPARACION: 'PREPARANDO_BCP',
+      ENVIADO_BCP: 'ENVIADO_BCP',
+      EN_EVALUACION_BCP: 'ENVIADO_BCP',
+      APROBADO_BCP: 'APROBADO_BCP',
+      RECHAZADO_BCP: 'RECHAZADO',
+      DESEMBOLSADO_BCP: 'DESEMBOLSADO'
+    };
+
+    if (estado && saleStateByBcpState[estado]) {
+      await checkAutoAdvanceBCP(id, saleStateByBcpState[estado], req.user.id, observaciones_bcp);
+      return res.json(updated);
+    }
+
     if (estado === 'APROBADO_BCP') {
-      await checkAutoAdvanceBCP(id, 'CONFORMIDAD', req.user.id);
+      await checkAutoAdvanceBCP(id, 'APROBADO_BCP', req.user.id);
     }
     // Si BCP rechazó → marcar OBSERVADA
     if (estado === 'RECHAZADO_BCP') {
-      await checkAutoAdvanceBCP(id, 'OBSERVADA', req.user.id, observaciones_bcp);
+      await checkAutoAdvanceBCP(id, 'OBSERVADO', req.user.id, observaciones_bcp);
     }
 
     res.json(updated);
@@ -414,13 +449,13 @@ async function checkAutoAdvanceInstituciones(saleId: string, userId: string) {
 
     const todasRecibidas = instituciones.every(i => i.estado === 'RECIBIDO');
 
-    if (todasRecibidas && sale.estado === 'EN PROCESO') {
+    if (todasRecibidas && ['ENVIADO_CONVENIO', 'SIMULACION_ACEPTADA'].includes(sale.estado)) {
       // Auto-avanzar a ENVIADO (instituciones listas para revisión del supervisor)
       await prisma.$transaction(async (tx) => {
         await tx.sale.update({
           where: { id: saleId },
           data: {
-            estado: 'ENVIADO',
+            estado: 'CONVENIO_APROBADO',
             fecha_estado_desde: new Date()
           }
         });
@@ -430,9 +465,9 @@ async function checkAutoAdvanceInstituciones(saleId: string, userId: string) {
             sale_id: saleId,
             user_id: userId,
             accion: "Auto-avance: Instituciones Completas",
-            estado_anterior: 'EN PROCESO',
-            estado_nuevo: 'ENVIADO',
-            detalles: `Todas las instituciones (${instituciones.length}) reportaron RECIBIDO. Auto-avance a ENVIADO.`
+            estado_anterior: sale.estado,
+            estado_nuevo: 'CONVENIO_APROBADO',
+            detalles: `Todas las respuestas del convenio/instituciones (${instituciones.length}) fueron recibidas.`
           }
         });
       });
@@ -442,7 +477,7 @@ async function checkAutoAdvanceInstituciones(saleId: string, userId: string) {
         await sendPushNotification(
           sale.asesor_id,
           '✅ Auto-avance: Instituciones Completas',
-          `El expediente de ${sale.nombres_cliente} avanzó automáticamente a ENVIADO. Todas las instituciones reportaron RECIBIDO.`,
+          `El expediente de ${sale.nombres_cliente} avanzo a CONVENIO_APROBADO. Todas las respuestas fueron recibidas.`,
           { saleId, type: 'AUTO_ADVANCE' }
         );
       } catch (e) { console.error('Push notification failed:', e); }
@@ -466,7 +501,7 @@ async function checkAutoAdvanceBCP(saleId: string, nuevoEstado: string, userId: 
         data: {
           estado: nuevoEstado,
           fecha_estado_desde: new Date(),
-          feedback: observacion || null
+          ...(observacion ? { feedback: observacion } : {})
         }
       });
 
@@ -474,21 +509,20 @@ async function checkAutoAdvanceBCP(saleId: string, nuevoEstado: string, userId: 
         data: {
           sale_id: saleId,
           user_id: userId,
-          accion: `Auto-avance: BCP ${nuevoEstado === 'CONFORMIDAD' ? 'Aprobó' : 'Rechazó'}`,
+          accion: `Auto-avance BCP: ${nuevoEstado}`,
           estado_anterior: sale.estado,
           estado_nuevo: nuevoEstado,
-          detalles: observacion || `Expediente ${nuevoEstado === 'CONFORMIDAD' ? 'aprobado por BCP → CONFORMIDAD' : 'observado por BCP → OBSERVADA'}`
+          detalles: observacion || `Expediente actualizado por respuesta BCP a ${nuevoEstado}`
         }
       });
     });
 
     // Notificar al asesor
     try {
-      const icono = nuevoEstado === 'CONFORMIDAD' ? '🎉' : '⚠️';
       await sendPushNotification(
         sale.asesor_id,
-        `${icono} BCP ${nuevoEstado === 'CONFORMIDAD' ? 'Aprobó' : 'Rechazó'}`,
-        `El expediente de ${sale.nombres_cliente} fue ${nuevoEstado === 'CONFORMIDAD' ? 'aprobado por BCP' : 'observado/rechazado por BCP'}.${observacion ? ' Obs: ' + observacion.substring(0, 80) : ''}`,
+        `Respuesta BCP: ${nuevoEstado}`,
+        `El expediente de ${sale.nombres_cliente} cambio a ${nuevoEstado}.${observacion ? ' Obs: ' + observacion.substring(0, 80) : ''}`,
         { saleId, type: 'BCP_RESPONSE' }
       );
     } catch (e) { console.error('Push notification failed:', e); }
@@ -521,12 +555,20 @@ async function checkAutoAdvanceChecklist(saleId: string, checklist: any[], userI
             }
           });
 
+          await tx.sale.update({
+            where: { id: saleId },
+            data: {
+              estado: 'ENVIADO_BCP',
+              fecha_estado_desde: new Date()
+            }
+          });
+
           await tx.auditLog.create({
             data: {
               sale_id: saleId,
               user_id: userId,
               accion: "Auto-avance: Checklist BCP Completo",
-              estado_anterior: 'EN_PREPARACION',
+              estado_anterior: sale.estado,
               estado_nuevo: 'ENVIADO_BCP',
               detalles: 'Todos los documentos obligatorios del checklist BCP fueron verificados.'
             }

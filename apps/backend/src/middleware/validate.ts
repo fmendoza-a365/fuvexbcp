@@ -1,79 +1,50 @@
-// ══════════════════════════════════════════════════
-// Middleware de Validación — Fuvex Manager
-// Validadores puros sin dependencias externas
-// ══════════════════════════════════════════════════
+// Validacion y maquina de estados operativa para Fuvex Manager.
 
-// Estados válidos del sistema (14 estados - flujo BCP completo)
-// Los 9 estados originales se mantienen para compatibilidad
-// Los nuevos estados BCP se integran incrementalmente
 export const VALID_ESTADOS = [
-  // ── Estados originales (9) ──────────────────────
-  'POR INGRESAR',
-  'EN PROCESO',
-  'APROBADA',
-  'OBSERVADA',
-  'SUBSANADA',
+  'PROSPECTO_NUEVO',
+  'PENDIENTE_DATOS',
+  'PENDIENTE_DOCUMENTOS',
+  'LISTO_SCORE',
+  'SCORE_APROBADO',
+  'SIMULACION_ACEPTADA',
+  'ENVIADO_CONVENIO',
+  'CONVENIO_APROBADO',
+  'PREPARANDO_BCP',
+  'ENVIADO_BCP',
+  'APROBADO_BCP',
   'DESEMBOLSADO',
+  'OBSERVADO',
   'RECHAZADO',
   'REASIGNADO',
   'PENDIENTE_REASIGNACION',
-  // ── Nuevos estados BCP (5) ─────────────────────
-  'PENDIENTE_REMESA',          // Esperando remesa/documentos físicos
-  'PENDIENTE_INSTITUCIONES',   // Enviado a CIA/SIS/ESSALUD/etc.
-  'PENDIENTE_DOCUMENTAR',      // Falta documentación del cliente
-  'PENDIENTE_BACK_OFFICE',     // En manos de back office para envío BCP
-  'EN_EVALUACION_BCP',         // Expediente enviado a BCP, esperando respuesta
-  'OBSERVADO_BACK',            // BCP observó, back office corrige
-  'RECHAZADA_POR_SCORE',       // Rechazado por score crediticio BCP
-  'BOLETA_NO_CALIFICA',        // Boleta no califica para el convenio
 ] as const;
 
-// Catálogo de motivos frecuentes para rechazos y observaciones
+export type EstadoOperativo = typeof VALID_ESTADOS[number];
+
 export const CATALOGO_MOTIVOS = {
+  OBSERVADO: [
+    'Datos del cliente incompletos',
+    'Documentacion incompleta',
+    'Documento ilegible o vencido',
+    'Datos laborales no coinciden',
+    'RCC requiere validacion',
+    'Convenio solicito subsanacion',
+    'BCP observo el expediente',
+    'Otro (especificar)'
+  ],
   RECHAZADO: [
     'Score crediticio insuficiente',
-    'Deuda vencida en sistema financiero',
-    'Documentos falsos o adulterados',
     'Cliente no cumple requisitos del convenio',
     'Ingresos insuficientes para el monto solicitado',
-    'Restricción de AFP o judiciales',
-    'Cliente desistió del trámite',
+    'Boleta no califica',
+    'Convenio rechazo el expediente',
+    'BCP rechazo el expediente',
+    'Cliente desistio del tramite',
     'Duplicidad de expediente',
     'Otro (especificar)'
   ],
-  OBSERVADA: [
-    'Documentación incompleta',
-    'Boleta de pago ilegible o vencida',
-    'Certificado de trabajo vencido',
-    'Error en datos del cliente',
-    'Firma ilegible o faltante',
-    'Monto no concuerda con documentación',
-    'RCC con inconsistencias',
-    'Falta carta de compra de deuda',
-    'Otro (especificar)'
-  ],
-  OBSERVADO_BACK: [
-    'Documentos BCP incompletos',
-    'Error en liquidación',
-    'Falta título de propiedad',
-    'Ficha técnica desactualizada',
-    'Otro (especificar)'
-  ],
-  RECHAZADA_POR_SCORE: [
-    'Score debajo del mínimo del convenio',
-    'Calificación negativa en centrales de riesgo',
-    'Monto excede capacidad de endeudamiento',
-    'Otro (especificar)'
-  ],
-  BOLETA_NO_CALIFICA: [
-    'Boleta no pertenece al convenio activo',
-    'Tiempo de servicio insuficiente',
-    'Tipo de contratación no aceptado',
-    'Otro (especificar)'
-  ]
 } as const;
 
-// Roles válidos del sistema
 export const VALID_ROLES = [
   'SUPERADMIN',
   'GERENTE',
@@ -84,328 +55,265 @@ export const VALID_ROLES = [
   'VENDEDOR'
 ] as const;
 
-// ══════════════════════════════════════════════════
-// STATE MACHINE — Transiciones válidas por rol
-// Define qué cambios de estado son permitidos y por quién
-// ══════════════════════════════════════════════════
-
 interface Transition {
   from: string;
   to: string;
-  roles: string[];      // Roles que pueden ejecutar esta transición
-  requiresMotivo: boolean; // Si el motivo es obligatorio
-  label: string;        // Descripción legible de la transición
+  roles: string[];
+  requiresMotivo: boolean;
+  label: string;
 }
 
+const TODOS = ['SUPERADMIN', 'GERENTE', 'JEFE_ZONAL', 'SUPERVISOR', 'BACK_OFFICE', 'ANALISTA', 'VENDEDOR'];
+const VENTA = ['SUPERADMIN', 'GERENTE', 'JEFE_ZONAL', 'SUPERVISOR', 'VENDEDOR'];
+const REVISION = ['SUPERADMIN', 'GERENTE', 'JEFE_ZONAL', 'SUPERVISOR', 'BACK_OFFICE', 'ANALISTA'];
+const BACK = ['SUPERADMIN', 'GERENTE', 'BACK_OFFICE'];
+const JEFATURA = ['SUPERADMIN', 'GERENTE', 'JEFE_ZONAL', 'SUPERVISOR'];
+
 export const TRANSICIONES: Transition[] = [
-  // ══════════════════════════════════════════════════
-  // FLUJO ORIGINAL (9 estados) — Compatibilidad
-  // ══════════════════════════════════════════════════
-
-  // ── Flujo principal del vendedor ──────────────────────
   {
-    from: 'POR INGRESAR',
-    to: 'EN PROCESO',
-    roles: ['VENDEDOR', 'SUPERVISOR', 'SUPERADMIN', 'GERENTE'],
+    from: 'PROSPECTO_NUEVO',
+    to: 'PENDIENTE_DATOS',
+    roles: VENTA,
     requiresMotivo: false,
-    label: 'Expediente en evaluación — vendedor inicia trámite'
+    label: 'Faltan datos operativos del cliente o del cargo'
   },
   {
-    from: 'EN PROCESO',
-    to: 'APROBADA',
-    roles: ['SUPERVISOR', 'BACK_OFFICE', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
+    from: 'PROSPECTO_NUEVO',
+    to: 'PENDIENTE_DOCUMENTOS',
+    roles: VENTA,
     requiresMotivo: false,
-    label: 'Expediente aprobado — listo para envío'
+    label: 'Cliente registrado, falta documentacion'
   },
   {
-    from: 'APROBADA',
+    from: 'PROSPECTO_NUEVO',
+    to: 'LISTO_SCORE',
+    roles: REVISION,
+    requiresMotivo: false,
+    label: 'Datos minimos completos, listo para score'
+  },
+  {
+    from: 'PENDIENTE_DATOS',
+    to: 'PENDIENTE_DOCUMENTOS',
+    roles: VENTA,
+    requiresMotivo: false,
+    label: 'Datos completos, falta documentacion'
+  },
+  {
+    from: 'PENDIENTE_DATOS',
+    to: 'LISTO_SCORE',
+    roles: REVISION,
+    requiresMotivo: false,
+    label: 'Datos completos, enviar a score'
+  },
+  {
+    from: 'PENDIENTE_DOCUMENTOS',
+    to: 'LISTO_SCORE',
+    roles: TODOS,
+    requiresMotivo: false,
+    label: 'Documentos completos, listo para score'
+  },
+  {
+    from: 'LISTO_SCORE',
+    to: 'SCORE_APROBADO',
+    roles: REVISION,
+    requiresMotivo: false,
+    label: 'Score/RCC validado'
+  },
+  {
+    from: 'LISTO_SCORE',
+    to: 'OBSERVADO',
+    roles: REVISION,
+    requiresMotivo: true,
+    label: 'Score o documentacion requieren correccion'
+  },
+  {
+    from: 'LISTO_SCORE',
+    to: 'RECHAZADO',
+    roles: REVISION,
+    requiresMotivo: true,
+    label: 'No califica en score o RCC'
+  },
+  {
+    from: 'SCORE_APROBADO',
+    to: 'SIMULACION_ACEPTADA',
+    roles: TODOS,
+    requiresMotivo: false,
+    label: 'Cliente acepta simulacion'
+  },
+  {
+    from: 'SCORE_APROBADO',
+    to: 'OBSERVADO',
+    roles: REVISION,
+    requiresMotivo: true,
+    label: 'Ajustar simulacion o datos antes de continuar'
+  },
+  {
+    from: 'SIMULACION_ACEPTADA',
+    to: 'ENVIADO_CONVENIO',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'Expediente enviado al convenio'
+  },
+  {
+    from: 'SIMULACION_ACEPTADA',
+    to: 'OBSERVADO',
+    roles: REVISION,
+    requiresMotivo: true,
+    label: 'Falta subsanar antes del envio al convenio'
+  },
+  {
+    from: 'ENVIADO_CONVENIO',
+    to: 'CONVENIO_APROBADO',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'Convenio responde conforme'
+  },
+  {
+    from: 'ENVIADO_CONVENIO',
+    to: 'OBSERVADO',
+    roles: BACK,
+    requiresMotivo: true,
+    label: 'Convenio observo el expediente'
+  },
+  {
+    from: 'ENVIADO_CONVENIO',
+    to: 'RECHAZADO',
+    roles: BACK,
+    requiresMotivo: true,
+    label: 'Convenio rechazo el expediente'
+  },
+  {
+    from: 'CONVENIO_APROBADO',
+    to: 'PREPARANDO_BCP',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'Preparar expediente fisico/digital para BCP'
+  },
+  {
+    from: 'PREPARANDO_BCP',
+    to: 'ENVIADO_BCP',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'Expediente enviado a BCP'
+  },
+  {
+    from: 'PREPARANDO_BCP',
+    to: 'OBSERVADO',
+    roles: BACK,
+    requiresMotivo: true,
+    label: 'Falta corregir expediente antes de BCP'
+  },
+  {
+    from: 'ENVIADO_BCP',
+    to: 'APROBADO_BCP',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'BCP aprobo la operacion'
+  },
+  {
+    from: 'ENVIADO_BCP',
+    to: 'OBSERVADO',
+    roles: BACK,
+    requiresMotivo: true,
+    label: 'BCP observo el expediente'
+  },
+  {
+    from: 'ENVIADO_BCP',
+    to: 'RECHAZADO',
+    roles: BACK,
+    requiresMotivo: true,
+    label: 'BCP rechazo la operacion'
+  },
+  {
+    from: 'APROBADO_BCP',
     to: 'DESEMBOLSADO',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
+    roles: BACK,
     requiresMotivo: false,
-    label: 'Crédito desembolsado — operación completada'
-  },
-
-  // ── Observaciones y subsanación ───────────────────────
-  {
-    from: 'EN PROCESO',
-    to: 'OBSERVADA',
-    roles: ['SUPERVISOR', 'BACK_OFFICE', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
-    requiresMotivo: true,
-    label: 'Expediente observado — requiere correcciones'
+    label: 'Registrar desembolso'
   },
   {
-    from: 'OBSERVADA',
-    to: 'SUBSANADA',
-    roles: ['VENDEDOR', 'SUPERVISOR', 'SUPERADMIN', 'GERENTE'],
+    from: 'OBSERVADO',
+    to: 'PENDIENTE_DATOS',
+    roles: TODOS,
     requiresMotivo: false,
-    label: 'Observaciones corregidas — vendedor resube'
+    label: 'Corregir datos'
   },
   {
-    from: 'SUBSANADA',
-    to: 'EN PROCESO',
-    roles: ['SUPERVISOR', 'BACK_OFFICE', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
+    from: 'OBSERVADO',
+    to: 'PENDIENTE_DOCUMENTOS',
+    roles: TODOS,
     requiresMotivo: false,
-    label: 'Subsanación validada — expediente vuelve a evaluación'
+    label: 'Subsanar documentos'
   },
   {
-    from: 'SUBSANADA',
-    to: 'OBSERVADA',
-    roles: ['SUPERVISOR', 'BACK_OFFICE', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
+    from: 'OBSERVADO',
+    to: 'LISTO_SCORE',
+    roles: REVISION,
+    requiresMotivo: false,
+    label: 'Observacion subsanada, volver a score'
+  },
+  {
+    from: 'OBSERVADO',
+    to: 'ENVIADO_CONVENIO',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'Subsanacion lista, reenviar al convenio'
+  },
+  {
+    from: 'OBSERVADO',
+    to: 'PREPARANDO_BCP',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'Subsanacion lista, preparar BCP'
+  },
+  {
+    from: 'RECHAZADO',
+    to: 'PROSPECTO_NUEVO',
+    roles: ['SUPERADMIN', 'GERENTE'],
     requiresMotivo: true,
-    label: 'Subsanación insuficiente — requiere más correcciones'
+    label: 'Reabrir expediente rechazado'
   },
-
-  // ── Rechazos ──────────────────────────────────────────
   {
-    from: 'EN PROCESO',
-    to: 'RECHAZADO',
-    roles: ['SUPERVISOR', 'BACK_OFFICE', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
+    from: 'PROSPECTO_NUEVO',
+    to: 'PENDIENTE_REASIGNACION',
+    roles: JEFATURA,
     requiresMotivo: true,
-    label: 'Expediente rechazado — no cumple requisitos'
+    label: 'Solicitar reasignacion por duplicidad'
   },
   {
-    from: 'OBSERVADA',
-    to: 'RECHAZADO',
-    roles: ['SUPERVISOR', 'BACK_OFFICE', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
-    requiresMotivo: true,
-    label: 'Expediente rechazado — observaciones no corregidas'
-  },
-
-  // ── Reasignación ──────────────────────────────────────
-  {
-    from: 'POR INGRESAR',
+    from: 'PENDIENTE_REASIGNACION',
     to: 'REASIGNADO',
-    roles: ['SUPERVISOR', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
+    roles: JEFATURA,
+    requiresMotivo: false,
+    label: 'Confirmar reasignacion'
+  },
+  {
+    from: 'PENDIENTE_REASIGNACION',
+    to: 'PROSPECTO_NUEVO',
+    roles: JEFATURA,
     requiresMotivo: true,
-    label: 'Prospecto reasignado a otro asesor'
+    label: 'Cancelar reasignacion'
   },
   {
     from: 'REASIGNADO',
-    to: 'POR INGRESAR',
-    roles: ['SUPERVISOR', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
+    to: 'PROSPECTO_NUEVO',
+    roles: JEFATURA,
     requiresMotivo: false,
-    label: 'Reasignación aceptada — nuevo asesor toma el prospecto'
-  },
-  {
-    from: 'POR INGRESAR',
-    to: 'PENDIENTE_REASIGNACION',
-    roles: ['SUPERVISOR', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
-    requiresMotivo: true,
-    label: 'Solicitud de reasignación pendiente'
-  },
-  {
-    from: 'PENDIENTE_REASIGNACION',
-    to: 'REASIGNADO',
-    roles: ['SUPERVISOR', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
-    requiresMotivo: false,
-    label: 'Reasignación confirmada'
-  },
-  {
-    from: 'PENDIENTE_REASIGNACION',
-    to: 'POR INGRESAR',
-    roles: ['SUPERVISOR', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
-    requiresMotivo: true,
-    label: 'Reasignación cancelada — vuelve al asesor original'
-  },
-
-  // ── Revertir rechazo (solo SUPERADMIN/GERENTE) ──────
-  {
-    from: 'RECHAZADO',
-    to: 'EN PROCESO',
-    roles: ['SUPERADMIN', 'GERENTE'],
-    requiresMotivo: true,
-    label: 'Rechazo revertido — expediente reabierto'
-  },
-
-  // ══════════════════════════════════════════════════
-  // FLUJO BCP EXPANDIDO — Nuevos estados
-  // ══════════════════════════════════════════════════
-
-  // ── Flujo BCP: EN PROCESO → Pendientes de documentación/instituciones ──
-  {
-    from: 'EN PROCESO',
-    to: 'PENDIENTE_DOCUMENTAR',
-    roles: ['SUPERVISOR', 'BACK_OFFICE', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
-    requiresMotivo: true,
-    label: 'Falta documentación del cliente — vendedor debe recolectar'
-  },
-  {
-    from: 'PENDIENTE_DOCUMENTAR',
-    to: 'EN PROCESO',
-    roles: ['VENDEDOR', 'SUPERVISOR', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: false,
-    label: 'Documentación completa — vuelve a evaluación'
-  },
-  {
-    from: 'PENDIENTE_DOCUMENTAR',
-    to: 'RECHAZADO',
-    roles: ['SUPERVISOR', 'BACK_OFFICE', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
-    requiresMotivo: true,
-    label: 'Documentación no entregada — expediente rechazado'
-  },
-
-  // ── Flujo BCP: EN PROCESO → Pendiente instituciones ──
-  {
-    from: 'EN PROCESO',
-    to: 'PENDIENTE_INSTITUCIONES',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: false,
-    label: 'Enviado a instituciones (RENIEC, SUNAT, ESSALUD, etc.)'
-  },
-  {
-    from: 'PENDIENTE_INSTITUCIONES',
-    to: 'EN PROCESO',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: false,
-    label: 'Instituciones respondieron — vuelve a evaluación'
-  },
-  {
-    from: 'PENDIENTE_INSTITUCIONES',
-    to: 'PENDIENTE_BACK_OFFICE',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: false,
-    label: 'Instituciones OK — pasa a preparación de expediente BCP'
-  },
-  {
-    from: 'PENDIENTE_INSTITUCIONES',
-    to: 'RECHAZADO',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: true,
-    label: 'Institución rechazó — expediente no viable'
-  },
-
-  // ── Flujo BCP: Pendiente remesa ──
-  {
-    from: 'EN PROCESO',
-    to: 'PENDIENTE_REMESA',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: false,
-    label: 'Aprobado — esperando remesa/documentos físicos'
-  },
-  {
-    from: 'PENDIENTE_REMESA',
-    to: 'PENDIENTE_BACK_OFFICE',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: false,
-    label: 'Remesa recibida — pasa a preparación BCP'
-  },
-
-  // ── Flujo BCP: Pendiente Back Office ──
-  {
-    from: 'EN PROCESO',
-    to: 'PENDIENTE_BACK_OFFICE',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: false,
-    label: 'Expediente completo — pasa a back office para envío BCP'
-  },
-  {
-    from: 'PENDIENTE_BACK_OFFICE',
-    to: 'EN_EVALUACION_BCP',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: false,
-    label: 'Expediente enviado a BCP para evaluación'
-  },
-  {
-    from: 'PENDIENTE_BACK_OFFICE',
-    to: 'OBSERVADO_BACK',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: true,
-    label: 'Back office detectó error — requiere corrección antes de envío'
-  },
-  {
-    from: 'OBSERVADO_BACK',
-    to: 'PENDIENTE_BACK_OFFICE',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: false,
-    label: 'Error corregido — vuelve a preparación'
-  },
-
-  // ── Flujo BCP: Evaluación BCP ──
-  {
-    from: 'EN_EVALUACION_BCP',
-    to: 'APROBADA',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: false,
-    label: 'BCP aprobó el crédito — listo para desembolso'
-  },
-  {
-    from: 'EN_EVALUACION_BCP',
-    to: 'DESEMBOLSADO',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: false,
-    label: 'BCP desembolsó directamente — operación completada'
-  },
-  {
-    from: 'EN_EVALUACION_BCP',
-    to: 'RECHAZADA_POR_SCORE',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: true,
-    label: 'BCP rechazó por score crediticio'
-  },
-  {
-    from: 'EN_EVALUACION_BCP',
-    to: 'PENDIENTE_BACK_OFFICE',
-    roles: ['BACK_OFFICE', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: true,
-    label: 'BCP observó — vuelve a back office para corrección'
-  },
-
-  // ── Flujo BCP: Observaciones y rechazos específicos ──
-  {
-    from: 'EN PROCESO',
-    to: 'BOLETA_NO_CALIFICA',
-    roles: ['SUPERVISOR', 'BACK_OFFICE', 'SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'],
-    requiresMotivo: true,
-    label: 'Boleta del cliente no califica para el convenio'
-  },
-  {
-    from: 'BOLETA_NO_CALIFICA',
-    to: 'EN PROCESO',
-    roles: ['SUPERVISOR', 'SUPERADMIN', 'GERENTE'],
-    requiresMotivo: true,
-    label: 'Reevaluación — cliente presenta nueva documentación'
-  },
-
-  // ── Revertir rechazos BCP (solo SUPERADMIN/GERENTE) ──
-  {
-    from: 'RECHAZADA_POR_SCORE',
-    to: 'EN PROCESO',
-    roles: ['SUPERADMIN', 'GERENTE'],
-    requiresMotivo: true,
-    label: 'Rechazo BCP revertido — expediente reabierto para reevaluación'
-  },
-  {
-    from: 'RECHAZADA_POR_SCORE',
-    to: 'PENDIENTE_DOCUMENTAR',
-    roles: ['SUPERADMIN', 'GERENTE'],
-    requiresMotivo: true,
-    label: 'Rechazo BCP revertido — requiere nueva documentación'
+    label: 'Nuevo asesor toma el prospecto'
   },
 ];
 
-// ── Funciones del StateMachine ────────────────────────
-
-/**
- * Obtiene las transiciones válidas desde un estado dado para un rol específico
- */
 export function getValidTransitions(currentEstado: string, userRole: string): Transition[] {
   return TRANSICIONES.filter(t => t.from === currentEstado && t.roles.includes(userRole));
 }
 
-/**
- * Valida si una transición es permitida
- * Retorna { valid, transition?, error? }
- */
 export function validateTransition(
   currentEstado: string,
   targetEstado: string,
   userRole: string,
   motivo?: string
 ): { valid: boolean; transition?: Transition; error?: string } {
-  // Buscar la transición que coincida
-  const transition = TRANSICIONES.find(
-    t => t.from === currentEstado && t.to === targetEstado
-  );
+  const transition = TRANSICIONES.find(t => t.from === currentEstado && t.to === targetEstado);
 
   if (!transition) {
     const validTargets = TRANSICIONES
@@ -413,19 +321,17 @@ export function validateTransition(
       .map(t => t.to);
     return {
       valid: false,
-      error: `Transición no permitida: "${currentEstado}" → "${targetEstado}". Estados válidos desde "${currentEstado}": [${validTargets.join(', ')}]`
+      error: `Transicion no permitida: "${currentEstado}" -> "${targetEstado}". Estados validos desde "${currentEstado}": [${validTargets.join(', ')}]`
     };
   }
 
-  // Verificar que el rol tenga permiso
   if (!transition.roles.includes(userRole)) {
     return {
       valid: false,
-      error: `El rol "${userRole}" no tiene permiso para esta transición (${transition.label}). Roles permitidos: [${transition.roles.join(', ')}]`
+      error: `El rol "${userRole}" no tiene permiso para esta transicion (${transition.label}). Roles permitidos: [${transition.roles.join(', ')}]`
     };
   }
 
-  // Verificar motivo obligatorio
   if (transition.requiresMotivo && (!motivo || motivo.trim().length === 0)) {
     return {
       valid: false,
@@ -436,94 +342,138 @@ export function validateTransition(
   return { valid: true, transition };
 }
 
-/**
- * Obtiene el label legible de un estado
- */
 export function getEstadoLabel(estado: string): string {
   const labels: Record<string, string> = {
-    'POR INGRESAR': 'Por Ingresar',
-    'EN PROCESO': 'En Proceso',
-    'APROBADA': 'Aprobada',
-    'OBSERVADA': 'Observada',
-    'SUBSANADA': 'Subsanada',
-    'DESEMBOLSADO': 'Desembolsado',
-    'RECHAZADO': 'Rechazado',
-    'REASIGNADO': 'Reasignado',
-    'PENDIENTE_REASIGNACION': 'Pendiente Reasignación',
-    'PENDIENTE_REMESA': 'Pendiente Remesa',
-    'PENDIENTE_INSTITUCIONES': 'Pendiente Instituciones',
-    'PENDIENTE_DOCUMENTAR': 'Pendiente Documentar',
-    'PENDIENTE_BACK_OFFICE': 'Pendiente Back Office',
-    'EN_EVALUACION_BCP': 'En Evaluación BCP',
-    'OBSERVADO_BACK': 'Observado Back Office',
-    'RECHAZADA_POR_SCORE': 'Rechazada por Score',
-    'BOLETA_NO_CALIFICA': 'Boleta No Califica'
+    PROSPECTO_NUEVO: 'Prospecto nuevo',
+    PENDIENTE_DATOS: 'Pendiente datos',
+    PENDIENTE_DOCUMENTOS: 'Pendiente documentos',
+    LISTO_SCORE: 'Listo para score',
+    SCORE_APROBADO: 'Score aprobado',
+    SIMULACION_ACEPTADA: 'Simulacion aceptada',
+    ENVIADO_CONVENIO: 'Enviado a convenio',
+    CONVENIO_APROBADO: 'Convenio aprobado',
+    PREPARANDO_BCP: 'Preparando BCP',
+    ENVIADO_BCP: 'Enviado a BCP',
+    APROBADO_BCP: 'Aprobado BCP',
+    DESEMBOLSADO: 'Desembolsado',
+    OBSERVADO: 'Observado',
+    RECHAZADO: 'Rechazado',
+    REASIGNADO: 'Reasignado',
+    PENDIENTE_REASIGNACION: 'Pendiente reasignacion',
   };
   return labels[estado] || estado;
 }
 
-// Campos que NUNCA deben ser modificables via PUT genérico
 const PROTECTED_FIELDS = ['id', 'asesor_id', 'created_at', 'updated_at', 'password_hash'];
-
-// ── Helpers ────────────────────────────────────────
 
 function sanitizeString(value: any): string {
   if (typeof value !== 'string') return '';
-  return value.trim().replace(/<[^>]*>/g, ''); // Strip HTML tags
+  return value.trim().replace(/<[^>]*>/g, '');
+}
+
+function sanitizeOptional(value: any): string | undefined {
+  const clean = sanitizeString(value);
+  return clean.length > 0 ? clean : undefined;
+}
+
+function toNumber(value: any): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
 }
 
 function isValidDni(dni: string): boolean {
   return /^\d{8}$/.test(dni);
 }
 
-// ── Validadores como Middleware ────────────────────
+function isValidPhone(value: string): boolean {
+  return value.replace(/\D/g, '').length >= 7;
+}
 
-/**
- * Validar creación de venta
- */
 export const validateCreateSale = (req: any, res: any, next: any) => {
-  const { dni_cliente, nombres_cliente, maf_neto, convenio } = req.body;
+  const {
+    dni_cliente,
+    nombres_cliente,
+    celular,
+    maf_neto,
+    monto_solicitado,
+    plazo_deseado,
+    convenio,
+    cargo_laboral,
+    consentimiento
+  } = req.body;
 
   const errors: string[] = [];
+  const monto = toNumber(monto_solicitado ?? maf_neto);
+  const plazo = toNumber(plazo_deseado);
+  const celularClean = sanitizeString(celular);
 
   if (!dni_cliente || !isValidDni(String(dni_cliente))) {
-    errors.push('DNI inválido — debe ser exactamente 8 dígitos numéricos');
+    errors.push('DNI invalido: debe tener exactamente 8 digitos numericos');
   }
 
   if (!nombres_cliente || sanitizeString(nombres_cliente).length < 3) {
-    errors.push('Nombres del cliente requeridos (mínimo 3 caracteres)');
+    errors.push('Nombres del cliente requeridos (minimo 3 caracteres)');
   }
 
-  if (maf_neto === undefined || isNaN(Number(maf_neto)) || Number(maf_neto) < 0) {
-    errors.push('MAF Neto debe ser un número positivo');
+  if (!celularClean || !isValidPhone(celularClean)) {
+    errors.push('Celular/WhatsApp requerido (minimo 7 digitos)');
   }
 
   if (!convenio || sanitizeString(convenio).length === 0) {
     errors.push('Convenio es requerido');
   }
 
-  if (errors.length > 0) {
-    return res.status(400).json({ error: 'Datos inválidos', details: errors });
+  if (!cargo_laboral || sanitizeString(cargo_laboral).length === 0) {
+    errors.push('Cargo laboral es requerido');
   }
 
-  // Sanitizar strings
+  if (!monto || monto <= 0) {
+    errors.push('Monto solicitado debe ser mayor a 0');
+  }
+
+  if (!plazo || plazo <= 0) {
+    errors.push('Plazo deseado debe ser mayor a 0');
+  }
+
+  if (consentimiento !== true && consentimiento !== 'true' && consentimiento !== 1 && consentimiento !== '1') {
+    errors.push('Consentimiento del cliente requerido');
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({ error: 'Datos invalidos', details: errors });
+  }
+
+  req.body.dni_cliente = String(dni_cliente).replace(/\D/g, '');
   req.body.nombres_cliente = sanitizeString(nombres_cliente);
+  req.body.celular = celularClean;
+  req.body.telefono_alt = sanitizeOptional(req.body.telefono_alt);
+  req.body.correo = sanitizeOptional(req.body.correo);
+  req.body.direccion = sanitizeOptional(req.body.direccion);
+  req.body.plaza = sanitizeOptional(req.body.plaza);
+  req.body.departamento = sanitizeOptional(req.body.departamento) || 'LIMA';
+  req.body.provincia = sanitizeOptional(req.body.provincia);
+  req.body.distrito = sanitizeOptional(req.body.distrito);
+  req.body.zona_comercial = sanitizeOptional(req.body.zona_comercial);
   req.body.convenio = sanitizeString(convenio);
-  if (req.body.plaza) req.body.plaza = sanitizeString(req.body.plaza);
-  if (req.body.feedback) req.body.feedback = sanitizeString(req.body.feedback);
+  req.body.entidad_laboral = sanitizeOptional(req.body.entidad_laboral);
+  req.body.cargo_laboral = sanitizeString(cargo_laboral);
+  req.body.origen_prospecto = sanitizeOptional(req.body.origen_prospecto);
+  req.body.feedback = sanitizeOptional(req.body.feedback);
+  req.body.maf_neto = monto;
+  req.body.monto_solicitado = monto;
+  req.body.plazo_deseado = Math.trunc(plazo);
+  req.body.consentimiento = true;
+  req.body.consentimiento_at = req.body.consentimiento_at || new Date().toISOString();
 
   next();
 };
 
-/**
- * Validar cambio de estado
- */
 export const validateEstadoChange = (req: any, res: any, next: any) => {
   const { nuevo_estado } = req.body;
 
-  if (!nuevo_estado || !VALID_ESTADOS.includes(nuevo_estado)) {
+  if (!nuevo_estado || !VALID_ESTADOS.includes(nuevo_estado as EstadoOperativo)) {
     return res.status(400).json({
-      error: `Estado inválido: "${nuevo_estado}"`,
+      error: `Estado invalido: "${nuevo_estado}"`,
       valid_states: VALID_ESTADOS
     });
   }
@@ -531,41 +481,35 @@ export const validateEstadoChange = (req: any, res: any, next: any) => {
   next();
 };
 
-/**
- * Validar creación de usuario
- */
 export const validateCreateUser = (req: any, res: any, next: any) => {
   const { username, nombre, password, role } = req.body;
   const errors: string[] = [];
 
   if (!username || !/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
-    errors.push('Username debe tener 3-30 caracteres alfanuméricos (se permite _)');
+    errors.push('Username debe tener 3-30 caracteres alfanumericos (se permite _)');
   }
 
   if (!nombre || sanitizeString(nombre).length < 2) {
-    errors.push('Nombre requerido (mínimo 2 caracteres)');
+    errors.push('Nombre requerido (minimo 2 caracteres)');
   }
 
   if (!password || password.length < 8) {
-    errors.push('Password debe tener mínimo 8 caracteres');
+    errors.push('Password debe tener minimo 8 caracteres');
   }
 
   if (!role || !VALID_ROLES.includes(role)) {
-    errors.push(`Rol inválido. Roles válidos: ${VALID_ROLES.join(', ')}`);
+    errors.push(`Rol invalido. Roles validos: ${VALID_ROLES.join(', ')}`);
   }
 
   if (errors.length > 0) {
-    return res.status(400).json({ error: 'Datos inválidos', details: errors });
+    return res.status(400).json({ error: 'Datos invalidos', details: errors });
   }
 
   req.body.nombre = sanitizeString(nombre);
   next();
 };
 
-/**
- * Filtrar campos protegidos en updates genéricos de ventas
- */
-export const filterProtectedFields = (req: any, res: any, next: any) => {
+export const filterProtectedFields = (req: any, _res: any, next: any) => {
   for (const field of PROTECTED_FIELDS) {
     delete req.body[field];
   }

@@ -54,6 +54,18 @@ interface ApiKanbanResponse {
 }
 
 const COLUMN_COLORS: Record<string, { bg: string; border: string; badge: string; dot: string }> = {
+  'PROSPECTO_NUEVO': { bg: 'bg-slate-50', border: 'border-slate-200', badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
+  'PENDIENTE_DATOS': { bg: 'bg-amber-50', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
+  'PENDIENTE_DOCUMENTOS': { bg: 'bg-yellow-50', border: 'border-yellow-200', badge: 'bg-yellow-100 text-yellow-700', dot: 'bg-yellow-500' },
+  'LISTO_SCORE': { bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-600', dot: 'bg-blue-400' },
+  'SCORE_APROBADO': { bg: 'bg-emerald-50', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-600', dot: 'bg-emerald-400' },
+  'SIMULACION_ACEPTADA': { bg: 'bg-cyan-50', border: 'border-cyan-200', badge: 'bg-cyan-100 text-cyan-600', dot: 'bg-cyan-400' },
+  'ENVIADO_CONVENIO': { bg: 'bg-indigo-50', border: 'border-indigo-200', badge: 'bg-indigo-100 text-indigo-600', dot: 'bg-indigo-400' },
+  'CONVENIO_APROBADO': { bg: 'bg-teal-50', border: 'border-teal-200', badge: 'bg-teal-100 text-teal-600', dot: 'bg-teal-400' },
+  'PREPARANDO_BCP': { bg: 'bg-violet-50', border: 'border-violet-200', badge: 'bg-violet-100 text-violet-600', dot: 'bg-violet-400' },
+  'ENVIADO_BCP': { bg: 'bg-sky-50', border: 'border-sky-200', badge: 'bg-sky-100 text-sky-600', dot: 'bg-sky-400' },
+  'APROBADO_BCP': { bg: 'bg-emerald-50', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-600', dot: 'bg-emerald-400' },
+  'OBSERVADO': { bg: 'bg-orange-50', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-600', dot: 'bg-orange-400' },
   // Flujo original
   'POR INGRESAR': { bg: 'bg-slate-50', border: 'border-slate-200', badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
   'EN PROCESO': { bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-600', dot: 'bg-blue-400' },

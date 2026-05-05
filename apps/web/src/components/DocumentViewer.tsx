@@ -51,9 +51,12 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   const cliente = sale.nombres_cliente || 'Cliente sin nombre';
   const asesor = sale.asesor?.nombre || sale.asesor?.username || 'Desconocido';
   const convenio = sale.convenio || 'Sin convenio';
-  const plaza = sale.plaza || 'General';
-  const montoSolicitado = Number(sale.maf_neto || 0);
-  const montoRemesa = Number(sale.monto_remesa || 0);
+  const plaza = [sale.distrito, sale.provincia, sale.departamento].filter(Boolean).join(', ') || sale.plaza || 'General';
+  const cargoLaboral = sale.cargo_laboral || 'Sin cargo';
+  const entidadLaboral = sale.entidad_laboral || 'Sin entidad';
+  const celular = sale.celular || 'Sin celular';
+  const correo = sale.correo || 'Sin correo';
+  const montoSolicitado = Number(sale.monto_solicitado ?? sale.maf_neto ?? 0);
   const docsLabel = `${docs.length} ${docs.length === 1 ? 'archivo' : 'archivos'}`;
 
   const traceItems: TraceItem[] = [
@@ -305,20 +308,20 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   );
 
   const getTransitionButtonClass = (destino: string) => {
-    if (['RECHAZADO', 'RECHAZADA_POR_SCORE', 'BOLETA_NO_CALIFICA'].includes(destino)) {
+    if (destino === 'RECHAZADO') {
       return 'bg-surface-100 hover:bg-rose-50 text-rose-600 border border-rose-200';
     }
-    if (['OBSERVADA', 'OBSERVADO_BACK', 'PENDIENTE_DOCUMENTAR'].includes(destino)) {
+    if (['OBSERVADO', 'PENDIENTE_DATOS', 'PENDIENTE_DOCUMENTOS'].includes(destino)) {
       return 'bg-surface-100 hover:bg-amber-50 text-amber-700 border border-amber-200';
     }
-    if (['APROBADA', 'DESEMBOLSADO', 'EN PROCESO', 'SUBSANADA'].includes(destino)) {
+    if (['LISTO_SCORE', 'SCORE_APROBADO', 'SIMULACION_ACEPTADA', 'ENVIADO_CONVENIO', 'CONVENIO_APROBADO', 'PREPARANDO_BCP', 'ENVIADO_BCP', 'APROBADO_BCP', 'DESEMBOLSADO'].includes(destino)) {
       return 'bg-blue-600 hover:bg-blue-700 text-white';
     }
     return 'bg-surface-100 hover:bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] border border-blue-200';
   };
 
   const getTransitionIcon = (destino: string) => {
-    if (['RECHAZADO', 'RECHAZADA_POR_SCORE', 'BOLETA_NO_CALIFICA', 'OBSERVADA', 'OBSERVADO_BACK'].includes(destino)) {
+    if (['RECHAZADO', 'OBSERVADO'].includes(destino)) {
       return <XCircle size={18} />;
     }
     return <Check size={18} />;
@@ -328,8 +331,15 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
 
   const getStatusColor = (estado: string) => {
     switch (estado) {
-      case 'APROBADA': return 'text-emerald-700 bg-emerald-50 border-emerald-200';
-      case 'OBSERVADA': return 'text-rose-700 bg-rose-50 border-rose-200';
+      case 'SCORE_APROBADO':
+      case 'CONVENIO_APROBADO':
+      case 'APROBADO_BCP':
+      case 'DESEMBOLSADO': return 'text-emerald-700 bg-emerald-50 border-emerald-200';
+      case 'OBSERVADO':
+      case 'PENDIENTE_DATOS':
+      case 'PENDIENTE_DOCUMENTOS':
+      case 'PROSPECTO_NUEVO': return 'text-amber-700 bg-amber-50 border-amber-200';
+      case 'RECHAZADO': return 'text-rose-700 bg-rose-50 border-rose-200';
       case 'PENDIENTE_REASIGNACION': return 'text-amber-700 bg-amber-50 border-amber-200';
       default: return 'text-blue-700 bg-[rgba(0,42,141,0.1)] border-blue-200';
     }
@@ -365,6 +375,8 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-bold uppercase tracking-wider text-text-700">
                     <span>Asesor: <span className="text-slate-700">{asesor}</span></span>
                     <span>Convenio: <span className="text-slate-700">{convenio}</span></span>
+                    <span>Cargo: <span className="text-slate-700">{cargoLaboral}</span></span>
+                    <span>Celular: <span className="text-slate-700">{celular}</span></span>
                     <span>Plaza: <span className="text-slate-700">{plaza}</span></span>
                   </div>
                 </div>
@@ -527,17 +539,37 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                   </div>
                   <div className="grid grid-cols-2 divide-x divide-surface-200">
                     <div className="p-3">
-                      <p className="text-[10px] font-black uppercase text-text-700">Plaza</p>
+                      <p className="text-[10px] font-black uppercase text-text-700">Ubicacion</p>
                       <p className="text-sm font-bold text-slate-700 truncate">{plaza}</p>
                     </div>
                     <div className="p-3">
-                      <p className="text-[10px] font-black uppercase text-text-700">Remesa</p>
-                      <p className="text-sm font-bold text-slate-700">S/ {montoRemesa.toLocaleString('es-PE')}</p>
+                      <p className="text-[10px] font-black uppercase text-text-700">Plazo</p>
+                      <p className="text-sm font-bold text-slate-700">{sale.plazo_deseado ? `${sale.plazo_deseado} meses` : '-'}</p>
                     </div>
                   </div>
                   <div className="p-3 border-t border-surface-200">
                     <p className="text-[10px] font-black uppercase text-text-700">Convenio</p>
                     <p className="text-sm font-bold text-slate-700 leading-snug">{convenio}</p>
+                  </div>
+                  <div className="grid grid-cols-2 divide-x divide-surface-200 border-t border-surface-200">
+                    <div className="p-3">
+                      <p className="text-[10px] font-black uppercase text-text-700">Cargo</p>
+                      <p className="text-sm font-bold text-slate-700 truncate">{cargoLaboral}</p>
+                    </div>
+                    <div className="p-3">
+                      <p className="text-[10px] font-black uppercase text-text-700">Entidad</p>
+                      <p className="text-sm font-bold text-slate-700 truncate">{entidadLaboral}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 divide-x divide-surface-200 border-t border-surface-200">
+                    <div className="p-3">
+                      <p className="text-[10px] font-black uppercase text-text-700">Celular</p>
+                      <p className="text-sm font-bold text-slate-700 truncate">{celular}</p>
+                    </div>
+                    <div className="p-3">
+                      <p className="text-[10px] font-black uppercase text-text-700">Correo</p>
+                      <p className="text-sm font-bold text-slate-700 truncate">{correo}</p>
+                    </div>
                   </div>
                 </div>
               </section>
