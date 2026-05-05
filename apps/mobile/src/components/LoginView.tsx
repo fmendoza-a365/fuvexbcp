@@ -23,6 +23,12 @@ interface LoginViewProps {
   setPassword: (v: string) => void;
   handleLogin: () => void;
   loading: boolean;
+  apiReady: boolean;
+  apiUrl: string;
+  apiUrlDraft: string;
+  setApiUrlDraft: (v: string) => void;
+  onSaveApiUrl: () => void;
+  onResetApiUrl: () => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({
@@ -31,13 +37,20 @@ export const LoginView: React.FC<LoginViewProps> = ({
   password,
   setPassword,
   handleLogin,
-  loading
+  loading,
+  apiReady,
+  apiUrl,
+  apiUrlDraft,
+  setApiUrlDraft,
+  onSaveApiUrl,
+  onResetApiUrl
 }) => {
   const isDark = useColorScheme() === 'dark';
   const styles = createStyles(isDark);
   const theme = isDark ? DARK_COLORS : COLORS;
   const [showPassword, setShowPassword] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [showApiSettings, setShowApiSettings] = useState(false);
 
   const fieldState = (field: string) => (
     focusedField === field
@@ -136,10 +149,105 @@ export const LoginView: React.FC<LoginViewProps> = ({
               </View>
             </View>
 
+            <View
+              style={{
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: theme.surfaceAlt,
+                borderRadius: 12,
+                padding: 12,
+                marginBottom: 16
+              }}
+            >
+              <TouchableOpacity
+                onPress={() => setShowApiSettings(!showApiSettings)}
+                style={{ flexDirection: 'row', alignItems: 'center' }}
+                activeOpacity={0.82}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>API</Text>
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      color: apiUrl ? theme.subtext : theme.rose,
+                      fontWeight: '700',
+                      marginTop: 3
+                    }}
+                    numberOfLines={1}
+                  >
+                    {apiReady ? (apiUrl || 'Sin configurar') : 'Cargando...'}
+                  </Text>
+                </View>
+                <Ionicons
+                  name={showApiSettings ? 'chevron-up' : 'settings-outline'}
+                  size={20}
+                  color={theme.blue}
+                />
+              </TouchableOpacity>
+
+              {showApiSettings && (
+                <View style={{ marginTop: 12 }}>
+                  <TextInput
+                    style={{
+                      borderWidth: 1,
+                      borderColor: theme.border,
+                      backgroundColor: theme.input,
+                      color: theme.text,
+                      borderRadius: 10,
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                      fontSize: 12,
+                      fontWeight: '700'
+                    }}
+                    value={apiUrlDraft}
+                    onChangeText={setApiUrlDraft}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder="https://tu-ngrok.ngrok-free.dev/api"
+                    placeholderTextColor={theme.muted}
+                  />
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                    <TouchableOpacity
+                      onPress={onSaveApiUrl}
+                      style={{
+                        flex: 1,
+                        minHeight: 38,
+                        borderRadius: 9,
+                        backgroundColor: theme.blue,
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <Text style={{ color: theme.whiteText, fontSize: 11, fontWeight: '900' }}>
+                        GUARDAR
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={onResetApiUrl}
+                      style={{
+                        flex: 1,
+                        minHeight: 38,
+                        borderRadius: 9,
+                        backgroundColor: theme.white,
+                        borderWidth: 1,
+                        borderColor: theme.border,
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <Text style={{ color: theme.blue, fontSize: 11, fontWeight: '900' }}>
+                        AUTO
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
+
             <TouchableOpacity
               style={[styles.loginBtn, loading && { opacity: 0.72 }]}
               onPress={handleLogin}
-              disabled={loading}
+              disabled={loading || !apiReady}
               activeOpacity={0.86}
             >
               {loading ? (

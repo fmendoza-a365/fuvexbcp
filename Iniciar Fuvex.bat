@@ -5,7 +5,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "ROOT=%~dp0"
 cd /d "%ROOT%"
 
-title Fuvex Manager A365 - Inicio Local
+title Fuvex Manager A365 - Inicio Unificado
 mode con: cols=130 lines=42
 
 echo.
@@ -14,7 +14,34 @@ echo   FUVEX MANAGER A365 - SISTEMA LOCAL + APP MOVIL
 echo ===============================================================
 echo.
 
-echo [1/6] Cerrando servidores locales activos...
+if /i "%FUVEX_USE_NGROK%"=="1" set "FUVEX_START_MODE=2"
+if defined FUVEX_NGROK_DOMAIN set "FUVEX_START_MODE=2"
+
+if not defined FUVEX_START_MODE (
+  echo Selecciona modo de trabajo:
+  echo   1. Local WiFi  - PC y celular en la misma red
+  echo   2. Remoto      - ngrok para datos moviles u otra red WiFi
+  echo.
+  set /p "FUVEX_START_MODE=Modo [1/2, Enter=1]: "
+)
+
+if "%FUVEX_START_MODE%"=="" set "FUVEX_START_MODE=1"
+if /i "%FUVEX_START_MODE%"=="LOCAL" set "FUVEX_START_MODE=1"
+if /i "%FUVEX_START_MODE%"=="NGROK" set "FUVEX_START_MODE=2"
+if /i "%FUVEX_START_MODE%"=="REMOTO" set "FUVEX_START_MODE=2"
+
+if "%FUVEX_START_MODE%"=="2" (
+  set "FUVEX_USE_NGROK=1"
+  set "FUVEX_MODE_LABEL=REMOTO CON NGROK"
+) else (
+  set "FUVEX_USE_NGROK="
+  set "FUVEX_MODE_LABEL=LOCAL WIFI"
+)
+
+echo [OK] Modo seleccionado: %FUVEX_MODE_LABEL%
+echo.
+
+echo [1/7] Cerrando servidores locales activos...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ErrorActionPreference='SilentlyContinue';" ^
   "$ports=@(3001,5173,8081,8082,8083,19000,19001,19002,19006,4040);" ^
@@ -28,7 +55,7 @@ timeout /t 2 >nul
 echo [OK] Puertos liberados: 3001, 5173, 8081-8083, 19000-19006, 4040.
 echo.
 
-echo [2/6] Validando instalacion local...
+echo [2/7] Validando instalacion local...
 where npm.cmd >nul 2>nul
 if errorlevel 1 (
   echo [ERROR] No se encontro npm.cmd. Instala Node.js 20+ y vuelve a ejecutar.
@@ -173,6 +200,9 @@ echo   Web:     http://localhost:5173
 echo   Mobile:  QR de Expo Go en esta ventana
 echo   Metro LAN host: %REACT_NATIVE_PACKAGER_HOSTNAME%
 echo   Metro puerto: %FUVEX_EXPO_PORT%
+echo   Modo: %FUVEX_MODE_LABEL%
+if defined NGROK_PUBLIC_URL echo   API para APK de prueba: !NGROK_PUBLIC_URL!/api
+if not defined NGROK_PUBLIC_URL if "%FUVEX_START_MODE%"=="2" echo   API para APK de prueba: %MOBILE_API_URL%
 echo.
 echo Backend y Web corren ocultos para no abrir varias ventanas de CMD.
 echo Logs:
@@ -180,10 +210,9 @@ echo   logs\backend.log
 echo   logs\web.log
 echo.
 echo Modo Expo actual: %EXPO_ARGS%
-echo Puedes cambiarlo definiendo FUVEX_EXPO_ARGS antes de ejecutar este BAT.
-echo Ejemplo tunel Expo: set FUVEX_EXPO_ARGS=--tunnel --go --clear
-echo Si compilas un build instalado, define EXPO_PUBLIC_API_URL con una URL publica antes de compilar.
-echo Si Expo Go queda cargando, confirma que el celular este en la misma WiFi que %LOCAL_IP%.
+echo Para Expo Go local usa el QR con el celular en la misma WiFi.
+echo Para APK de prueba usa la URL mostrada en "API para APK de prueba" dentro de Configurar API.
+echo Si compilas un build final, define EXPO_PUBLIC_API_URL con la API publica antes de compilar.
 echo.
 echo Iniciando Expo ahora. Para detener Expo usa Ctrl+C en esta ventana.
 echo Al volver a ejecutar este BAT, se liberan automaticamente los puertos locales.

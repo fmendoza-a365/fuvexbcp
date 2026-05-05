@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, DARK_COLORS, API_URL, DESIGN } from '../constants/theme';
+import { COLORS, DARK_COLORS, DESIGN } from '../constants/theme';
 import {
   calcCuotaFrancesa,
   generarCronograma, calcTCEA, fmt,
@@ -23,9 +23,10 @@ interface SimConfig {
 interface Props {
   isDark: boolean;
   token: string;
+  apiUrl: string;
 }
 
-let cachedSimulatorConfig: SimConfig | null = null;
+let cachedSimulatorConfig: { apiUrl: string; data: SimConfig } | null = null;
 
 const toNum = (value: any) => Number(value) || 0;
 const debtRatioFactors = [0.01, 0, 0.035, 0.022, 0, 0.0006944, 0.078, 0.003306];
@@ -42,16 +43,17 @@ const calcDebtTotals = (rows: Array<{ bcp: string; noBcp: string; saldoAct: stri
   }, { ratio: 0, cem: 0 })
 );
 
-export default function SimulatorView({ isDark, token }: Props) {
+export default function SimulatorView({ isDark, token, apiUrl }: Props) {
   const theme = isDark ? DARK_COLORS : COLORS;
   const { width } = Dimensions.get('window');
   const isSmall = width < 400;
-  const cachedTeaDefault = cachedSimulatorConfig?.configuracion?.TEA_DEFAULT
-    ? (cachedSimulatorConfig.configuracion.TEA_DEFAULT * 100).toString()
+  const cachedConfig = cachedSimulatorConfig?.apiUrl === apiUrl ? cachedSimulatorConfig.data : null;
+  const cachedTeaDefault = cachedConfig?.configuracion?.TEA_DEFAULT
+    ? (cachedConfig.configuracion.TEA_DEFAULT * 100).toString()
     : '';
 
-  const [config, setConfig] = useState<SimConfig | null>(cachedSimulatorConfig);
-  const [loadingConfig, setLoadingConfig] = useState(!cachedSimulatorConfig);
+  const [config, setConfig] = useState<SimConfig | null>(cachedConfig);
+  const [loadingConfig, setLoadingConfig] = useState(!cachedConfig);
   const [showCronograma, setShowCronograma] = useState(false);
   const [simulating, setSimulating] = useState(false);
   const [error, setError] = useState('');
@@ -91,17 +93,18 @@ export default function SimulatorView({ isDark, token }: Props) {
   ]);
 
   useEffect(() => {
-    if (cachedSimulatorConfig) {
-      setConfig(cachedSimulatorConfig);
+    if (cachedSimulatorConfig?.apiUrl === apiUrl) {
+      setConfig(cachedSimulatorConfig.data);
       setLoadingConfig(false);
       return;
     }
 
     let mounted = true;
+    setLoadingConfig(true);
 
-    axios.get(`${API_URL}/simulator/config`, { headers: { Authorization: `Bearer ${token}` } })
+    axios.get(`${apiUrl}/simulator/config`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => {
-        cachedSimulatorConfig = res.data;
+        cachedSimulatorConfig = { apiUrl, data: res.data };
         if (!mounted) return;
         setConfig(res.data);
         if (res.data.configuracion?.TEA_DEFAULT) {
@@ -117,7 +120,7 @@ export default function SimulatorView({ isDark, token }: Props) {
     return () => {
       mounted = false;
     };
-  }, [token]);
+  }, [token, apiUrl]);
 
   const selectedConvenio = useMemo(() =>
     config?.convenios.find(c => c.id === form.convenioId),
@@ -230,7 +233,7 @@ export default function SimulatorView({ isDark, token }: Props) {
         lineaUtilizadaTC: Number(cargaCrediticia[6]?.cuotaAct || cargaCrediticia[6]?.bcp || 0) + Number(cargaCrediticia[6]?.noBcp || 0),
         lineaNoUtilizadaTC: Number(cargaCrediticia[7]?.cuotaAct || cargaCrediticia[7]?.bcp || 0) + Number(cargaCrediticia[7]?.noBcp || 0)
       };
-      const res = await axios.post(`${API_URL}/simulator/calculate`, payload, {
+      const res = await axios.post(`${apiUrl}/simulator/calculate`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setServerSimulation(res.data);
@@ -242,7 +245,7 @@ export default function SimulatorView({ isDark, token }: Props) {
     } finally {
       setSimulating(false);
     }
-  }, [form, selectedConvenio, cargaCrediticia, token]);
+  }, [form, selectedConvenio, cargaCrediticia, token, apiUrl]);
 
   const cronogramaData = useMemo(() => {
     if (serverSimulation?.cronograma) {

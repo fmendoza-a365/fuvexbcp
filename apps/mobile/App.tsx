@@ -29,7 +29,8 @@ import {
   addNotificationReceivedListener,
   addNotificationResponseListener
 } from './src/services/pushService';
-import { setAuthToken } from './src/api/client';
+import { setApiBaseUrl, setAuthToken } from './src/api/client';
+import { clearSavedApiUrl, loadSavedApiUrl, saveApiUrl } from './src/config/api';
 
 interface Attachment {
   uri: string;
@@ -82,6 +83,9 @@ export default function App() {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [apiUrl, setApiUrl] = useState(API_URL);
+  const [apiUrlDraft, setApiUrlDraft] = useState(API_URL);
+  const [apiReady, setApiReady] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
 
@@ -116,12 +120,37 @@ export default function App() {
   const [clientData, setClientData] = useState<any>(null);
   const [isSearchingDni, setIsSearchingDni] = useState(false);
 
+  useEffect(() => {
+    let mounted = true;
+
+    loadSavedApiUrl()
+      .then((resolvedUrl) => {
+        setApiBaseUrl(resolvedUrl);
+        if (!mounted) return;
+        setApiUrl(resolvedUrl);
+        setApiUrlDraft(resolvedUrl);
+      })
+      .catch(() => {
+        setApiBaseUrl(API_URL);
+        if (!mounted) return;
+        setApiUrl(API_URL);
+        setApiUrlDraft(API_URL);
+      })
+      .finally(() => {
+        if (mounted) setApiReady(true);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const fetchDniInfo = async (id: string) => {
     setIsSearchingDni(true);
     setClientAge(null);
     setClientData(null);
     try {
-      const res = await axios.get(`${API_URL}/dni/${id}`, {
+      const res = await axios.get(`${apiUrl}/dni/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data) {
@@ -140,8 +169,8 @@ export default function App() {
     try {
       const headers = { Authorization: `Bearer ${token}` };
       const [salesRes, kpiRes] = await Promise.all([
-        axios.get(`${API_URL}/sales`, { headers }),
-        axios.get(`${API_URL}/analytics/dashboard`, { headers })
+        axios.get(`${apiUrl}/sales`, { headers }),
+        axios.get(`${apiUrl}/analytics/dashboard`, { headers })
       ]);
       setMySales(normalizeSalesResponse(salesRes.data));
       setKpi(kpiRes.data);
@@ -154,7 +183,7 @@ export default function App() {
     if (!token) return;
 
     try {
-      const res = await axios.get(`${API_URL}/simulator/config`, {
+      const res = await axios.get(`${apiUrl}/simulator/config`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const convenios = Array.isArray(res.data?.convenios) ? res.data.convenios : [];
@@ -218,7 +247,7 @@ export default function App() {
 
   const testPush = async () => {
     try {
-      await axios.post(`${API_URL}/notifications/test`, {}, {
+      await axios.post(`${apiUrl}/notifications/test`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       Alert.alert('Enviado', 'Se solicito una notificacion de prueba.');
@@ -227,29 +256,53 @@ export default function App() {
     }
   };
 
+  const handleSaveApiUrl = async () => {
+    try {
+      const savedUrl = await saveApiUrl(apiUrlDraft);
+      setApiBaseUrl(savedUrl);
+      setApiUrl(savedUrl);
+      setApiUrlDraft(savedUrl);
+      Alert.alert('API actualizada', savedUrl);
+    } catch (error) {
+      Alert.alert('URL invalida', 'Ingresa una URL publica o local valida.');
+    }
+  };
+
+  const handleResetApiUrl = async () => {
+    const resolvedUrl = await clearSavedApiUrl();
+    setApiBaseUrl(resolvedUrl);
+    setApiUrl(resolvedUrl);
+    setApiUrlDraft(resolvedUrl);
+    Alert.alert('API restaurada', resolvedUrl || 'No hay API configurada por defecto.');
+  };
+
   const handleLogin = async () => {
+    if (!apiReady) {
+      Alert.alert('Preparando API', 'Espera unos segundos y vuelve a intentar.');
+      return;
+    }
     const cleanUsername = username.trim();
     if (!cleanUsername || !password) {
       Alert.alert('Faltan datos', 'Ingresa usuario y contrasena.');
       return;
     }
-    if (!API_URL) {
+    if (!apiUrl) {
       Alert.alert(
         'API no configurada',
-        'Este build no tiene una URL de API publica. Compila la app definiendo EXPO_PUBLIC_API_URL o inicia Expo con Iniciar Fuvex.bat.'
+        'Configura la URL de API en esta pantalla o inicia Expo con Iniciar Fuvex.bat.'
       );
       return;
     }
 
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}/auth/login`, { username: cleanUsername, password });
+      const res = await axios.post(`${apiUrl}/auth/login`, { username: cleanUsername, password });
       setAuthToken(res.data.token);
       setToken(res.data.token);
       setUser(res.data.user);
     } catch (error: any) {
       const message = error.response?.data?.error ||
-        (error.request ? `No se pudo conectar al API movil (${API_URL}). Verifica que el backend este iniciado y que el celular este en la misma red WiFi.` : 'Credenciales invalidas');
+        (error.request ? `No se pudo conectar al API movil (${apiUrl}). Verifica que el backend este iniciado y que la URL sea correcta.` : 'Credenciales invalidas');
       Alert.alert('Error', message);
     } finally {
       setLoading(false);
@@ -325,7 +378,7 @@ export default function App() {
     setLoading(true);
     try {
       const saleRes = await axios.post(
-        `${API_URL}/sales`,
+        `${apiUrl}/sales`,
         {
           dni_cliente: dni,
           nombres_cliente: nombres,
@@ -359,7 +412,7 @@ export default function App() {
         formData.append('dni_cliente', dni);
         formData.append('documento', { uri: att.uri, name: att.name, type: att.type } as any);
 
-        await axios.post(`${API_URL}/sales/${saleId}/documentos?dni=${dni}`, formData, {
+        await axios.post(`${apiUrl}/sales/${saleId}/documentos?dni=${dni}`, formData, {
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'multipart/form-data'
@@ -455,6 +508,12 @@ export default function App() {
       setPassword={setPassword}
       handleLogin={handleLogin}
       loading={loading}
+      apiReady={apiReady}
+      apiUrl={apiUrl}
+      apiUrlDraft={apiUrlDraft}
+      setApiUrlDraft={setApiUrlDraft}
+      onSaveApiUrl={handleSaveApiUrl}
+      onResetApiUrl={handleResetApiUrl}
     />
   );
 
@@ -932,7 +991,7 @@ export default function App() {
   );
 
   const renderSimulator = () => (
-    <SimulatorView isDark={isDark} token={token || ''} />
+    <SimulatorView isDark={isDark} token={token || ''} apiUrl={apiUrl} />
   );
 
   const inactiveTabColor = 'rgba(255,255,255,0.56)';

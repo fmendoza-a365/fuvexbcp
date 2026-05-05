@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════
  */
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
-import { API_URL } from '../constants/theme';
+import { getRuntimeApiUrl, setRuntimeApiUrl } from '../config/api';
 
 // Token storage (usamos módulo simple, se puede migrar a SecureStore)
 let authToken: string | null = null;
@@ -18,16 +18,25 @@ export const getAuthToken = () => authToken;
 
 // Crear instancia de Axios
 const api: AxiosInstance = axios.create({
-  baseURL: API_URL,
+  baseURL: getRuntimeApiUrl(),
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
+export const setApiBaseUrl = (url: string) => {
+  const normalized = setRuntimeApiUrl(url);
+  api.defaults.baseURL = normalized;
+  return normalized;
+};
+
+export const getApiBaseUrl = () => getRuntimeApiUrl();
+
 // Request interceptor — inyectar token automáticamente
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    config.baseURL = getRuntimeApiUrl();
     if (authToken) {
       config.headers.Authorization = `Bearer ${authToken}`;
     }
