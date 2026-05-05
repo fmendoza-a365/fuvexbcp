@@ -35,7 +35,33 @@ interface Attachment {
   uri: string;
   name: string;
   type: string;
+  docType: string;
 }
+
+const DOCUMENT_TYPE_OPTIONS = [
+  { label: 'DNI - Frente', value: 'DNI_FRENTE' },
+  { label: 'DNI - Reverso', value: 'DNI_REVERSO' },
+  { label: 'Boleta de pago', value: 'BOLETA_PAGO' },
+  { label: 'Ticket CTS', value: 'TICKET_CTS' },
+  { label: 'Resolucion / nombramiento', value: 'RESOLUCION' },
+  { label: 'Cara anterior boleta', value: 'CARA_ANTES_BOLETA' },
+  { label: 'Carne identidad', value: 'CARNE_IDENTIDAD' },
+  { label: 'Practillas', value: 'PRACTILLAS' },
+  { label: 'Memorandum', value: 'MEMORANDO' },
+  { label: 'Documento alternativo 1', value: 'DOC_ALTERNO1' },
+  { label: 'Documento alternativo 2', value: 'DOC_ALTERNO2' },
+  { label: 'Documento alternativo 3', value: 'DOC_ALTERNO3' },
+  { label: 'Otros', value: 'OTROS' },
+];
+
+const DEFAULT_DOCUMENT_SEQUENCE = [
+  'DNI_FRENTE',
+  'DNI_REVERSO',
+  'BOLETA_PAGO',
+  'TICKET_CTS',
+  'RESOLUCION',
+  'CARA_ANTES_BOLETA',
+];
 
 type ActiveTab = 'home' | 'list' | 'form' | 'simulator';
 
@@ -241,10 +267,16 @@ export default function App() {
       });
 
       if (!result.canceled) {
+        const usedTypes = new Set(attachments.map(att => att.docType));
         const newAttachments = result.assets.map(asset => ({
           uri: asset.uri,
           name: asset.name,
-          type: asset.mimeType || 'application/octet-stream'
+          type: asset.mimeType || 'application/octet-stream',
+          docType: (() => {
+            const nextType = DEFAULT_DOCUMENT_SEQUENCE.find(type => !usedTypes.has(type)) || 'OTROS';
+            usedTypes.add(nextType);
+            return nextType;
+          })()
         }));
         setAttachments([...attachments, ...newAttachments]);
       }
@@ -256,6 +288,12 @@ export default function App() {
   const removeAttachment = (index: number) => {
     const newAttachments = [...attachments];
     newAttachments.splice(index, 1);
+    setAttachments(newAttachments);
+  };
+
+  const updateAttachmentType = (index: number, docType: string) => {
+    const newAttachments = [...attachments];
+    newAttachments[index] = { ...newAttachments[index], docType };
     setAttachments(newAttachments);
   };
 
@@ -283,7 +321,7 @@ export default function App() {
       const saleId = saleRes.data.id;
       for (const att of attachments) {
         const formData = new FormData();
-        formData.append('tipo_documento', 'DOC');
+        formData.append('tipo_documento', att.docType || 'OTROS');
         formData.append('dni_cliente', dni);
         formData.append('documento', { uri: att.uri, name: att.name, type: att.type } as any);
 
@@ -664,6 +702,17 @@ export default function App() {
                   <View style={styles.fileInfo}>
                     <Text style={styles.fileName} numberOfLines={1}>{att.name}</Text>
                     <Text style={styles.fileType}>{att.type.split('/')[1]?.toUpperCase() || 'FILE'}</Text>
+                    <View style={styles.attachmentTypeWrapper}>
+                      <Picker
+                        selectedValue={att.docType}
+                        onValueChange={(value) => updateAttachmentType(index, value)}
+                        style={styles.attachmentTypePicker}
+                      >
+                        {DOCUMENT_TYPE_OPTIONS.map(option => (
+                          <Picker.Item key={option.value} label={option.label} value={option.value} />
+                        ))}
+                      </Picker>
+                    </View>
                   </View>
                   <TouchableOpacity onPress={() => removeAttachment(index)} style={styles.removeBtn}>
                     <Ionicons name="trash-outline" size={18} color={theme.rose} />

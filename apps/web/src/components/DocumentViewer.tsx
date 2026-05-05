@@ -18,6 +18,11 @@ interface TransitionAction {
   motivos_disponibles?: string[];
 }
 
+interface MissingDocument {
+  tipo?: string;
+  nombre?: string;
+}
+
 interface TraceItem {
   id: string;
   type: 'note' | 'state';
@@ -38,6 +43,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   const [availableTransitions, setAvailableTransitions] = useState<TransitionAction[]>([]);
   const [rccLoading, setRccLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [missingDocs, setMissingDocs] = useState<MissingDocument[]>([]);
 
   const traceSource = detailSale || sale;
   const docs = sale.documents || [];
@@ -217,6 +223,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   const handleConsultarRCC = async () => {
     setRccLoading(true);
     setError(null);
+    setMissingDocs([]);
     try {
       const token = localStorage.getItem('token');
       await axios.post(`/api/sales/${sale.id}/rcc`, {}, {
@@ -237,6 +244,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   const handleStateChange = async (newState: string, motivo?: string) => {
     setLoading(true);
     setError(null);
+    setMissingDocs([]);
     try {
       const token = localStorage.getItem('token');
       await axios.put(`/api/sales/${sale.id}/estado`, 
@@ -248,12 +256,13 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
     } catch (err: any) {
       console.error('Error changing state', err);
       const backendError = err.response?.data?.error || 'Error al actualizar el estado del expediente';
-      const faltantes = err.response?.data?.documentos_faltantes;
+      const backendStep = err.response?.data?.paso_previo;
+      const faltantes = err.response?.data?.documentos_faltantes as MissingDocument[] | undefined;
       if (faltantes && faltantes.length > 0) {
-        const lista = faltantes.map((d: any) => d.nombre || d.tipo).join(', ');
-        setError(`${backendError}: ${lista}`);
+        setMissingDocs(faltantes);
+        setError(`No se pudo cambiar a ${formatEstadoLabel(newState)}. ${backendError}.`);
       } else {
-        setError(backendError);
+        setError(backendStep ? `${backendError}. ${backendStep}` : backendError);
       }
     } finally {
       setLoading(false);
@@ -281,6 +290,10 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
       .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ')
+  );
+
+  const formatMissingDoc = (doc: MissingDocument) => (
+    doc.nombre || (doc.tipo ? formatEstadoLabel(doc.tipo) : 'Documento requerido')
   );
 
   const getTransitionButtonClass = (destino: string) => {
@@ -576,6 +589,24 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
               <div className="mt-auto space-y-3 pt-4 border-t border-surface-200">
                 <h3 className="text-xs font-semibold text-text-700 uppercase tracking-wider mb-2">Acciones disponibles</h3>
 
+                {error && (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-700">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                      <p className="text-xs font-semibold leading-relaxed">{error}</p>
+                    </div>
+                    {missingDocs.length > 0 && (
+                      <ul className="mt-2 space-y-1 pl-6 text-xs font-medium list-disc">
+                        {missingDocs.map((doc, index) => (
+                          <li key={`${doc.tipo || doc.nombre || 'doc'}-${index}`}>
+                            {formatMissingDoc(doc)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
                 {transitionsLoading ? (
                   <div className="flex items-center justify-center gap-2 py-3 text-xs font-bold text-text-700 uppercase">
                     <Loader2 size={16} className="animate-spin" /> Cargando acciones
@@ -602,12 +633,6 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                 ) : (
                   <p className="text-xs text-center text-text-700 font-medium">
                     No hay transiciones disponibles para tu rol desde este estado.
-                  </p>
-                )}
-
-                {error && (
-                  <p className="text-xs text-center text-rose-600 font-medium mt-2">
-                    {error}
                   </p>
                 )}
               </div>

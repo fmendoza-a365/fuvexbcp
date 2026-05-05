@@ -330,6 +330,18 @@ export const createStyles = (isDark: boolean) => {
       fontWeight: '900',
       color: theme.blue
     },
+    attachmentTypeWrapper: {
+      marginTop: 8,
+      borderWidth: 1,
+      borderColor: theme.border,
+      borderRadius: DESIGN.radius.sm,
+      backgroundColor: theme.surfaceAlt,
+      overflow: 'hidden'
+    },
+    attachmentTypePicker: {
+      height: 40,
+      color: theme.text
+    },
     removeBtn: {
       width: 34,
       height: 34,

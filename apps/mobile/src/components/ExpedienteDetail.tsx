@@ -10,6 +10,7 @@ import {
   ActivityIndicator, Alert, StyleSheet, RefreshControl
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import api from '../api/client';
 import { DESIGN } from '../constants/theme';
 
@@ -23,12 +24,12 @@ interface NextStep {
 }
 
 interface ChecklistItem {
-  id: string;
-  tipo_documento: string;
-  descripcion: string;
+  tipo: string;
+  nombre: string;
   obligatorio: boolean;
-  completado: boolean;
-  url_archivo: string | null;
+  orden: number;
+  subido: boolean;
+  cantidad: number;
 }
 
 interface ObservationItem {
@@ -54,12 +55,22 @@ const getEstadoColor = (estado: string, theme: any) => {
   return theme.blue;
 };
 
+const normalizeChecklistItem = (item: any): ChecklistItem => ({
+  tipo: item.tipo || item.tipo_documento || 'DOC',
+  nombre: item.nombre || item.descripcion || item.tipo_documento || item.tipo || 'Documento',
+  obligatorio: Boolean(item.obligatorio),
+  orden: Number(item.orden || 0),
+  subido: Boolean(item.subido || item.completado),
+  cantidad: Number(item.cantidad || (item.subido || item.completado ? 1 : 0))
+});
+
 export default function ExpedienteDetail({ saleId, onClose, isDark, theme }: ExpedienteDetailProps) {
   const [sale, setSale] = useState<any>(null);
   const [nextSteps, setNextSteps] = useState<NextStep[]>([]);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
 
   const fetchDetail = useCallback(async (showLoader = false) => {
     if (showLoader) setLoading(true);
@@ -71,7 +82,7 @@ export default function ExpedienteDetail({ saleId, onClose, isDark, theme }: Exp
       ]);
       setSale(saleRes.data);
       setNextSteps(stepsRes.data.nextSteps || []);
-      setChecklist(checkRes.data.checklist || []);
+      setChecklist((checkRes.data.checklist || []).map(normalizeChecklistItem));
     } catch (error) {
       console.error('Error fetching detail:', error);
       if (showLoader) Alert.alert('Error', 'No se pudo cargar el expediente');
@@ -91,6 +102,41 @@ export default function ExpedienteDetail({ saleId, onClose, isDark, theme }: Exp
     await fetchDetail(false);
     setRefreshing(false);
   }, [fetchDetail]);
+
+  const handleUploadChecklistDocument = useCallback(async (item: ChecklistItem) => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        multiple: false
+      });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      setUploadingDoc(item.tipo);
+
+      const formData = new FormData();
+      formData.append('tipo_documento', item.tipo);
+      formData.append('dni_cliente', sale?.dni_cliente || '');
+      formData.append('documento', {
+        uri: asset.uri,
+        name: asset.name,
+        type: asset.mimeType || 'application/octet-stream'
+      } as any);
+
+      await api.post(`/sales/${saleId}/documentos?dni=${sale?.dni_cliente || ''}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      Alert.alert('Documento cargado', `${item.nombre} fue subido correctamente.`);
+      await fetchDetail(false);
+    } catch (error) {
+      console.error('Error uploading checklist document:', error);
+      Alert.alert('Error', 'No se pudo subir el documento.');
+    } finally {
+      setUploadingDoc(null);
+    }
+  }, [fetchDetail, sale?.dni_cliente, saleId]);
 
   if (loading) {
     return (
@@ -119,7 +165,7 @@ export default function ExpedienteDetail({ saleId, onClose, isDark, theme }: Exp
   const diasEnEstado = sale.fecha_estado_desde
     ? Math.floor((Date.now() - new Date(sale.fecha_estado_desde).getTime()) / 86400000)
     : 0;
-  const docsCompletados = checklist.filter(d => d.completado).length;
+  const docsCompletados = checklist.filter(d => d.subido).length;
   const docsTotal = checklist.length;
   const docsProgress = docsTotal > 0 ? docsCompletados / docsTotal : 0;
   const observations: ObservationItem[] = [
@@ -207,20 +253,39 @@ export default function ExpedienteDetail({ saleId, onClose, isDark, theme }: Exp
               <View style={[s.progressBarFill, { width: `${docsProgress * 100}%`, backgroundColor: docsProgress === 1 ? theme.emerald : theme.blue }]} />
             </View>
             {checklist.map((item) => (
-              <View key={item.id} style={[s.checkItem, { borderBottomColor: theme.divider }]}>
+              <View key={item.tipo} style={[s.checkItem, { borderBottomColor: theme.divider }]}>
                 <Ionicons
-                  name={item.completado ? "checkmark-circle" : "ellipse-outline"}
+                  name={item.subido ? "checkmark-circle" : "ellipse-outline"}
                   size={20}
-                  color={item.completado ? theme.emerald : theme.subtext}
+                  color={item.subido ? theme.emerald : theme.subtext}
                 />
                 <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={[s.checkDoc, { color: theme.text }]}>{item.tipo_documento}</Text>
-                  {item.descripcion && <Text style={[s.checkDesc, { color: theme.subtext }]}>{item.descripcion}</Text>}
+                  <Text style={[s.checkDoc, { color: theme.text }]}>{item.nombre}</Text>
+                  <Text style={[s.checkDesc, { color: theme.subtext }]}>{item.tipo}</Text>
                 </View>
-                {item.obligatorio && !item.completado && (
-                  <View style={[s.reqBadge, { backgroundColor: theme.roseSoft }]}>
-                    <Text style={[s.reqText, { color: theme.rose }]}>REQ</Text>
+                {item.subido ? (
+                  <View style={[s.docStatusBadge, { backgroundColor: theme.emeraldSoft }]}>
+                    <Text style={[s.docStatusText, { color: theme.emerald }]}>
+                      OK{item.cantidad > 1 ? ` x${item.cantidad}` : ''}
+                    </Text>
                   </View>
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => handleUploadChecklistDocument(item)}
+                    disabled={uploadingDoc === item.tipo}
+                    style={[s.uploadDocBtn, { backgroundColor: theme.blueSoft, borderColor: theme.border }]}
+                  >
+                    {uploadingDoc === item.tipo ? (
+                      <ActivityIndicator size="small" color={theme.blue} />
+                    ) : (
+                      <>
+                        <Ionicons name="cloud-upload-outline" size={14} color={theme.blue} />
+                        <Text style={[s.uploadDocText, { color: theme.blue }]}>
+                          {item.obligatorio ? 'Subir req.' : 'Subir'}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
                 )}
               </View>
             ))}
@@ -327,6 +392,20 @@ const s = StyleSheet.create({
   checkDesc: { fontSize: 11, marginTop: 2 },
   reqBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   reqText: { fontSize: 9, fontWeight: '900' },
+  docStatusBadge: { paddingHorizontal: 7, paddingVertical: 4, borderRadius: 7 },
+  docStatusText: { fontSize: 9, fontWeight: '900' },
+  uploadDocBtn: {
+    minWidth: 72,
+    minHeight: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4
+  },
+  uploadDocText: { fontSize: 10, fontWeight: '900' },
   stepCard: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, gap: 12 },
   stepUrgent: { marginHorizontal: -8, paddingHorizontal: 8, borderRadius: 8 },
   stepNumber: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },

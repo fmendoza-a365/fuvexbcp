@@ -359,8 +359,13 @@ router.put('/:id/estado', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 
     // ── StateMachine: Validar transición ────────────────
     const validation = validateTransition(sale.estado, nuevo_estado, req.user.role, motivo || detalles);
     if (!validation.valid) {
+      const pasoPrevio = sale.estado === 'POR INGRESAR' && nuevo_estado === 'APROBADA'
+        ? 'Primero cambie el expediente a EN PROCESO; luego apruebelo con los documentos obligatorios completos.'
+        : undefined;
+
       return res.status(422).json({
         error: validation.error,
+        paso_previo: pasoPrevio,
         estado_actual: sale.estado,
         transiciones_validas: getValidTransitions(sale.estado, req.user.role).map(t => ({
           destino: t.to,
@@ -541,6 +546,10 @@ router.post(
   try {
     const { id } = req.params;
     const { tipo_documento } = req.body;
+    const tipoDocumento = String(tipo_documento || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9_]/g, '_') || 'OTROS';
 
     if (!req.file) {
       return res.status(400).json({ error: 'Archivo no recibido' });
@@ -549,7 +558,7 @@ router.post(
     const document = await prisma.document.create({
       data: {
         sale_id: id,
-        tipo_documento: tipo_documento || 'DOC',
+        tipo_documento: tipoDocumento,
         file_path: req.file.path,
         uploaded_by: req.user.id
       }
@@ -560,7 +569,7 @@ router.post(
         sale_id: id,
         user_id: req.user.id,
         accion: "Carga de Documento",
-        detalles: `Documento ${tipo_documento} subido`
+        detalles: `Documento ${tipoDocumento} subido`
       }
     });
 
