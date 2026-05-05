@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 
 set "ROOT=%~dp0"
 cd /d "%ROOT%"
@@ -17,7 +17,7 @@ echo.
 echo [1/6] Cerrando servidores locales activos...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ErrorActionPreference='SilentlyContinue';" ^
-  "$ports=@(3001,5173,8081,19000,19001,19002,19006);" ^
+  "$ports=@(3001,5173,8081,8082,8083,19000,19001,19002,19006,4040);" ^
   "$processIds=@();" ^
   "foreach($port in $ports){$processIds += Get-NetTCPConnection -LocalPort $port | Select-Object -ExpandProperty OwningProcess};" ^
   "$processIds=$processIds | Where-Object { $_ -and $_ -ne $PID } | Sort-Object -Unique;" ^
@@ -25,7 +25,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "Get-Process ngrok | Stop-Process -Force"
 
 timeout /t 2 >nul
-echo [OK] Puertos liberados: 3001, 5173, 8081, 19000-19006.
+echo [OK] Puertos liberados: 3001, 5173, 8081-8083, 19000-19006, 4040.
 echo.
 
 echo [2/6] Validando instalacion local...
@@ -97,21 +97,44 @@ if errorlevel 1 goto :error
 echo [OK] Web en proceso oculto. Logs: logs\web.log
 echo.
 
+set "NGROK_PUBLIC_URL="
 if defined FUVEX_NGROK_DOMAIN (
   if exist "%ROOT%ngrok.exe" (
     echo [INFO] Iniciando tunel ngrok para backend en segundo plano...
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
       "$root=$env:FUVEX_ROOT;" ^
       "$logs=Join-Path $root 'logs';" ^
-      "$domain=$env:FUVEX_NGROK_DOMAIN;" ^
+      "$domain=($env:FUVEX_NGROK_DOMAIN -replace '^https?://','' -replace '/.*$','');" ^
       "$p=Start-Process -FilePath (Join-Path $root 'ngrok.exe') -ArgumentList 'http','3001',('--domain=' + $domain) -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logs 'ngrok.log') -RedirectStandardError (Join-Path $logs 'ngrok-error.log') -PassThru;" ^
       "$p.Id | Set-Content -Path (Join-Path $logs 'ngrok.pid')"
-    echo [OK] Tunel solicitado: https://%FUVEX_NGROK_DOMAIN%. Logs: logs\ngrok.log
+    call :ResolveNgrokUrl
+    if defined NGROK_PUBLIC_URL (
+      echo [OK] Tunel ngrok activo: !NGROK_PUBLIC_URL!. Logs: logs\ngrok.log
+    ) else (
+      echo [WARN] Ngrok fue iniciado, pero no se pudo confirmar la URL publica en http://127.0.0.1:4040.
+    )
   ) else (
     echo [WARN] FUVEX_NGROK_DOMAIN esta definido, pero no existe ngrok.exe en la raiz.
   )
+) else if /i "%FUVEX_USE_NGROK%"=="1" (
+  if exist "%ROOT%ngrok.exe" (
+    echo [INFO] Iniciando tunel ngrok temporal para backend en segundo plano...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+      "$root=$env:FUVEX_ROOT;" ^
+      "$logs=Join-Path $root 'logs';" ^
+      "$p=Start-Process -FilePath (Join-Path $root 'ngrok.exe') -ArgumentList 'http','3001' -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logs 'ngrok.log') -RedirectStandardError (Join-Path $logs 'ngrok-error.log') -PassThru;" ^
+      "$p.Id | Set-Content -Path (Join-Path $logs 'ngrok.pid')"
+    call :ResolveNgrokUrl
+    if defined NGROK_PUBLIC_URL (
+      echo [OK] Tunel ngrok temporal activo: !NGROK_PUBLIC_URL!. Logs: logs\ngrok.log
+    ) else (
+      echo [WARN] Ngrok fue iniciado, pero no se pudo confirmar la URL publica en http://127.0.0.1:4040.
+    )
+  ) else (
+    echo [WARN] FUVEX_USE_NGROK=1, pero no existe ngrok.exe en la raiz.
+  )
 ) else (
-  echo [INFO] Ngrok desactivado. Define FUVEX_NGROK_DOMAIN solo si necesitas demo remota.
+  echo [INFO] Ngrok desactivado. Define FUVEX_USE_NGROK=1 para tunel temporal o FUVEX_NGROK_DOMAIN para dominio reservado.
 )
 echo.
 
@@ -124,11 +147,18 @@ if not defined LOCAL_IP (
 if not defined LOCAL_IP set "LOCAL_IP=localhost"
 
 set "MOBILE_API_URL=http://%LOCAL_IP%:3001/api"
+if defined NGROK_PUBLIC_URL set "MOBILE_API_URL=!NGROK_PUBLIC_URL!/api"
+if defined FUVEX_NGROK_DOMAIN if not defined NGROK_PUBLIC_URL (
+  set "FUVEX_NGROK_DOMAIN_CLEAN=%FUVEX_NGROK_DOMAIN:http://=%"
+  set "FUVEX_NGROK_DOMAIN_CLEAN=!FUVEX_NGROK_DOMAIN_CLEAN:https://=!"
+  set "MOBILE_API_URL=https://!FUVEX_NGROK_DOMAIN_CLEAN!/api"
+)
 if defined EXPO_PUBLIC_API_URL set "MOBILE_API_URL=%EXPO_PUBLIC_API_URL%"
 set "REACT_NATIVE_PACKAGER_HOSTNAME=%LOCAL_IP%"
 set "EXPO_NO_TELEMETRY=1"
 
-set "EXPO_ARGS=--lan --clear"
+if not defined FUVEX_EXPO_PORT set "FUVEX_EXPO_PORT=8082"
+set "EXPO_ARGS=--lan --clear --go --port %FUVEX_EXPO_PORT%"
 if defined FUVEX_EXPO_ARGS set "EXPO_ARGS=%FUVEX_EXPO_ARGS%"
 echo [OK] Expo Mobile se abrira en esta misma ventana para mostrar el QR.
 echo.
@@ -140,8 +170,9 @@ echo URLs locales:
 echo   Backend: http://localhost:3001
 echo   Backend LAN para mobile: %MOBILE_API_URL%
 echo   Web:     http://localhost:5173
-echo   Mobile:  QR de Expo en esta ventana
+echo   Mobile:  QR de Expo Go en esta ventana
 echo   Metro LAN host: %REACT_NATIVE_PACKAGER_HOSTNAME%
+echo   Metro puerto: %FUVEX_EXPO_PORT%
 echo.
 echo Backend y Web corren ocultos para no abrir varias ventanas de CMD.
 echo Logs:
@@ -150,8 +181,8 @@ echo   logs\web.log
 echo.
 echo Modo Expo actual: %EXPO_ARGS%
 echo Puedes cambiarlo definiendo FUVEX_EXPO_ARGS antes de ejecutar este BAT.
-echo Ejemplo tunel: set FUVEX_EXPO_ARGS=--tunnel -c
-echo Si usas tunel o una IP distinta, define EXPO_PUBLIC_API_URL antes de ejecutar.
+echo Ejemplo tunel Expo: set FUVEX_EXPO_ARGS=--tunnel --go --clear
+echo Si compilas un build instalado, define EXPO_PUBLIC_API_URL con una URL publica antes de compilar.
 echo Si Expo Go queda cargando, confirma que el celular este en la misma WiFi que %LOCAL_IP%.
 echo.
 echo Iniciando Expo ahora. Para detener Expo usa Ctrl+C en esta ventana.
@@ -161,6 +192,15 @@ cd /d "%ROOT%apps\mobile"
 set "EXPO_PUBLIC_API_URL=%MOBILE_API_URL%"
 call npm.cmd run start -- %EXPO_ARGS%
 
+exit /b 0
+
+:ResolveNgrokUrl
+set "NGROK_PUBLIC_URL="
+for /l %%A in (1,1,20) do (
+  for /f "delims=" %%U in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';$response=Invoke-RestMethod -Uri 'http://127.0.0.1:4040/api/tunnels' -TimeoutSec 2;$tunnel=$response.tunnels | Where-Object { $_.proto -eq 'https' } | Select-Object -First 1;if($tunnel){$tunnel.public_url}"') do set "NGROK_PUBLIC_URL=%%U"
+  if defined NGROK_PUBLIC_URL exit /b 0
+  timeout /t 1 >nul
+)
 exit /b 0
 
 :error

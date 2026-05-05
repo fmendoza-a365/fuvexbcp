@@ -233,6 +233,13 @@ export default function App() {
       Alert.alert('Faltan datos', 'Ingresa usuario y contrasena.');
       return;
     }
+    if (!API_URL) {
+      Alert.alert(
+        'API no configurada',
+        'Este build no tiene una URL de API publica. Compila la app definiendo EXPO_PUBLIC_API_URL o inicia Expo con Iniciar Fuvex.bat.'
+      );
+      return;
+    }
 
     setLoading(true);
     try {

@@ -85,35 +85,106 @@ const isLocalhostUrl = (url: string) => (
   url.includes('localhost') || url.includes('127.0.0.1') || url.includes('10.0.2.2')
 );
 
-const getBundlerHostApiUrl = () => {
-  const constants = Constants as any;
-  const hostUri =
-    constants.expoConfig?.hostUri ||
-    constants.manifest2?.extra?.expoClient?.hostUri ||
-    constants.manifest?.debuggerHost ||
-    '';
-  const host = String(hostUri).split(':')[0];
+const safeDecodeUri = (value: string) => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
+const unwrapNestedBundlerUrl = (value: string) => {
+  let current = value;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const decoded = safeDecodeUri(current);
+    const match = decoded.match(/[?&]url=([^&]+)/);
+    if (!match) {
+      return decoded;
+    }
+    current = match[1];
+  }
+
+  return safeDecodeUri(current);
+};
+
+const extractHostFromUri = (value: unknown) => {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return null;
+  }
+
+  const unwrapped = unwrapNestedBundlerUrl(raw);
+  const withoutScheme = unwrapped.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+  const hostPort = (withoutScheme.split(/[/?#]/)[0].split('@').pop() || '').trim();
+  const host = hostPort.startsWith('[')
+    ? hostPort.slice(1).split(']')[0]
+    : hostPort.split(':')[0];
 
   if (!host || host === 'localhost' || host === '127.0.0.1') {
     return null;
   }
 
-  return `http://${host}:3001/api`;
+  return host;
+};
+
+const getBundlerHostApiUrl = () => {
+  const constants = Constants as any;
+  const hostSources = [
+    constants.expoConfig?.hostUri,
+    constants.expoConfig?.debuggerHost,
+    constants.expoGoConfig?.hostUri,
+    constants.expoGoConfig?.debuggerHost,
+    constants.manifest2?.extra?.expoClient?.hostUri,
+    constants.manifest2?.extra?.expoClient?.debuggerHost,
+    constants.manifest?.hostUri,
+    constants.manifest?.debuggerHost,
+    constants.linkingUri
+  ];
+
+  for (const source of hostSources) {
+    const host = extractHostFromUri(source);
+    if (host) {
+      return `http://${host}:3001/api`;
+    }
+  }
+
+  return null;
+};
+
+const getConfiguredApiUrls = () => {
+  const constants = Constants as any;
+  return [
+    process.env.EXPO_PUBLIC_API_URL,
+    constants.expoConfig?.extra?.apiUrl,
+    constants.expoGoConfig?.extra?.apiUrl,
+    constants.manifest2?.extra?.expoClient?.extra?.apiUrl,
+    constants.manifest?.extra?.apiUrl
+  ]
+    .map((url) => String(url || '').trim())
+    .filter(Boolean);
 };
 
 const getApiUrl = () => {
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return normalizeApiUrl(process.env.EXPO_PUBLIC_API_URL);
-  }
-
-  const configuredApiUrl = (Constants as any).expoConfig?.extra?.apiUrl;
-  if (configuredApiUrl && !isLocalhostUrl(configuredApiUrl)) {
-    return normalizeApiUrl(configuredApiUrl);
+  const configuredApiUrls = getConfiguredApiUrls().map(normalizeApiUrl);
+  const publicApiUrl = configuredApiUrls.find((url) => !isLocalhostUrl(url));
+  if (publicApiUrl) {
+    return publicApiUrl;
   }
 
   const bundlerHostApiUrl = getBundlerHostApiUrl();
   if (bundlerHostApiUrl) {
     return bundlerHostApiUrl;
+  }
+
+  const localConfiguredApiUrl = configuredApiUrls[0];
+  const isDevelopmentRuntime = typeof __DEV__ !== 'undefined' && __DEV__;
+  if (!isDevelopmentRuntime) {
+    return localConfiguredApiUrl || '';
+  }
+
+  if (localConfiguredApiUrl) {
+    return localConfiguredApiUrl;
   }
 
   if (Platform.OS === 'android') {

@@ -13,7 +13,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.fmendozaa365.mobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -28,7 +32,7 @@
       "@react-native-community/datetimepicker"
     ],
     "extra": {
-      "apiUrl": "http://localhost:3001/api",
+      "apiUrl": "",
       "eas": {
         "projectId": "a4e83f8b-64fe-4ad8-80d3-560bdb827470"
       }
