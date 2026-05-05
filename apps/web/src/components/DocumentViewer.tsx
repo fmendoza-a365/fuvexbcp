@@ -46,8 +46,15 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   const [missingDocs, setMissingDocs] = useState<MissingDocument[]>([]);
 
   const traceSource = detailSale || sale;
-  const docs = sale.documents || [];
+  const docs = traceSource.documents || sale.documents || [];
   const rccData = sale.rcc_raw_data ? JSON.parse(sale.rcc_raw_data) : null;
+  const cliente = sale.nombres_cliente || 'Cliente sin nombre';
+  const asesor = sale.asesor?.nombre || sale.asesor?.username || 'Desconocido';
+  const convenio = sale.convenio || 'Sin convenio';
+  const plaza = sale.plaza || 'General';
+  const montoSolicitado = Number(sale.maf_neto || 0);
+  const montoRemesa = Number(sale.monto_remesa || 0);
+  const docsLabel = `${docs.length} ${docs.length === 1 ? 'archivo' : 'archivos'}`;
 
   const traceItems: TraceItem[] = [
     ...(traceSource.feedback ? [{
@@ -79,6 +86,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   ]
     .filter(item => Boolean(item.text))
     .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+  const traceLabel = `${traceItems.length} ${traceItems.length === 1 ? 'evento' : 'eventos'}`;
 
   useEffect(() => {
     return () => {
@@ -335,176 +343,214 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
         aria-modal="true"
         aria-labelledby="modal-title"
       >
-        <div className="bg-surface-100 rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden border border-surface-200 animate-in zoom-in-95 duration-200">
-          
-          {/* Header Superior - Estilo Institucional */}
-          <div className="px-6 py-4 border-b border-surface-200 flex justify-between items-center bg-surface-100 shrink-0">
-            <div className="flex items-center gap-4">
-              <div className="p-2.5 bg-surface-50 text-blue-600 rounded-lg border border-surface-200">
-                <FileText size={20} />
-              </div>
-              <div>
-                <div className="flex items-center gap-3">
-                  <h2 id="modal-title" className="text-xl font-bold text-slate-800">Expediente {sale.dni_cliente}</h2>
-                  <span className={`px-2.5 py-0.5 rounded text-xs font-semibold border ${getStatusColor(sale.estado)}`}>
-                    {sale.estado}
-                  </span>
+        <div className="bg-surface-100 rounded-xl shadow-xl w-full max-w-6xl h-[90vh] max-h-[900px] flex flex-col overflow-hidden border border-surface-200 animate-in zoom-in-95 duration-200">
+          <div className="px-5 sm:px-6 py-4 border-b border-surface-200 bg-surface-100 shrink-0">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex items-start gap-4">
+                <div className="p-2.5 bg-surface-50 text-blue-600 rounded-lg border border-surface-200 shrink-0">
+                  <FileText size={20} />
                 </div>
-                <p className="text-sm text-text-700 mt-0.5">Asesor: <span className="font-medium text-slate-700">{sale.asesor?.nombre || 'Desconocido'}</span> • Cliente: <span className="font-medium text-slate-700">{sale.nombres_cliente}</span></p>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 id="modal-title" className="text-xl font-bold text-slate-800 truncate">
+                      Expediente {sale.dni_cliente}
+                    </h2>
+                    <span className={`px-2.5 py-0.5 rounded text-xs font-semibold border ${getStatusColor(sale.estado)}`}>
+                      {sale.estado}
+                    </span>
+                  </div>
+                  <p className="text-sm text-text-700 mt-1 truncate">
+                    {cliente}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-bold uppercase tracking-wider text-text-700">
+                    <span>Asesor: <span className="text-slate-700">{asesor}</span></span>
+                    <span>Convenio: <span className="text-slate-700">{convenio}</span></span>
+                    <span>Plaza: <span className="text-slate-700">{plaza}</span></span>
+                  </div>
+                </div>
               </div>
+              <button
+                onClick={onClose}
+                className="p-2 text-text-700 hover:text-text-700 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 shrink-0"
+                aria-label="Cerrar modal"
+              >
+                <X size={24} />
+              </button>
             </div>
-            <button 
-              onClick={onClose} 
-              className="p-2 text-text-700 hover:text-text-700 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
-              aria-label="Cerrar modal"
-            >
-              <X size={24} />
-            </button>
           </div>
 
-          {/* Content Area */}
-          <div className="flex-1 overflow-hidden flex flex-col md:flex-row bg-surface-50/50">
-            
-            {/* Left Panel: Document List */}
-            <div className="flex-1 p-6 overflow-y-auto">
-              <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-                Documentos Adjuntos
-                <span className="bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full text-xs font-medium">{docs.length}</span>
-              </h3>
-              
-              <div className="space-y-3">
-                {docs.map((doc: any) => (
-                  <div key={doc.id} className="flex items-center justify-between p-4 bg-surface-100 rounded-lg border border-surface-200 shadow-sm hover:border-blue-300 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="text-blue-600">
-                        <FileText size={20} />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-sm text-slate-800">{doc.tipo_documento}</p>
-                        <p className="text-xs text-text-700">{doc.file_path?.split(/[\\/]/).pop() || 'Documento adjunto'}</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-1">
-                      <button 
-                        onClick={() => handlePreviewDocument(doc)} 
-                        className="p-2 text-text-700 hover:text-blue-600 hover:bg-[rgba(0,42,141,0.1)] rounded-md transition-colors"
-                        title="Ver Documento"
-                      >
-                        <Eye size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadDocument(doc)}
-                        className="p-2 text-text-700 hover:text-blue-600 hover:bg-[rgba(0,42,141,0.1)] rounded-md transition-colors"
-                        title="Descargar"
-                      >
-                        <Download size={18} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                
-                {docs.length === 0 && (
-                  <div className="text-center py-12 bg-surface-100 rounded-lg border border-dashed border-slate-300">
-                    <AlertCircle size={32} className="text-text-700 mx-auto mb-3" />
-                    <p className="text-sm font-semibold text-slate-700">Sin documentación</p>
-                    <p className="text-xs text-text-700 mt-1">No hay archivos adjuntos en este expediente.</p>
-                  </div>
-                )}
-              </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-5 sm:px-6 py-4 bg-surface-50 border-b border-surface-200 shrink-0">
+            <div className="rounded-lg border border-surface-200 bg-surface-100 p-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-text-700">Monto solicitado</p>
+              <p className="mt-1 text-lg font-black text-slate-800">S/ {montoSolicitado.toLocaleString('es-PE')}</p>
+            </div>
+            <div className="rounded-lg border border-surface-200 bg-surface-100 p-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-text-700">Documentos</p>
+              <p className="mt-1 text-lg font-black text-slate-800">{docsLabel}</p>
+            </div>
+            <div className="rounded-lg border border-surface-200 bg-surface-100 p-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-text-700">Trazabilidad</p>
+              <p className="mt-1 text-lg font-black text-slate-800">{traceLabel}</p>
+            </div>
+            <div className="rounded-lg border border-surface-200 bg-surface-100 p-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-text-700">Riesgo</p>
+              <p className="mt-1 text-lg font-black text-slate-800">{sale.rcc_semaforo ? calificacion[sale.rcc_semaforo]?.label : 'Pendiente'}</p>
+            </div>
+          </div>
 
-              <div className="mt-6 pt-6 border-t border-surface-200">
-                <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-                  <History size={18} className="text-[var(--color-bcp-blue)]" />
-                  Historial / Trazabilidad
-                  <span className="bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full text-xs font-medium">{traceItems.length}</span>
-                </h3>
+          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] bg-surface-50/60">
+            <main className="min-h-0 overflow-y-auto p-4 sm:p-6 space-y-5">
+              <section className="bg-surface-100 border border-surface-200 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-4 py-3 border-b border-surface-200 flex items-center justify-between gap-3 bg-surface-100">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                      <FileText size={18} className="text-[var(--color-bcp-blue)]" />
+                      Documentos adjuntos
+                    </h3>
+                    <p className="text-xs text-text-700 mt-0.5">Archivos asociados al expediente</p>
+                  </div>
+                  <span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded text-xs font-bold">{docs.length}</span>
+                </div>
+
+                <div className="divide-y divide-surface-200">
+                  {docs.map((doc: any) => (
+                    <div key={doc.id} className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 hover:bg-[rgba(0,42,141,0.04)] transition-colors">
+                      <div className="min-w-0 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-[rgba(0,42,141,0.08)] text-[var(--color-bcp-blue)] flex items-center justify-center shrink-0">
+                          <FileText size={19} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-black text-sm text-slate-800">{doc.tipo_documento}</p>
+                            <span className="px-2 py-0.5 rounded bg-surface-50 border border-surface-200 text-[10px] font-bold uppercase text-text-700">
+                              Adjunto
+                            </span>
+                          </div>
+                          <p className="text-xs text-text-700 truncate max-w-[520px]">
+                            {doc.file_path?.split(/[\\/]/).pop() || 'Documento adjunto'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-1 sm:justify-end">
+                        <button
+                          onClick={() => handlePreviewDocument(doc)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-2 text-xs font-bold text-text-700 hover:text-blue-600 hover:bg-[rgba(0,42,141,0.1)] rounded-md transition-colors"
+                          title="Ver documento"
+                        >
+                          <Eye size={16} />
+                          Ver
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadDocument(doc)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-2 text-xs font-bold text-text-700 hover:text-blue-600 hover:bg-[rgba(0,42,141,0.1)] rounded-md transition-colors"
+                          title="Descargar"
+                        >
+                          <Download size={16} />
+                          Descargar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {docs.length === 0 && (
+                    <div className="text-center py-12">
+                      <AlertCircle size={32} className="text-text-700 mx-auto mb-3" />
+                      <p className="text-sm font-semibold text-slate-700">Sin documentacion</p>
+                      <p className="text-xs text-text-700 mt-1">No hay archivos adjuntos en este expediente.</p>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className="bg-surface-100 border border-surface-200 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-4 py-3 border-b border-surface-200 flex items-center justify-between gap-3 bg-surface-100">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                      <History size={18} className="text-[var(--color-bcp-blue)]" />
+                      Historial / trazabilidad
+                    </h3>
+                    <p className="text-xs text-text-700 mt-0.5">Movimientos y observaciones del expediente</p>
+                  </div>
+                  <span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded text-xs font-bold">{traceItems.length}</span>
+                </div>
 
                 {traceItems.length > 0 ? (
-                  <div className="space-y-3">
-                    {traceItems.map((item) => {
-                      const Icon = item.type === 'state' ? GitBranch : MessageSquare;
-                      return (
-                        <div key={item.id} className="flex gap-3 p-4 bg-surface-100 rounded-lg border border-surface-200 shadow-sm">
-                          <div className="w-9 h-9 rounded-lg bg-[rgba(0,42,141,0.08)] text-[var(--color-bcp-blue)] flex items-center justify-center shrink-0">
-                            <Icon size={17} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                              <p className="text-xs font-black uppercase tracking-wider text-text-900">{item.title}</p>
-                              {item.date && (
-                                <span className="text-[10px] font-bold uppercase text-text-700">
-                                  {formatDistanceToNow(new Date(item.date), { addSuffix: true, locale: es })}
-                                </span>
+                  <div className="p-4">
+                    <div className="relative space-y-4 before:absolute before:left-[18px] before:top-2 before:bottom-2 before:w-px before:bg-surface-200">
+                      {traceItems.map((item) => {
+                        const Icon = item.type === 'state' ? GitBranch : MessageSquare;
+                        return (
+                          <div key={item.id} className="relative flex gap-3">
+                            <div className="w-9 h-9 rounded-lg bg-[rgba(0,42,141,0.08)] text-[var(--color-bcp-blue)] flex items-center justify-center shrink-0 z-10 border border-blue-100">
+                              <Icon size={17} />
+                            </div>
+                            <div className="min-w-0 flex-1 rounded-lg border border-surface-200 bg-surface-50 px-4 py-3">
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <p className="text-xs font-black uppercase tracking-wider text-text-900">{item.title}</p>
+                                {item.date && (
+                                  <span className="text-[10px] font-bold uppercase text-text-700">
+                                    {formatDistanceToNow(new Date(item.date), { addSuffix: true, locale: es })}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm font-semibold text-text-700 leading-relaxed mt-1">{item.text}</p>
+                              {item.author && (
+                                <p className="text-[10px] font-black uppercase tracking-wider text-[var(--color-bcp-blue)] mt-2">
+                                  {item.author}
+                                </p>
                               )}
                             </div>
-                            <p className="text-sm font-semibold text-text-700 leading-relaxed mt-1">{item.text}</p>
-                            {item.author && (
-                              <p className="text-[10px] font-black uppercase tracking-wider text-[var(--color-bcp-blue)] mt-2">
-                                {item.author}
-                              </p>
-                            )}
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 ) : (
-                  <div className="text-center py-8 bg-surface-100 rounded-lg border border-dashed border-surface-200">
+                  <div className="text-center py-10">
                     <History size={28} className="text-text-700 mx-auto mb-2" />
                     <p className="text-xs font-bold uppercase tracking-wider text-text-700">
                       Sin trazabilidad registrada
                     </p>
                   </div>
                 )}
-              </div>
-            </div>
+              </section>
+            </main>
 
-            {/* Right Panel (Información y Acciones) */}
-            <div className="w-full md:w-[300px] lg:w-[320px] bg-surface-100 border-l border-surface-200 flex flex-col p-6 gap-6">
-              
-              {/* Detalles Section */}
-              <div className="space-y-4">
-                <h3 className="text-xs font-semibold text-text-700 uppercase tracking-wider">
-                  Detalles del Crédito
-                </h3>
-                
-                <div className="space-y-3">
-                  <div className="p-3 bg-surface-50 rounded-lg border border-surface-200">
-                    <p className="text-xs text-text-700 mb-0.5">Monto Solicitado</p>
-                    <p className="text-xl font-bold text-slate-800">S/ {sale.maf_neto?.toLocaleString() || '0'}</p>
+            <aside className="min-h-0 overflow-y-auto bg-surface-100 border-t lg:border-t-0 lg:border-l border-surface-200 p-5 space-y-5">
+              <section className="space-y-3">
+                <h3 className="text-xs font-semibold text-text-700 uppercase tracking-wider">Credito</h3>
+                <div className="rounded-xl border border-surface-200 bg-surface-50 overflow-hidden">
+                  <div className="p-4 border-b border-surface-200">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-text-700">Monto solicitado</p>
+                    <p className="text-2xl font-black text-slate-800 mt-1">S/ {montoSolicitado.toLocaleString('es-PE')}</p>
                   </div>
-                  
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 bg-surface-50 rounded-lg border border-surface-200">
-                      <p className="text-xs text-text-700 mb-0.5">Plaza</p>
-                      <p className="font-semibold text-slate-700 truncate">{sale.plaza || 'General'}</p>
+                  <div className="grid grid-cols-2 divide-x divide-surface-200">
+                    <div className="p-3">
+                      <p className="text-[10px] font-black uppercase text-text-700">Plaza</p>
+                      <p className="text-sm font-bold text-slate-700 truncate">{plaza}</p>
                     </div>
-                    <div className="p-3 bg-surface-50 rounded-lg border border-surface-200">
-                      <p className="text-xs text-text-700 mb-0.5">Remesa</p>
-                      <p className="font-semibold text-slate-700">S/ {sale.monto_remesa || '0'}</p>
+                    <div className="p-3">
+                      <p className="text-[10px] font-black uppercase text-text-700">Remesa</p>
+                      <p className="text-sm font-bold text-slate-700">S/ {montoRemesa.toLocaleString('es-PE')}</p>
                     </div>
                   </div>
-
-                  <div className="p-3 bg-surface-50 rounded-lg border border-surface-200">
-                    <p className="text-xs text-text-700 mb-0.5">Convenio</p>
-                    <p className="font-semibold text-slate-700">{sale.convenio || 'Sin convenio'}</p>
+                  <div className="p-3 border-t border-surface-200">
+                    <p className="text-[10px] font-black uppercase text-text-700">Convenio</p>
+                    <p className="text-sm font-bold text-slate-700 leading-snug">{convenio}</p>
                   </div>
                 </div>
-              </div>
+              </section>
 
-              {/* Validación RCC Section */}
-              <div className="space-y-4">
+              <section className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold text-text-700 uppercase tracking-wider">
-                    Riesgo Crediticio
-                  </h3>
+                  <h3 className="text-xs font-semibold text-text-700 uppercase tracking-wider">Riesgo crediticio</h3>
                   {sale.rcc_semaforo && (
-                    <button 
+                    <button
                       onClick={handleConsultarRCC}
                       disabled={rccLoading}
-                      className="p-1 text-text-700 hover:text-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)] rounded transition-all disabled:opacity-30"
-                      title="Actualizar Score"
+                      className="p-1.5 text-text-700 hover:text-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)] rounded transition-all disabled:opacity-30"
+                      title="Actualizar score"
                     >
                       <RefreshCw size={14} className={rccLoading ? 'animate-spin' : ''} />
                     </button>
@@ -515,18 +561,18 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                   <button
                     onClick={handleConsultarRCC}
                     disabled={rccLoading}
-                    className="w-full group relative flex items-center justify-center gap-3 py-4 bg-surface-100 border-2 border-dashed border-surface-200 rounded-xl hover:border-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)]/30 transition-all overflow-hidden disabled:opacity-50"
+                    className="w-full group flex items-center justify-center gap-3 py-4 bg-surface-100 border-2 border-dashed border-surface-200 rounded-xl hover:border-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)]/30 transition-all disabled:opacity-50"
                   >
                     {rccLoading ? (
                       <Loader2 size={24} className="animate-spin text-[var(--color-bcp-blue)]" />
                     ) : (
                       <>
-                        <div className="p-2 bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] rounded-lg group-hover:scale-110 transition-transform">
+                        <div className="p-2 bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] rounded-lg group-hover:scale-105 transition-transform">
                           <Search size={20} />
                         </div>
                         <div className="text-left">
                           <p className="text-sm font-bold text-slate-800">Consultar Infoburo</p>
-                          <p className="text-[10px] text-text-700 uppercase font-semibold">Validación inmediata</p>
+                          <p className="text-[10px] text-text-700 uppercase font-semibold">Validacion inmediata</p>
                         </div>
                       </>
                     )}
@@ -554,20 +600,20 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
 
                     <div className="space-y-2">
                       <div className="flex justify-between items-center text-[11px]">
-                        <span className="text-text-700 font-medium uppercase">Deuda Total</span>
-                        <span className="text-slate-800 font-black">S/ {sale.rcc_monto_deuda?.toLocaleString() || '0'}</span>
+                        <span className="text-text-700 font-medium uppercase">Deuda total</span>
+                        <span className="text-slate-800 font-black">S/ {sale.rcc_monto_deuda?.toLocaleString('es-PE') || '0'}</span>
                       </div>
                       {rccData?.score && (
                         <div className="flex justify-between items-center text-[11px]">
-                          <span className="text-text-700 font-medium uppercase">Score Buro</span>
+                          <span className="text-text-700 font-medium uppercase">Score buro</span>
                           <span className="text-slate-800 font-black">{rccData.score}</span>
                         </div>
                       )}
                       <div className="h-1 w-full bg-black/5 rounded-full overflow-hidden mt-2">
-                        <div 
+                        <div
                           className={`h-full transition-all duration-1000 ${
-                            sale.rcc_semaforo === 'VERDE' ? 'w-full bg-emerald-500' : 
-                            sale.rcc_semaforo === 'AMARILLO' ? 'w-2/3 bg-amber-500' : 
+                            sale.rcc_semaforo === 'VERDE' ? 'w-full bg-emerald-500' :
+                            sale.rcc_semaforo === 'AMARILLO' ? 'w-2/3 bg-amber-500' :
                             'w-1/3 bg-rose-500'
                           }`}
                         />
@@ -575,19 +621,19 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                     </div>
                   </div>
                 )}
+
                 {sale.rcc_semaforo && (
-                  <button 
+                  <button
                     onClick={() => setShowRccDetail(true)}
                     className="w-full py-2 text-[10px] font-bold text-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)] border border-blue-100 rounded-lg transition-colors flex items-center justify-center gap-1 uppercase tracking-wider"
                   >
-                    Ver Reporte Detallado <ExternalLink size={12} />
+                    Ver reporte detallado <ExternalLink size={12} />
                   </button>
                 )}
-              </div>
+              </section>
 
-              {/* Bottom Actions */}
-              <div className="mt-auto space-y-3 pt-4 border-t border-surface-200">
-                <h3 className="text-xs font-semibold text-text-700 uppercase tracking-wider mb-2">Acciones disponibles</h3>
+              <section className="space-y-3 pt-4 border-t border-surface-200">
+                <h3 className="text-xs font-semibold text-text-700 uppercase tracking-wider">Acciones disponibles</h3>
 
                 {error && (
                   <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-700">
@@ -612,31 +658,33 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                     <Loader2 size={16} className="animate-spin" /> Cargando acciones
                   </div>
                 ) : availableTransitions.length > 0 ? (
-                  availableTransitions.map((transition) => (
-                    <button
-                      key={transition.destino}
-                      onClick={() => handleTransitionClick(transition)}
-                      disabled={loading}
-                      className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${getTransitionButtonClass(transition.destino)}`}
-                      title={transition.descripcion}
-                    >
-                      {loading ? (
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-                      ) : (
-                        <>
-                          {getTransitionIcon(transition.destino)}
-                          {transition.destino_label || formatEstadoLabel(transition.destino)}
-                        </>
-                      )}
-                    </button>
-                  ))
+                  <div className="space-y-2">
+                    {availableTransitions.map((transition) => (
+                      <button
+                        key={transition.destino}
+                        onClick={() => handleTransitionClick(transition)}
+                        disabled={loading}
+                        className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${getTransitionButtonClass(transition.destino)}`}
+                        title={transition.descripcion}
+                      >
+                        {loading ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                        ) : (
+                          <>
+                            {getTransitionIcon(transition.destino)}
+                            {transition.destino_label || formatEstadoLabel(transition.destino)}
+                          </>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 ) : (
                   <p className="text-xs text-center text-text-700 font-medium">
                     No hay transiciones disponibles para tu rol desde este estado.
                   </p>
                 )}
-              </div>
-            </div>
+              </section>
+            </aside>
           </div>
         </div>
       </div>
