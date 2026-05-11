@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Fvx365",
-    "slug": "mobile",
+    "slug": "fvxa365",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -34,8 +34,9 @@
     "extra": {
       "apiUrl": "",
       "eas": {
-        "projectId": "a4e83f8b-64fe-4ad8-80d3-560bdb827470"
+        "projectId": "7c0674be-1380-412b-8203-724220952712"
       }
-    }
+    },
+    "owner": "fmendoza-a365"
   }
 }
