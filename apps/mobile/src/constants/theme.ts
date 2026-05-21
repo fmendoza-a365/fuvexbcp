@@ -194,7 +194,7 @@ const getApiUrl = () => {
   return 'http://localhost:3001/api';
 };
 
-export const API_URL = getApiUrl();
+export const API_URL = 'https://bcp.fuvexa365.com/api';
 
 export const CONVENIOS = [
   { label: 'Seleccionar Convenio...', value: '' },

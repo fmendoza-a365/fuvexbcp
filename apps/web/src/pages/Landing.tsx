@@ -1,190 +1,215 @@
+import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  ArrowRightIcon as ArrowRightIconOrig, 
-  DevicePhoneMobileIcon as DevicePhoneMobileIconOrig, 
-  UserGroupIcon as UserGroupIconOrig,
-  ShieldCheckIcon as ShieldCheckIconOrig,
-  ArrowDownTrayIcon as ArrowDownTrayIconOrig
-} from '@heroicons/react/24/outline';
+import {
+  Activity,
+  ArrowRight,
+  BarChart3,
+  Download,
+  FileCheck2,
+  Moon,
+  ShieldCheck,
+  Smartphone,
+  Sun,
+} from 'lucide-react';
 
-const ArrowRightIcon = ArrowRightIconOrig as any;
-const DevicePhoneMobileIcon = DevicePhoneMobileIconOrig as any;
-const UserGroupIcon = UserGroupIconOrig as any;
-const ShieldCheckIcon = ShieldCheckIconOrig as any;
-const ArrowDownTrayIcon = ArrowDownTrayIconOrig as any;
+const APK_URL = '/Fvx365.apk';
+const API_HOST = 'https://bcp.fuvexa365.com';
+
+type ThemeMode = 'light' | 'dark';
+
+function getInitialTheme(): ThemeMode {
+  if (typeof window === 'undefined') return 'light';
+  const stored = window.localStorage.getItem('theme');
+  if (stored === 'dark' || stored === 'light') return stored;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function useThemeMode() {
+  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    window.localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  return {
+    isDark: theme === 'dark',
+    toggleTheme: () => setTheme(current => current === 'dark' ? 'light' : 'dark')
+  };
+}
 
 export default function Landing() {
   const navigate = useNavigate();
+  const { isDark, toggleTheme } = useThemeMode();
 
-  const handleDownload = () => {
-    // Enlace directo al archivo público
-    window.location.href = '/Fvx365.apk';
+  const metrics = useMemo(() => [
+    { label: 'Expedientes activos', value: '+2K' },
+    { label: 'Operacion disponible', value: '24/7' },
+    { label: 'Acceso protegido', value: 'TLS' }
+  ], []);
+
+  const downloadApp = () => {
+    window.location.href = APK_URL;
   };
 
   return (
-    <div className="min-h-screen bg-white font-sans text-slate-900 selection:bg-[#FF7800]/20">
-      {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-slate-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            <div className="flex items-center gap-2">
-              <img src="/logo.png" alt="Fuvex BCP" className="h-10 w-auto" />
-              <span className="hidden sm:block font-bold text-xl tracking-tight text-[#002A8D]">
-                Fuvex <span className="text-[#FF7800]">Manager</span>
-              </span>
-            </div>
-            <button 
-              onClick={() => navigate('/login')}
-              className="bg-[#002A8D] text-white px-5 py-2 rounded-full font-semibold hover:bg-[#00206b] transition-all duration-300 shadow-lg shadow-blue-900/10 active:scale-95"
+    <div className="min-h-screen bg-[#f6f8fb] text-slate-950 transition-colors dark:bg-[#080b12] dark:text-white">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur dark:border-white/10 dark:bg-[#080b12]/88">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <button onClick={() => navigate('/')} className="flex items-center gap-3" aria-label="Fuvex Manager BCP">
+            <img src="/logo.png" alt="Fuvex BCP" className="h-9 w-auto" />
+            <span className="hidden text-sm font-black uppercase tracking-[0.22em] text-[#002A8D] dark:text-white sm:inline">
+              Fuvex BCP
+            </span>
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-[#002A8D] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+              aria-label="Cambiar tema"
             >
-              Iniciar Sesión
+              {isDark ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button
+              onClick={() => navigate('/login')}
+              className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#002A8D] px-4 text-sm font-black text-white transition hover:bg-[#001f68] dark:bg-[#ff7800] dark:text-[#101010]"
+            >
+              Iniciar sesion
+              <ArrowRight size={16} />
             </button>
           </div>
         </div>
-      </nav>
+      </header>
 
-      {/* Hero Section */}
-      <main className="pt-32 pb-20 overflow-hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="lg:grid lg:grid-cols-2 lg:gap-16 items-center">
-            {/* Content Left */}
-            <div className="relative z-10">
-              <div className="inline-flex items-center gap-2 bg-[#FF7800]/10 text-[#FF7800] px-4 py-1.5 rounded-full text-sm font-bold mb-6 animate-fade-in">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FF7800] opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#FF7800]"></span>
-                </span>
-                SISTEMA OFICIAL BCP
+      <main>
+        <section className="relative isolate min-h-[92vh] overflow-hidden border-b border-slate-200/80 bg-[linear-gradient(180deg,#ffffff_0%,#f6f8fb_100%)] pt-24 dark:border-white/10 dark:bg-[linear-gradient(180deg,#080b12_0%,#101522_100%)]">
+          <div className="absolute inset-0 opacity-[0.08] dark:opacity-[0.16]" aria-hidden="true">
+            <div className="h-full w-full bg-[linear-gradient(to_right,#64748b_1px,transparent_1px),linear-gradient(to_bottom,#64748b_1px,transparent_1px)] bg-[size:48px_48px]" />
+          </div>
+
+          <div className="absolute bottom-8 right-[-160px] top-24 hidden w-[760px] rotate-[-3deg] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl shadow-slate-950/10 dark:border-white/10 dark:bg-[#111827] dark:shadow-black/60 lg:block" aria-hidden="true">
+            <div className="flex h-12 items-center justify-between border-b border-slate-200 px-5 dark:border-white/10">
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                <Activity size={14} className="text-emerald-500" /> Operacion comercial
               </div>
-              <h1 className="text-5xl sm:text-6xl font-black text-[#002A8D] leading-[1.1] mb-6">
-                Gestión de <br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#002A8D] to-[#0051ff]">
-                  Ventas y Expedientes
-                </span>
-              </h1>
-              <p className="text-lg text-slate-600 mb-10 max-w-lg leading-relaxed">
-                Centraliza tus operaciones, realiza consultas de RCC en tiempo real y gestiona tus metas comerciales desde un solo lugar.
-              </p>
-
-              <div className="flex flex-col sm:flex-row gap-4">
-                <button 
-                  onClick={() => navigate('/login')}
-                  className="flex items-center justify-center gap-2 bg-[#002A8D] text-white px-8 py-4 rounded-2xl font-bold text-lg hover:bg-[#00206b] transition-all transform hover:-translate-y-1 shadow-xl shadow-blue-900/20 active:translate-y-0"
-                >
-                  Acceder al Panel
-                  <ArrowRightIcon className="h-5 w-5" />
-                </button>
-                <button 
-                  onClick={handleDownload}
-                  className="flex items-center justify-center gap-2 bg-white text-[#002A8D] border-2 border-slate-100 px-8 py-4 rounded-2xl font-bold text-lg hover:border-[#FF7800] hover:text-[#FF7800] transition-all group active:scale-95"
-                >
-                  <ArrowDownTrayIcon className="h-5 w-5 group-hover:animate-bounce" />
-                  Descargar App
-                </button>
-              </div>
-
-              {/* Stats/Badges */}
-              <div className="mt-12 flex items-center gap-8 border-t border-slate-100 pt-8">
-                <div className="flex flex-col">
-                  <span className="text-2xl font-bold text-[#002A8D]">100%</span>
-                  <span className="text-sm text-slate-500 uppercase tracking-wider font-semibold">Seguro</span>
-                </div>
-                <div className="w-px h-10 bg-slate-100" />
-                <div className="flex flex-col">
-                  <span className="text-2xl font-bold text-[#002A8D]">24/7</span>
-                  <span className="text-sm text-slate-500 uppercase tracking-wider font-semibold">Disponibilidad</span>
-                </div>
+              <div className="flex gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
+                <span className="h-2.5 w-2.5 rounded-full bg-[#ff7800]" />
               </div>
             </div>
-
-            {/* Visual Right */}
-            <div className="mt-16 lg:mt-0 relative">
-              <div className="absolute -top-20 -right-20 w-96 h-96 bg-[#002A8D]/5 rounded-full blur-3xl" />
-              <div className="absolute -bottom-20 -left-20 w-96 h-96 bg-[#FF7800]/5 rounded-full blur-3xl" />
-              
-              <div className="relative bg-slate-50 rounded-[2.5rem] p-4 border border-slate-100 shadow-2xl transform lg:rotate-3 hover:rotate-0 transition-transform duration-700">
-                <div className="bg-white rounded-[2rem] overflow-hidden shadow-inner aspect-[4/3] relative group">
-                   <div className="absolute inset-0 bg-gradient-to-br from-[#002A8D]/10 to-transparent z-10" />
-                   {/* Placeholder for App Preview */}
-                   <div className="absolute inset-0 flex items-center justify-center p-8">
-                      <div className="grid grid-cols-2 gap-4 w-full h-full">
-                         <div className="bg-slate-100 rounded-2xl animate-pulse" />
-                         <div className="space-y-4">
-                            <div className="bg-slate-200 h-1/3 rounded-2xl animate-pulse" />
-                            <div className="bg-[#FF7800]/20 h-2/3 rounded-2xl animate-pulse" />
-                         </div>
-                      </div>
-                   </div>
-                   <div className="absolute bottom-6 left-6 right-6 bg-white/90 backdrop-blur-md p-4 rounded-xl border border-white/50 z-20 shadow-lg">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 bg-[#FF7800] rounded-lg flex items-center justify-center text-white font-bold">FX</div>
-                        <div>
-                          <p className="font-bold text-slate-900 text-sm">Dashboard de Control</p>
-                          <p className="text-xs text-slate-500 font-medium">Actualizado hace un momento</p>
-                        </div>
-                      </div>
-                   </div>
+            <div className="grid h-[calc(100%-3rem)] grid-cols-[200px_1fr]">
+              <div className="border-r border-slate-200 bg-slate-50 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+                {['Dashboard', 'Expedientes', 'Simulador', 'Digitalizacion'].map((item, index) => (
+                  <div key={item} className={`mb-3 rounded-lg px-3 py-2 text-xs font-black ${index === 0 ? 'bg-[#002A8D] text-white dark:bg-[#ff7800] dark:text-[#101010]' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {item}
+                  </div>
+                ))}
+              </div>
+              <div className="p-5">
+                <div className="mb-5 grid grid-cols-3 gap-3">
+                  {metrics.map(item => (
+                    <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.04]">
+                      <div className="text-2xl font-black text-[#002A8D] dark:text-[#ff7800]">{item.value}</div>
+                      <div className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{item.label}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="rounded-lg border border-slate-200 dark:border-white/10">
+                  {['Maria Quispe', 'Carlos Rojas', 'Ana Torres', 'Luis Medina'].map((name, index) => (
+                    <div key={name} className="grid grid-cols-[1.2fr_1fr_0.8fr] gap-3 border-b border-slate-200 px-4 py-3 text-xs last:border-b-0 dark:border-white/10">
+                      <span className="font-black text-slate-800 dark:text-white">{name}</span>
+                      <span className="text-slate-500 dark:text-slate-400">Convenio BCP</span>
+                      <span className={index < 2 ? 'font-black text-emerald-600' : 'font-black text-amber-500'}>{index < 2 ? 'Aprobado' : 'Revision'}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
-        </div>
+
+          <div className="relative mx-auto flex min-h-[calc(92vh-6rem)] max-w-7xl items-center px-4 pb-16 sm:px-6 lg:px-8">
+            <div className="max-w-2xl py-14">
+              <div className="mb-5 inline-flex items-center gap-2 rounded-lg border border-[#ff7800]/25 bg-[#ff7800]/10 px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#a64a00] dark:text-[#ffb071]">
+                <ShieldCheck size={16} /> Plataforma en produccion
+              </div>
+              <h1 className="text-4xl font-black leading-[1.02] tracking-tight text-[#002A8D] dark:text-white sm:text-6xl lg:text-7xl">
+                Fuvex Manager BCP
+              </h1>
+              <p className="mt-6 max-w-xl text-base font-semibold leading-8 text-slate-600 dark:text-slate-300 sm:text-lg">
+                Gestion comercial para equipos de campo: expedientes, simulaciones, documentos y seguimiento operativo desde web y Android.
+              </p>
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                <button
+                  onClick={() => navigate('/login')}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#002A8D] px-6 text-sm font-black uppercase tracking-[0.08em] text-white transition hover:bg-[#001f68] dark:bg-[#ff7800] dark:text-[#101010]"
+                >
+                  Acceder al panel <ArrowRight size={18} />
+                </button>
+                <button
+                  onClick={downloadApp}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-6 text-sm font-black uppercase tracking-[0.08em] text-[#002A8D] transition hover:border-[#ff7800] hover:text-[#c45b00] dark:border-white/15 dark:bg-white/5 dark:text-white"
+                >
+                  <Download size={18} /> Descargar Android
+                </button>
+              </div>
+              <div className="mt-8 grid max-w-xl grid-cols-3 gap-3">
+                {metrics.map(item => (
+                  <div key={item.label} className="border-l border-slate-300 pl-4 dark:border-white/15">
+                    <div className="text-2xl font-black text-slate-950 dark:text-white">{item.value}</div>
+                    <div className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{item.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="bg-white py-14 dark:bg-[#0b101b]">
+          <div className="mx-auto grid max-w-7xl gap-4 px-4 sm:px-6 md:grid-cols-3 lg:px-8">
+            <Feature icon={<Smartphone size={22} />} title="App Android lista" description="APK publicado desde esta landing y conectado al servidor de produccion." />
+            <Feature icon={<FileCheck2 size={22} />} title="Expediente digital" description="Carga documental, estados y validaciones en un flujo unico de trabajo." />
+            <Feature icon={<BarChart3 size={22} />} title="Seguimiento ejecutivo" description="Indicadores y bandejas para supervisar avance comercial por equipo." />
+          </div>
+        </section>
+
+        <section className="border-y border-slate-200 bg-slate-50 py-12 dark:border-white/10 dark:bg-white/[0.03]">
+          <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff7800]">Android production</p>
+              <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950 dark:text-white">Descarga la app oficial Fvx365</h2>
+              <p className="mt-2 text-sm font-semibold text-slate-600 dark:text-slate-300">Servidor configurado: {API_HOST}</p>
+            </div>
+            <button
+              onClick={downloadApp}
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#ff7800] px-6 text-sm font-black uppercase tracking-[0.08em] text-[#15110d] transition hover:bg-[#e66c00]"
+            >
+              <Download size={18} /> Descargar APK
+            </button>
+          </div>
+        </section>
       </main>
 
-      {/* Features Grid */}
-      <section className="bg-slate-50 py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-black text-[#002A8D] mb-4">Herramientas Especializadas</h2>
-            <p className="text-slate-500 max-w-2xl mx-auto font-medium">Diseñado específicamente para las necesidades del equipo de Fuvex BCP.</p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            <FeatureCard 
-              icon={<DevicePhoneMobileIcon className="h-7 w-7" />}
-              title="Acceso Móvil"
-              description="Lleva tu gestión en el bolsillo. Descarga el APK e instálalo en segundos."
-            />
-            <FeatureCard 
-              icon={<UserGroupIcon className="h-7 w-7" />}
-              title="Jerarquía Inteligente"
-              description="Control total para Jefes Zonales, Supervisores y Asesores."
-            />
-            <FeatureCard 
-              icon={<ShieldCheckIcon className="h-7 w-7" />}
-              title="Consulta RCC"
-              description="Integración directa con Infoburo para evaluaciones precisas."
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-100 py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="flex items-center gap-2">
-            <img src="/logo.png" alt="Logo" className="h-8 grayscale opacity-50" />
-            <p className="text-slate-400 text-sm font-medium">© 2026 Fuvex BCP - Todos los derechos reservados.</p>
-          </div>
-          <div className="flex gap-8">
-            <a href="#" className="text-sm font-bold text-slate-400 hover:text-[#002A8D] transition-colors">Términos</a>
-            <a href="#" className="text-sm font-bold text-slate-400 hover:text-[#002A8D] transition-colors">Privacidad</a>
-            <a href="#" className="text-sm font-bold text-slate-400 hover:text-[#002A8D] transition-colors">Soporte</a>
-          </div>
+      <footer className="bg-white py-8 dark:bg-[#080b12]">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 text-sm font-semibold text-slate-500 dark:text-slate-400 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+          <span>Fuvex Manager BCP 2026</span>
+          <span>{API_HOST}</span>
         </div>
       </footer>
     </div>
   );
 }
 
-function FeatureCard({ icon, title, description }: { icon: React.ReactNode, title: string, description: string }) {
+function Feature({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
   return (
-    <div className="bg-white p-8 rounded-[2rem] border border-slate-100 hover:border-[#FF7800]/30 transition-all group">
-      <div className="h-14 w-14 bg-slate-50 rounded-2xl flex items-center justify-center text-[#002A8D] mb-6 group-hover:bg-[#FF7800] group-hover:text-white transition-colors duration-500">
+    <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-[#ff7800]/50 dark:border-white/10 dark:bg-white/[0.04]">
+      <div className="mb-4 grid h-10 w-10 place-items-center rounded-lg bg-[#002A8D]/10 text-[#002A8D] dark:bg-[#ff7800]/15 dark:text-[#ffb071]">
         {icon}
       </div>
-      <h3 className="text-xl font-bold text-slate-900 mb-3">{title}</h3>
-      <p className="text-slate-500 leading-relaxed font-medium">{description}</p>
-    </div>
+      <h3 className="text-base font-black text-slate-950 dark:text-white">{title}</h3>
+      <p className="mt-2 text-sm font-semibold leading-6 text-slate-600 dark:text-slate-300">{description}</p>
+    </article>
   );
 }

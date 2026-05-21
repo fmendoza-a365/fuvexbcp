@@ -30,7 +30,7 @@ import {
   addNotificationResponseListener
 } from './src/services/pushService';
 import { setApiBaseUrl, setAuthToken } from './src/api/client';
-import { clearSavedApiUrl, loadSavedApiUrl, saveApiUrl } from './src/config/api';
+import { loadSavedApiUrl } from './src/config/api';
 
 interface SimulatorCatalog {
   convenios: Array<{
@@ -123,7 +123,6 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [apiUrl, setApiUrl] = useState(API_URL);
-  const [apiUrlDraft, setApiUrlDraft] = useState(API_URL);
   const [apiReady, setApiReady] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
@@ -175,13 +174,11 @@ export default function App() {
         setApiBaseUrl(resolvedUrl);
         if (!mounted) return;
         setApiUrl(resolvedUrl);
-        setApiUrlDraft(resolvedUrl);
       })
       .catch(() => {
         setApiBaseUrl(API_URL);
         if (!mounted) return;
         setApiUrl(API_URL);
-        setApiUrlDraft(API_URL);
       })
       .finally(() => {
         if (mounted) setApiReady(true);
@@ -515,25 +512,6 @@ export default function App() {
     }
   };
 
-  const handleSaveApiUrl = async () => {
-    try {
-      const savedUrl = await saveApiUrl(apiUrlDraft);
-      setApiBaseUrl(savedUrl);
-      setApiUrl(savedUrl);
-      setApiUrlDraft(savedUrl);
-      Alert.alert('API actualizada', savedUrl);
-    } catch (error) {
-      Alert.alert('URL invalida', 'Ingresa una URL publica o local valida.');
-    }
-  };
-
-  const handleResetApiUrl = async () => {
-    const resolvedUrl = await clearSavedApiUrl();
-    setApiBaseUrl(resolvedUrl);
-    setApiUrl(resolvedUrl);
-    setApiUrlDraft(resolvedUrl);
-    Alert.alert('API restaurada', resolvedUrl || 'No hay API configurada por defecto.');
-  };
 
   const handleLogin = async () => {
     if (!apiReady) {
@@ -747,10 +725,6 @@ export default function App() {
       loading={loading}
       apiReady={apiReady}
       apiUrl={apiUrl}
-      apiUrlDraft={apiUrlDraft}
-      setApiUrlDraft={setApiUrlDraft}
-      onSaveApiUrl={handleSaveApiUrl}
-      onResetApiUrl={handleResetApiUrl}
     />
   );
 
@@ -980,7 +954,7 @@ export default function App() {
             placeholder="Nombres completos"
             placeholderTextColor={theme.subtext}
             value={nombres}
-            onChangeText={(text) => setNombres(text.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g, ''))}
+            onChangeText={(text) => setNombres(text.replace(/[^a-zA-ZÃ¡Ã©Ã­Ã³ÃºÃÃ‰ÃÃ“ÃšÃ±Ã‘Ã¼Ãœ\s]/g, ''))}
             autoCapitalize="words"
           />
 
@@ -1079,7 +1053,7 @@ export default function App() {
                 placeholder="Nombres del conyuge"
                 placeholderTextColor={theme.subtext}
                 value={conyugeNombres}
-                onChangeText={(text) => setConyugeNombres(text.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g, ''))}
+                onChangeText={(text) => setConyugeNombres(text.replace(/[^a-zA-ZÃ¡Ã©Ã­Ã³ÃºÃÃ‰ÃÃ“ÃšÃ±Ã‘Ã¼Ãœ\s]/g, ''))}
                 autoCapitalize="words"
               />
             </View>
