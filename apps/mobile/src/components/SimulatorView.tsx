@@ -2,11 +2,12 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Text, View, TextInput, TouchableOpacity,
   ScrollView, Alert, ActivityIndicator,
-  Modal, Dimensions, Platform
+  Modal, Platform
 } from 'react-native';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, DARK_COLORS, DESIGN } from '../constants/theme';
+import CustomPicker from './CustomPicker';
 import {
   calcCuotaFrancesa,
   generarCronograma, calcTCEA, fmt,
@@ -24,11 +25,17 @@ interface Props {
   isDark: boolean;
   token: string;
   apiUrl: string;
+  targetSale?: any;
+  onClose?: () => void;
+  onSimulationSaved?: () => void;
 }
 
 let cachedSimulatorConfig: { apiUrl: string; data: SimConfig } | null = null;
 
-const toNum = (value: any) => Number(value) || 0;
+const toNum = (value: any) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 const debtRatioFactors = [0.01, 0, 0.035, 0.022, 0, 0.0006944, 0.078, 0.003306];
 const debtCemFactors = [0.011, 0.044, 0.024, 0.088, 0.028, 0.000694, 0.007417, 0.007417];
 const calcDebtTotals = (rows: Array<{ bcp: string; noBcp: string; saldoAct: string; cuotaAct: string }>) => (
@@ -43,10 +50,9 @@ const calcDebtTotals = (rows: Array<{ bcp: string; noBcp: string; saldoAct: stri
   }, { ratio: 0, cem: 0 })
 );
 
-export default function SimulatorView({ isDark, token, apiUrl }: Props) {
+export default function SimulatorView({ isDark, token, apiUrl, targetSale, onClose, onSimulationSaved }: Props) {
   const theme = isDark ? DARK_COLORS : COLORS;
-  const { width } = Dimensions.get('window');
-  const isSmall = width < 400;
+  const linkedToSale = Boolean(targetSale?.id);
   const cachedConfig = cachedSimulatorConfig?.apiUrl === apiUrl ? cachedSimulatorConfig.data : null;
   const cachedTeaDefault = cachedConfig?.configuracion?.TEA_DEFAULT
     ? (cachedConfig.configuracion.TEA_DEFAULT * 100).toString()
@@ -113,7 +119,7 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
         setLoadingConfig(false);
       })
       .catch(err => {
-        console.error(err);
+        console.warn(err);
         if (!mounted) return;
         setLoadingConfig(false);
       });
@@ -121,6 +127,30 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
       mounted = false;
     };
   }, [token, apiUrl]);
+
+  useEffect(() => {
+    if (!targetSale || !config) return;
+
+    const convenio = config.convenios.find(item =>
+      item.id === targetSale.convenio || item.nombre === targetSale.convenio
+    );
+    const cargo = config.cargos.find(item =>
+      item.id === targetSale.cargo_laboral || item.nombre === targetSale.cargo_laboral
+    );
+    const monto = targetSale.monto_solicitado ?? targetSale.maf_neto;
+    const plazo = targetSale.plazo_deseado;
+
+    setForm(prev => ({
+      ...prev,
+      sector: convenio?.sector || prev.sector,
+      convenioId: convenio?.id || prev.convenioId,
+      cargoId: cargo?.id || prev.cargoId,
+      montoSolicitado: monto ? String(monto) : prev.montoSolicitado,
+      cuotas: plazo ? String(plazo) : prev.cuotas
+    }));
+    setServerSimulation(null);
+    setShowCronograma(false);
+  }, [targetSale?.id, config]);
 
   const selectedConvenio = useMemo(() =>
     config?.convenios.find(c => c.id === form.convenioId),
@@ -163,13 +193,13 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
         : 0.50;
     const baseCem = ingresosFijos - ingresoVariableMensual + promedioVariables + otrosIngresosFijos - ingresosNoConstantes - descuentosLey - facultativos;
     const cem = (baseCem * maxEndeudamiento) - debtTotals.cem;
-    const tea = (Number(form.teaManual) || 10.99) / 100;
+    const tea = (toNum(form.teaManual) || 10.99) / 100;
     const tem = calcFactorInteresMensualExcel(tea);
     const tasaDesgravamenMensual = getTasaDesgravamenMensual(form.seguroDesgravamenTipo, form.seguroDesgravamenModalidad);
     const factorDesgravamen = (tasaDesgravamenMensual * 12 / 365) * 31;
-    const n = Number(form.cuotas) || 12;
-    const periodoGracia = Number(form.periodoGracia) || selectedConvenio?.periodo_gracia || 0;
-    const montoSolicitado = Number(form.montoSolicitado) || 0;
+    const n = toNum(form.cuotas) || 12;
+    const periodoGracia = toNum(form.periodoGracia) || selectedConvenio?.periodo_gracia || 0;
+    const montoSolicitado = toNum(form.montoSolicitado);
     const capitalFinanciado = montoSolicitado * Math.pow(1 + tem + factorDesgravamen, periodoGracia);
     const capitalBaseCuota = capitalFinanciado + (montoSolicitado * factorDesgravamen * periodoGracia);
     const cuotaBase = calcCuotaFrancesa(capitalBaseCuota, tem + factorDesgravamen, n) + AJUSTE_CUOTA_CRONOGRAMA;
@@ -198,6 +228,10 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
   const handleSimulate = useCallback(async () => {
     if (!form.convenioId || !form.cargoId) {
       Alert.alert('Atención', 'Por favor complete el perfil del cliente para simular.');
+      return;
+    }
+    if (!Number(form.montoSolicitado) || !Number(form.cuotas)) {
+      Alert.alert('Atención', 'Ingresa monto solicitado y plazo para simular.');
       return;
     }
     setError('');
@@ -233,11 +267,26 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
         lineaUtilizadaTC: Number(cargaCrediticia[6]?.cuotaAct || cargaCrediticia[6]?.bcp || 0) + Number(cargaCrediticia[6]?.noBcp || 0),
         lineaNoUtilizadaTC: Number(cargaCrediticia[7]?.cuotaAct || cargaCrediticia[7]?.bcp || 0) + Number(cargaCrediticia[7]?.noBcp || 0)
       };
-      const res = await axios.post(`${apiUrl}/simulator/calculate`, payload, {
+      const endpoint = linkedToSale
+        ? `${apiUrl}/sales/${targetSale.id}/simulacion/calcular`
+        : `${apiUrl}/simulator/calculate`;
+      const res = await axios.post(endpoint, linkedToSale ? { ...payload, clienteAcepta: false } : payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setServerSimulation(res.data);
-      setShowCronograma(true);
+      const resultData = linkedToSale
+        ? { ...(res.data.resultado || {}), aprobado: res.data.aprobado, sale: res.data.sale }
+        : res.data;
+      setServerSimulation(resultData);
+      setShowCronograma(false);
+      if (linkedToSale) {
+        onSimulationSaved?.();
+        Alert.alert(
+          res.data.aprobado ? 'Evaluacion guardada' : 'No califica',
+          res.data.aprobado
+            ? 'La simulacion quedo vinculada al prospecto.'
+            : 'El prospecto quedo rechazado por calculadora y con trazabilidad del motivo.'
+        );
+      }
     } catch (err: any) {
       const msg = err.response?.data?.error || 'No se pudo ejecutar la simulación.';
       setError(msg);
@@ -245,7 +294,7 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
     } finally {
       setSimulating(false);
     }
-  }, [form, selectedConvenio, cargaCrediticia, token, apiUrl]);
+  }, [form, selectedConvenio, cargaCrediticia, token, apiUrl, linkedToSale, targetSale?.id, onSimulationSaved]);
 
   const cronogramaData = useMemo(() => {
     if (serverSimulation?.cronograma) {
@@ -292,16 +341,29 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
 
   const sectors = config ? Array.from(new Set(config.convenios.map(c => c.sector))) : [];
   const conveniosFiltered = config?.convenios.filter(c => !form.sector || c.sector === form.sector) || [];
+  const resultSummary = serverSimulation?.resumen || {};
+  const displayDictamen = resultSummary.dictamen || calculations.dictamen;
+  const displayApproved = serverSimulation?.aprobado !== false && displayDictamen === 'CONTINUAR';
+  const displayCuota = resultSummary.cuota_mensual ?? calculations.cuotaTotal;
+  const displayCem = resultSummary.capacidad_maxima ?? calculations.cem;
+  const displayTea = resultSummary.tea ?? calculations.tea;
+  const displayTcea = resultSummary.tcea ?? calculations.tcea;
+  const cronogramaPreview = cronogramaData.cronograma.slice(0, 24);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.slate }}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 108 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 108 }}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+      >
         
         {/* HEADER */}
         <View style={{
           flexDirection: 'row',
           justifyContent: 'space-between',
-          alignItems: 'flex-start',
+          alignItems: 'center',
           marginTop: 8,
           marginBottom: 16,
           backgroundColor: theme.white,
@@ -314,13 +376,31 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
           shadowRadius: 18,
           elevation: 3
         }}>
+          {onClose ? (
+            <TouchableOpacity
+              onPress={onClose}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 10,
+                backgroundColor: theme.input,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: 12
+              }}
+            >
+              <Ionicons name="arrow-back" size={20} color={theme.text} />
+            </TouchableOpacity>
+          ) : null}
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 20, fontWeight: '900', color: theme.blueDark, letterSpacing: 0, textTransform: 'uppercase' }}>
-              SIMULADOR{' '}
-              <Text style={{ color: theme.text }}>BCP PREMIUM</Text>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: theme.text, letterSpacing: 0, textTransform: 'uppercase' }}>
+              {linkedToSale ? 'CALCULADORA' : 'SIMULADOR'}{' '}
+              <Text style={{ color: theme.text }}>{linkedToSale ? 'DEL PROSPECTO' : 'BCP'}</Text>
             </Text>
             <Text style={{ fontSize: 12, color: theme.subtext, fontWeight: '600', marginTop: 4 }}>
-              Evaluación de Riesgo y Capacidad de Pago
+              {linkedToSale
+                ? `${targetSale?.nombres_cliente || 'Prospecto'} | DNI ${targetSale?.dni_cliente || '-'}`
+                : 'Evaluacion de riesgo y capacidad de pago'}
             </Text>
           </View>
           <TouchableOpacity
@@ -336,10 +416,29 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
           >
             <Ionicons name="flash" size={18} color="white" />
             <Text style={{ color: 'white', fontWeight: '900', fontSize: 11, letterSpacing: 0.5 }}>
-              {simulating ? 'SIMULANDO...' : 'SIMULAR'}
+              {simulating ? 'CALCULANDO...' : (linkedToSale ? 'GUARDAR' : 'SIMULAR')}
             </Text>
           </TouchableOpacity>
         </View>
+
+        {linkedToSale ? (
+          <View style={{
+            backgroundColor: theme.blueSoft,
+            borderWidth: 1,
+            borderColor: theme.border,
+            borderRadius: 12,
+            padding: 13,
+            marginBottom: 16,
+            flexDirection: 'row',
+            gap: 10,
+            alignItems: 'center'
+          }}>
+            <Ionicons name="link-outline" size={18} color={theme.blue} />
+            <Text style={{ flex: 1, color: theme.subtext, fontSize: 11, fontWeight: '700', lineHeight: 16 }}>
+              Esta evaluacion se guardara en el prospecto y actualizara su estado segun califique o no.
+            </Text>
+          </View>
+        ) : null}
 
         {error ? (
           <View style={{
@@ -496,7 +595,7 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
               <View style={{ flex: 1.2, marginLeft: 6 }}>
                 <View style={{
                   flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end',
-                  backgroundColor: isDark ? 'rgba(59,130,246,0.1)' : 'rgba(0,42,141,0.05)',
+                  backgroundColor: isDark ? theme.blueSoft : 'rgba(0,42,141,0.05)',
                   paddingVertical: 6, paddingHorizontal: 8, borderRadius: 8
                 }}>
                   <Text style={{ fontSize: 9, color: theme.subtext, fontWeight: '700', marginRight: 3 }}>S/</Text>
@@ -582,24 +681,20 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
           </View>
 
           <Text style={[labelStyle(theme), { marginTop: 12 }]}>TIPO DE SEGURO</Text>
-          <View style={pickerContainerStyle(theme, isDark)}>
-            <PickerField
-              theme={theme} isDark={isDark}
-              selectedValue={form.seguroDesgravamenTipo}
-              onValueChange={(v: string) => setForm({ ...form, seguroDesgravamenTipo: v })}
-              options={[{ label: 'Individual', value: 'Individual' }, { label: 'Endosado', value: 'Endosado' }]}
-            />
-          </View>
+          <SegmentedControl
+            theme={theme}
+            selectedValue={form.seguroDesgravamenTipo}
+            onValueChange={(v: string) => setForm({ ...form, seguroDesgravamenTipo: v })}
+            options={[{ label: 'Individual', value: 'Individual' }, { label: 'Endosado', value: 'Endosado' }]}
+          />
 
           <Text style={[labelStyle(theme), { marginTop: 12 }]}>MODALIDAD DESGRAVAMEN</Text>
-          <View style={pickerContainerStyle(theme, isDark)}>
-            <PickerField
-              theme={theme} isDark={isDark}
-              selectedValue={form.seguroDesgravamenModalidad}
-              onValueChange={(v: string) => setForm({ ...form, seguroDesgravamenModalidad: v })}
-              options={[{ label: 'Sin Retorno', value: 'Sin Retorno' }, { label: 'Con Retorno', value: 'Con Retorno' }]}
-            />
-          </View>
+          <SegmentedControl
+            theme={theme}
+            selectedValue={form.seguroDesgravamenModalidad}
+            onValueChange={(v: string) => setForm({ ...form, seguroDesgravamenModalidad: v })}
+            options={[{ label: 'Sin Retorno', value: 'Sin Retorno' }, { label: 'Con Retorno', value: 'Con Retorno' }]}
+          />
 
           {/* Envío Estado Cuenta */}
           <Text style={[labelStyle(theme), { marginTop: 12 }]}>ENVÍO ESTADO CUENTA</Text>
@@ -669,25 +764,25 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
             <View style={{ alignItems: 'center', marginBottom: 24 }}>
               <View style={{
                 width: 76, height: 76, borderRadius: 12,
-                backgroundColor: calculations.dictamen === 'CONTINUAR' ? theme.emerald : theme.amber,
+                backgroundColor: displayApproved ? theme.emerald : theme.amber,
                 justifyContent: 'center', alignItems: 'center',
-                shadowColor: calculations.dictamen === 'CONTINUAR' ? theme.emerald : theme.amber,
+                shadowColor: displayApproved ? theme.emerald : theme.amber,
                 shadowOpacity: 0.4, shadowRadius: 15, elevation: 6,
                 marginBottom: 12
               }}>
                 <Ionicons
-                  name={calculations.dictamen === 'CONTINUAR' ? 'checkmark-circle' : 'calculator'}
+                  name={displayApproved ? 'checkmark-circle' : 'calculator'}
                   size={42} color="white"
                 />
               </View>
               <Text style={{
                 fontSize: 28, fontWeight: '900', letterSpacing: 0,
-                color: calculations.dictamen === 'CONTINUAR' ? theme.emerald : theme.amber
+                color: displayApproved ? theme.emerald : theme.amber
               }}>
-                {calculations.dictamen}
+                {displayDictamen}
               </Text>
               <Text style={{ fontSize: 10, fontWeight: '900', color: theme.subtext, letterSpacing: 0.5, marginTop: 4 }}>
-                Dictamen del Sistema
+                {serverSimulation ? 'Dictamen guardado' : 'Dictamen preliminar'}
               </Text>
             </View>
 
@@ -699,21 +794,21 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
               <View>
                 <Text style={labelStyle(theme)}>Cuota Estimada</Text>
                 <Text style={{ fontSize: 22, fontWeight: '900', color: theme.text }}>
-                  S/ {fmt(calculations.cuotaTotal)}
+                  S/ {fmt(displayCuota)}
                 </Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={labelStyle(theme)}>CEM Max.</Text>
                 <Text style={{ fontSize: 18, fontWeight: '900', color: theme.blue }}>
-                  S/ {fmt(calculations.cem)}
+                  S/ {fmt(displayCem)}
                 </Text>
               </View>
             </View>
 
             {/* Detalles */}
             <View style={{ borderTopWidth: 1, borderTopColor: theme.divider, paddingTop: 16, gap: 10 }}>
-              <DetailRow label="TEA Aplicada" value={`${(calculations.tea * 100).toFixed(2)}%`} theme={theme} />
-              <DetailRow label="TCEA Estimada" value={`${(calculations.tcea * 100).toFixed(2)}%`} theme={theme} />
+              <DetailRow label="TEA Aplicada" value={`${(displayTea * 100).toFixed(2)}%`} theme={theme} />
+              <DetailRow label="TCEA Estimada" value={`${(displayTcea * 100).toFixed(2)}%`} theme={theme} />
               <DetailRow label="1er Vencimiento" value={calculations.fechaVenc} theme={theme} isBlue />
               <DetailRow label="Desgravamen Mensual" value={`S/ ${fmt(calculations.desgravamenMensual)}`} theme={theme} />
               {calculations.envioFisicoCosto > 0 && (
@@ -723,7 +818,7 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
 
             {/* Cronograma Button */}
             <TouchableOpacity
-              onPress={handleSimulate}
+              onPress={() => serverSimulation ? setShowCronograma(true) : handleSimulate()}
               disabled={simulating}
               style={{
                 marginTop: 20, backgroundColor: theme.input,
@@ -732,12 +827,41 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
                 opacity: simulating ? 0.6 : 1
               }}
             >
-              <Ionicons name="business" size={16} color={theme.blue} />
+              <Ionicons name={serverSimulation ? 'calendar-outline' : 'save-outline'} size={16} color={theme.blue} />
               <Text style={{ fontSize: 10, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase', color: theme.blue }}>
-                CRONOGRAMA OFICIAL
+                {serverSimulation ? 'VER CRONOGRAMA' : (linkedToSale ? 'CALCULAR Y GUARDAR' : 'CALCULAR')}
               </Text>
               <Ionicons name="chevron-forward" size={14} color={theme.subtext} />
             </TouchableOpacity>
+
+            {linkedToSale && serverSimulation ? (
+              <TouchableOpacity
+                onPress={onClose}
+                style={{
+                  marginTop: 12,
+                  backgroundColor: theme.blue,
+                  borderWidth: 1,
+                  borderColor: theme.blue,
+                  borderRadius: 10,
+                  paddingVertical: 14,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10
+                }}
+              >
+                <Ionicons name="arrow-back" size={16} color="white" />
+                <Text style={{
+                  fontSize: 10,
+                  fontWeight: '900',
+                  letterSpacing: 1.2,
+                  textTransform: 'uppercase',
+                  color: 'white'
+                }}>
+                  VOLVER A BANDEJA
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
 
@@ -767,7 +891,7 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
             flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
             paddingHorizontal: 20, marginBottom: 16
           }}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: theme.blueDark, letterSpacing: 0 }}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: theme.text, letterSpacing: 0 }}>
               CRONOGRAMA DE PAGOS
             </Text>
             <TouchableOpacity
@@ -783,13 +907,18 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
+          >
             {/* Resumen */}
             <View style={{
               backgroundColor: theme.white, borderRadius: 12, padding: 16, marginBottom: 16,
               borderWidth: 1, borderColor: theme.border
             }}>
-              <Text style={{ fontSize: 11, fontWeight: '900', color: theme.blueDark, letterSpacing: 0.8, marginBottom: 12 }}>
+              <Text style={{ fontSize: 11, fontWeight: '900', color: theme.text, letterSpacing: 0.8, marginBottom: 12 }}>
                 RESUMEN
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10 }}>
@@ -821,11 +950,11 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
                 <Text style={{ flex: 1, fontSize: 8, fontWeight: '900', color: 'white', textAlign: 'right' }}>SALDO</Text>
               </View>
 
-              {cronogramaData.cronograma.map((row: any, idx: number) => (
+              {cronogramaPreview.map((row: any, idx: number) => (
                 <View key={idx} style={{
                   flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 8,
                   backgroundColor: idx % 2 === 0 ? theme.white : theme.input,
-                  borderBottomWidth: idx < cronogramaData.cronograma.length - 1 ? 1 : 0,
+                  borderBottomWidth: idx < cronogramaPreview.length - 1 ? 1 : 0,
                   borderBottomColor: theme.divider
                 }}>
                   <Text style={{ width: 28, fontSize: 9, fontWeight: '800', color: theme.text, textAlign: 'center' }}>{row.nro}</Text>
@@ -837,6 +966,13 @@ export default function SimulatorView({ isDark, token, apiUrl }: Props) {
                   <Text style={{ flex: 1, fontSize: 8, color: theme.subtext, textAlign: 'right' }}>{row.saldo ? Number(row.saldo).toFixed(2) : '-'}</Text>
                 </View>
               ))}
+              {cronogramaData.cronograma.length > cronogramaPreview.length ? (
+                <View style={{ padding: 12, backgroundColor: theme.input }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: theme.subtext, textAlign: 'center' }}>
+                    Mostrando las primeras {cronogramaPreview.length} cuotas de {cronogramaData.cronograma.length}.
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </ScrollView>
         </View>
@@ -892,30 +1028,60 @@ function SimInput({ label, value, onChange, theme, isDark }: any) {
   );
 }
 
+function SegmentedControl({ theme, selectedValue, onValueChange, options }: any) {
+  return (
+    <View style={{
+      flexDirection: 'row',
+      backgroundColor: theme.input,
+      borderRadius: 10,
+      padding: 4,
+      borderWidth: 1,
+      borderColor: theme.border,
+      marginBottom: 10
+    }}>
+      {options.map((opt: any) => {
+        const active = selectedValue === opt.value;
+        return (
+          <TouchableOpacity
+            key={opt.value}
+            onPress={() => onValueChange(opt.value)}
+            activeOpacity={0.85}
+            style={{
+              flex: 1,
+              minHeight: 40,
+              borderRadius: 8,
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingHorizontal: 8,
+              backgroundColor: active ? theme.white : 'transparent',
+              borderWidth: active ? 1 : 0,
+              borderColor: active ? theme.border : 'transparent'
+            }}
+          >
+            <Text style={{
+              fontSize: 11,
+              fontWeight: '900',
+              color: active ? theme.blue : theme.subtext,
+              textAlign: 'center'
+            }}>
+              {opt.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 function PickerField({ theme, isDark, selectedValue, onValueChange, options }: any) {
   return (
-    <ScrollView horizontal={false} style={{ maxHeight: 200 }}>
-      {options.map((opt: any) => (
-        <TouchableOpacity
-          key={opt.value}
-          onPress={() => onValueChange(opt.value)}
-          style={{
-            paddingVertical: 10, paddingHorizontal: 14,
-            backgroundColor: selectedValue === opt.value
-              ? (isDark ? 'rgba(59,130,246,0.15)' : 'rgba(0,42,141,0.08)')
-              : 'transparent',
-            borderRadius: 8, marginBottom: 2
-          }}
-        >
-          <Text style={{
-            fontSize: 13, fontWeight: selectedValue === opt.value ? '800' : '500',
-            color: selectedValue === opt.value ? theme.blue : theme.text
-          }}>
-            {opt.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </ScrollView>
+    <CustomPicker
+      selectedValue={selectedValue}
+      onValueChange={onValueChange}
+      options={options.map((opt: any) => ({ label: String(opt.label), value: String(opt.value) }))}
+      theme={theme}
+      isDark={isDark}
+    />
   );
 }
 
@@ -954,6 +1120,5 @@ const inputStyle = (theme: any, isDark: boolean) => ({
 const pickerContainerStyle = (theme: any, isDark: boolean) => ({
   backgroundColor: theme.input,
   borderWidth: 1, borderColor: theme.border, borderRadius: 10,
-  overflow: 'hidden' as const, maxHeight: 150
+  overflow: 'hidden' as const, minHeight: 52, marginBottom: 10
 });
-

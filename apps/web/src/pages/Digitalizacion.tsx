@@ -85,28 +85,39 @@ interface UploadedChecklistItem {
 
 const INSTITUCIONES_BASE = ['CONVENIO', 'RENIEC', 'SUNAT', 'ESSALUD', 'SIS', 'SCTR', 'SBS', 'SUNARP', 'MIGRACIONES'];
 const ESTADOS_INSTITUCION = ['PENDIENTE', 'ENVIADO', 'RECIBIDO', 'RECHAZADO'];
-const ESTADOS_BCP = ['EN_PREPARACION', 'ENVIADO_BCP', 'EN_EVALUACION_BCP', 'APROBADO_BCP', 'RECHAZADO_BCP', 'DESEMBOLSADO_BCP'];
+const ESTADOS_BCP = ['EN_PREPARACION', 'ENVIADO_BCP', 'EN_EVALUACION_BCP', 'OBS_BCP', 'APROBADO_BCP', 'RECHAZADO_BCP', 'DESEMBOLSADO_BCP'];
 const PIPELINE_STATES = [
   { key: 'PROSPECTO_NUEVO', label: 'Registro' },
-  { key: 'LISTO_SCORE', label: 'Score' },
-  { key: 'SIMULACION_ACEPTADA', label: 'Simulacion' },
-  { key: 'ENVIADO_CONVENIO', label: 'Convenio' },
-  { key: 'PREPARANDO_BCP', label: 'BCP' },
+  { key: 'SCORE_BCP', label: 'Score' },
+  { key: 'EVALUACION_CALCULADORA', label: 'Calc' },
+  { key: 'PENDIENTE_DATOS_FILE', label: 'Docs' },
+  { key: 'FILE_VALIDADO', label: 'File' },
+  { key: 'ENVIADO_BCP_REMESA', label: 'BCP' },
   { key: 'DESEMBOLSADO', label: 'Desembolso' },
 ];
 const PIPELINE_STAGE_BY_STATE: Record<string, number> = {
   PROSPECTO_NUEVO: 0,
-  PENDIENTE_DATOS: 0,
-  PENDIENTE_DOCUMENTOS: 0,
-  LISTO_SCORE: 1,
-  SCORE_APROBADO: 1,
-  SIMULACION_ACEPTADA: 2,
-  ENVIADO_CONVENIO: 3,
-  CONVENIO_APROBADO: 3,
-  PREPARANDO_BCP: 4,
-  ENVIADO_BCP: 4,
-  APROBADO_BCP: 4,
-  DESEMBOLSADO: 5,
+  VERIFICACION_SISTEMA: 0,
+  SCORE_BCP: 1,
+  PENDIENTE_BOLETA: 2,
+  EVALUACION_CALCULADORA: 2,
+  COTIZACION_ENVIADA: 2,
+  PENDIENTE_ACEPTACION_CLIENTE: 2,
+  PENDIENTE_DATOS_FILE: 3,
+  VALIDACION_BACK_OFFICE: 3,
+  OBS_BACK_OFFICE: 3,
+  FILE_VALIDADO: 4,
+  ENVIADO_BCP_REMESA: 5,
+  OBS_BCP: 5,
+  REMESA_APROBADA: 5,
+  REMESA_REDUCIDA: 5,
+  PENDIENTE_ACEPTACION_REMESA: 5,
+  PENDIENTE_DESEMBOLSO: 5,
+  PENDIENTE_CARTA_PODER: 5,
+  REENVIADO_BCP_COMPRA_DEUDA: 5,
+  PENDIENTE_CARTA_NO_ADEUDO: 5,
+  PENDIENTE_LIBERACION: 5,
+  DESEMBOLSADO: 6,
 };
 
 const GUIDE_STEPS = [
@@ -114,19 +125,19 @@ const GUIDE_STEPS = [
     title: '1. Selecciona el expediente',
     icon: Search,
     focus: 'Panel izquierdo',
-    summary: 'Aqui eliges el cliente que vas a digitalizar. Puedes buscar por DNI, nombre o estado.',
+    summary: 'Aquí eliges el cliente que vas a digitalizar. Puedes buscar por DNI, nombre o estado.',
     actions: [
       'Busca el expediente del cliente.',
       'Haz clic sobre la tarjeta del cliente.',
       'El sistema carga instituciones, expediente BCP y checklist documental.'
     ],
-    result: 'Todo lo que registres despues queda asociado a ese expediente.'
+    result: 'Todo lo que registres después queda asociado a ese expediente.'
   },
   {
     title: '2. Gestiona convenio',
     icon: Building2,
     focus: 'Convenio e instituciones',
-    summary: 'Sirve para controlar el envio al convenio y las validaciones externas que acompanan el expediente.',
+    summary: 'Sirve para controlar el envío al convenio y las validaciones externas que acompañan el expediente.',
     actions: [
       'Selecciona el convenio o una institucion de apoyo.',
       'Agrega una observacion si necesitas contexto.',
@@ -138,13 +149,13 @@ const GUIDE_STEPS = [
     title: '3. Registra expediente BCP',
     icon: Send,
     focus: 'Expediente BCP',
-    summary: 'Aqui documentas lo que ocurre cuando el caso ya se prepara o envia hacia BCP.',
+    summary: 'Aquí documentas lo que ocurre cuando el caso ya se prepara o envía hacia BCP.',
     actions: [
-      'Completa numero de expediente si BCP lo asigna.',
+      'Completa número de expediente si BCP lo asigna.',
       'Registra agencia, estado BCP y observaciones.',
       'Guarda cambios para mantener trazabilidad.'
     ],
-    result: 'Estados como APROBADO_BCP o RECHAZADO_BCP pueden mover el estado principal del expediente.'
+    result: 'Estados como APROBADO_BCP, OBS_BCP o RECHAZADO_BCP actualizan el estado principal del expediente.'
   },
   {
     title: '4. Revisa checklist',
@@ -162,11 +173,11 @@ const GUIDE_STEPS = [
     title: '5. Flujo recomendado',
     icon: ListChecks,
     focus: 'Uso operativo diario',
-    summary: 'Digitalizacion es el tablero de control posterior al registro del expediente.',
+    summary: 'Digitalización es el tablero de control posterior al registro del expediente.',
     actions: [
-      'Primero aseguras documentos cargados desde bandeja o app movil.',
-      'Luego das seguimiento a instituciones.',
-      'Finalmente completas expediente BCP y checklist.'
+      'Primero back office valida documentos cargados desde la app.',
+      'Luego registra envío y respuesta del convenio.',
+      'Finalmente completa expediente BCP, remesa, liberación y desembolso.'
     ],
     result: 'La trazabilidad queda disponible para saber que falta, quien actualizo y cual fue el ultimo avance.'
   }
@@ -183,6 +194,7 @@ const getEstadoColor = (estado: string) => {
     EN_PREPARACION: 'bg-slate-50 text-slate-700 border-slate-200',
     ENVIADO_BCP: 'bg-blue-50 text-blue-700 border-blue-200',
     EN_EVALUACION_BCP: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    OBS_BCP: 'bg-orange-50 text-orange-700 border-orange-200',
     APROBADO_BCP: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     RECHAZADO_BCP: 'bg-rose-50 text-rose-700 border-rose-200',
     DESEMBOLSADO_BCP: 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -279,7 +291,7 @@ const DigitalizacionPage = () => {
       });
     } catch (err: any) {
       console.error('Error fetching digitalizacion detail:', err);
-      setError(err.response?.data?.error || 'No se pudo cargar la digitalizacion del expediente');
+      setError(err.response?.data?.error || 'No se pudo cargar la digitalización del expediente');
     } finally {
       setDetailLoading(false);
     }
@@ -381,12 +393,12 @@ const DigitalizacionPage = () => {
     <div className="page-shell">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Digitalizacion</h1>
-          <p className="page-subtitle">Gestion operativa del convenio, expediente BCP y checklist documental</p>
+          <h1 className="page-title">Digitalización</h1>
+          <p className="page-subtitle">Gestión operativa del convenio, expediente BCP y checklist documental</p>
         </div>
         <div className="page-actions">
           <button onClick={() => setShowGuide(true)} className="action-button-secondary">
-            <BookOpen size={16} /> Guia interactiva
+            <BookOpen size={16} /> Guía interactiva
           </button>
           <button onClick={fetchSales} className="action-button-primary">
             <RefreshCw size={16} /> Actualizar
@@ -422,7 +434,7 @@ const DigitalizacionPage = () => {
                 onClick={() => handleSelectSale(sale)}
                 className={`w-full text-left p-3 rounded-lg border transition-all ${
                   selectedSale?.id === sale.id
-                    ? 'bg-[rgba(0,42,141,0.08)] border-[var(--color-bcp-blue)]'
+                    ? 'bg-[var(--accent-blue-soft)] border-[var(--accent-blue)]'
                     : 'bg-surface-100 border-transparent hover:bg-surface-50 hover:border-surface-200'
                 }`}
               >
@@ -455,7 +467,7 @@ const DigitalizacionPage = () => {
           {!selectedSale ? (
             <div className="surface-card p-12 text-center">
               <AlertCircle size={32} className="mx-auto text-text-700 mb-3" />
-              <p className="text-sm font-bold text-text-700">Selecciona un expediente para gestionar su digitalizacion.</p>
+              <p className="text-sm font-bold text-text-700">Selecciona un expediente para gestionar su digitalización.</p>
             </div>
           ) : (
             <>
@@ -484,13 +496,13 @@ const DigitalizacionPage = () => {
                     </div>
                   </div>
                 </div>
-                <div className="mt-5 grid grid-cols-2 md:grid-cols-6 gap-2">
+                <div className="mt-5 grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
                   {PIPELINE_STATES.map((step, index) => (
                     <div
                       key={step.key}
                       className={`rounded-lg border px-3 py-2 ${
                         index <= currentPipelineIndex
-                          ? 'bg-[rgba(0,42,141,0.08)] border-[var(--color-bcp-blue)] text-[var(--color-bcp-blue)]'
+                          ? 'bg-[var(--accent-blue-soft)] border-[var(--accent-blue)] text-[var(--accent-blue)]'
                           : 'bg-surface-50 border-surface-200 text-text-700'
                       }`}
                     >
@@ -718,18 +730,18 @@ const DigitalizacionPage = () => {
           <div className="modal-panel w-full max-w-4xl max-h-[88vh] flex flex-col">
             <div className="px-5 py-4 border-b border-surface-200 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[rgba(0,42,141,0.08)] text-[var(--color-bcp-blue)] flex items-center justify-center">
+                <div className="w-10 h-10 rounded-lg bg-[var(--accent-blue-soft)] text-[var(--accent-blue)] flex items-center justify-center">
                   <BookOpen size={20} />
                 </div>
                 <div>
-                  <h2 className="text-lg font-black text-text-900 uppercase tracking-tight">Guia de Digitalizacion</h2>
-                  <p className="text-xs font-semibold text-text-700">Recorrido practico por el modulo y sus estados.</p>
+                  <h2 className="text-lg font-black text-text-900 uppercase tracking-tight">Guía de Digitalización</h2>
+                  <p className="text-xs font-semibold text-text-700">Recorrido práctico por el módulo y sus estados.</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowGuide(false)}
                 className="w-10 h-10 rounded-lg border border-surface-200 bg-surface-50 text-text-700 hover:text-text-900 hover:bg-surface-100 transition-colors flex items-center justify-center"
-                aria-label="Cerrar guia"
+                aria-label="Cerrar guía"
               >
                 <X size={18} />
               </button>
@@ -748,8 +760,8 @@ const DigitalizacionPage = () => {
                         onClick={() => setGuideStep(index)}
                         className={`text-left rounded-lg border p-3 transition-all ${
                           active
-                            ? 'bg-[rgba(0,42,141,0.08)] border-[var(--color-bcp-blue)] text-[var(--color-bcp-blue)]'
-                            : 'bg-surface-100 border-surface-200 text-text-700 hover:border-[rgba(0,42,141,0.25)]'
+                            ? 'bg-[var(--accent-blue-soft)] border-[var(--accent-blue)] text-[var(--accent-blue)]'
+                            : 'bg-surface-100 border-surface-200 text-text-700 hover:border-[var(--accent-blue-border)]'
                         }`}
                       >
                         <div className="flex items-center gap-2">
@@ -765,7 +777,7 @@ const DigitalizacionPage = () => {
 
               <div className="p-5 overflow-y-auto">
                 <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-[rgba(0,42,141,0.08)] text-[var(--color-bcp-blue)] flex items-center justify-center shrink-0">
+                  <div className="w-12 h-12 rounded-lg bg-[var(--accent-blue-soft)] text-[var(--accent-blue)] flex items-center justify-center shrink-0">
                     <ActiveGuideIcon size={24} />
                   </div>
                   <div>
@@ -777,7 +789,7 @@ const DigitalizacionPage = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
                   <div className="surface-card p-4">
-                    <div className="stat-label">Que haces aqui</div>
+                    <div className="stat-label">Qué haces aquí</div>
                     <div className="space-y-3 mt-3">
                       {activeGuide.actions.map((action, index) => (
                         <div key={action} className="flex gap-3">
@@ -790,11 +802,11 @@ const DigitalizacionPage = () => {
                     </div>
                   </div>
 
-                  <div className="surface-card p-4 bg-[rgba(0,42,141,0.03)]">
+                  <div className="surface-card p-4 bg-[var(--accent-blue-soft)]">
                     <div className="stat-label">Resultado esperado</div>
                     <p className="text-sm font-bold text-text-900 leading-relaxed mt-3">{activeGuide.result}</p>
                     <div className="mt-4 p-3 rounded-lg bg-surface-100 border border-surface-200">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-text-700">Regla practica</div>
+                      <div className="text-[10px] font-black uppercase tracking-widest text-text-700">Regla práctica</div>
                       <p className="text-xs font-semibold text-text-700 mt-1">
                         Si no sabes que actualizar, primero revisa el estado del expediente y luego abre el bloque que coincide con lo pendiente.
                       </p>

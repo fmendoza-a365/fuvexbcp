@@ -100,14 +100,14 @@ export default function Profile() {
   );
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
+    <div className="max-w-6xl mx-auto page-shell animate-in fade-in duration-500">
       {/* Header Sincronizado */}
-      <div className="flex justify-between items-center">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold text-text-900 tracking-tight uppercase">
-            Mi <span className="text-[var(--color-bcp-blue)]">Perfil</span>
+          <h1 className="page-title">
+            Perfil y <span className="text-[var(--color-bcp-blue)]">Seguridad</span>
           </h1>
-          <p className="text-text-700 text-sm font-medium">Gestión de identidad corporativa y seguridad</p>
+          <p className="page-subtitle">Gestión de identidad corporativa y seguridad</p>
         </div>
       </div>
 
@@ -129,7 +129,7 @@ export default function Profile() {
             </div>
             
             <h2 className="mt-8 text-2xl font-bold text-text-900 text-center uppercase tracking-tight">{formData.nombre || currentUser.username}</h2>
-            <div className="mt-3 px-4 py-1.5 bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] text-[10px] font-black rounded-full uppercase tracking-[0.2em] border border-blue-100">
+            <div className="mt-3 px-4 py-1.5 bg-[var(--accent-blue-soft)] text-[var(--accent-blue)] text-[10px] font-black rounded-full uppercase tracking-[0.2em] border border-surface-200">
               {currentUser.role}
             </div>
             
@@ -176,7 +176,7 @@ export default function Profile() {
             {/* Sección Personal */}
             <div className="space-y-8">
               <div className="flex items-center gap-4 border-b border-surface-200 pb-6">
-                <div className="p-3 bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] rounded-2xl">
+                <div className="p-3 bg-[var(--accent-blue-soft)] text-[var(--accent-blue)] rounded-lg">
                    <ShieldCheck size={24} />
                 </div>
                 <div>

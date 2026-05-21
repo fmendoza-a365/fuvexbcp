@@ -65,14 +65,14 @@ const GoalPlanning = () => {
   ];
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="page-shell animate-in fade-in duration-500">
       {/* Header Sincronizado */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold text-text-900 tracking-tight uppercase">
+          <h1 className="page-title">
             Planificación de <span className="text-[var(--color-bcp-blue)]">Metas</span>
           </h1>
-          <p className="text-text-700 text-sm font-medium mt-1">Asignación de cuotas de MAF por equipo y zona</p>
+          <p className="page-subtitle">Asignación de cuotas de MAF por equipo y zona</p>
         </div>
         
         <div className="flex gap-2 bg-surface-100 p-2 rounded-2xl border border-surface-200 shadow-sm">
@@ -82,15 +82,15 @@ const GoalPlanning = () => {
           <select 
             value={month} 
             onChange={(e) => setMonth(parseInt(e.target.value))}
-            className="bg-transparent border-none text-xs font-bold text-slate-700 focus:ring-0 cursor-pointer outline-none"
+            className="bg-transparent border-none text-xs font-black text-text-900 focus:ring-0 cursor-pointer outline-none"
           >
             {months.map(m => <option key={m.v} value={m.v}>{m.l}</option>)}
           </select>
-          <div className="w-px bg-slate-100 my-1"></div>
+          <div className="w-px bg-surface-200 my-1"></div>
           <select 
             value={year} 
             onChange={(e) => setYear(parseInt(e.target.value))}
-            className="bg-transparent border-none text-xs font-bold text-slate-700 focus:ring-0 cursor-pointer outline-none px-2"
+            className="bg-transparent border-none text-xs font-black text-text-900 focus:ring-0 cursor-pointer outline-none px-2"
           >
             <option value="2026">2026</option>
             <option value="2027">2027</option>
@@ -104,12 +104,12 @@ const GoalPlanning = () => {
             <span className="stat-label">Total Metas Asignadas</span>
             <div className="stat-value text-[var(--color-bcp-blue)] mb-8">S/ {totalGoal.toLocaleString()}</div>
             
-            <div className="bg-[rgba(0,42,141,0.1)]/50 p-6 rounded-3xl border border-blue-100 flex items-start gap-4">
+            <div className="bg-[var(--accent-blue-soft)] p-6 rounded-lg border border-surface-200 flex items-start gap-4">
               <div className="bg-surface-100 p-3 rounded-2xl text-[var(--color-bcp-blue)] shadow-sm">
                 <Target size={20} />
               </div>
               <div>
-                <p className="text-xs font-bold text-slate-800 mb-1 uppercase tracking-tight">Suma Consolidada</p>
+                <p className="text-xs font-black text-text-900 mb-1 uppercase tracking-tight">Suma Consolidada</p>
                 <p className="text-[10px] font-medium text-text-700 leading-relaxed">
                   Agregación automática de cuotas individuales para el periodo {month}/{year}.
                 </p>
@@ -142,7 +142,7 @@ const GoalPlanning = () => {
                     <tr key={item.user_id} className="data-table-row group/row">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-2xl bg-slate-100 flex items-center justify-center text-text-700 group-hover/row:bg-[rgba(0,42,141,0.1)] group-hover/row:text-[var(--color-bcp-blue)] transition-all">
+                          <div className="w-9 h-9 rounded-lg bg-surface-50 flex items-center justify-center text-text-700 group-hover/row:bg-[var(--accent-blue-soft)] group-hover/row:text-[var(--accent-blue)] transition-all">
                             <Users size={16} />
                           </div>
                           <div>
@@ -164,7 +164,7 @@ const GoalPlanning = () => {
                               type="number"
                               value={item.amount}
                               onChange={(e) => handleUpdateAmount(item.user_id, e.target.value)}
-                              className="w-40 bg-surface-50 border-none rounded-xl py-2.5 pl-10 pr-4 text-center text-sm font-bold text-slate-800 focus:ring-2 focus:ring-[var(--color-bcp-blue-light)] outline-none transition-all"
+                              className="w-40 bg-surface-50 border-none rounded-xl py-2.5 pl-10 pr-4 text-center text-sm font-bold text-text-900 focus:ring-2 focus:ring-[var(--color-bcp-blue-light)] outline-none transition-all"
                               placeholder="0"
                             />
                           </div>
@@ -175,7 +175,7 @@ const GoalPlanning = () => {
                           disabled={saving === item.user_id}
                           onClick={() => saveGoal(item)}
                           className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-[10px] tracking-widest transition-all ${
-                            saving === item.user_id ? 'bg-slate-100 text-text-700' : 'bg-[var(--color-bcp-blue)] text-white hover:bg-blue-800 shadow-lg shadow-blue-100'
+                            saving === item.user_id ? 'bg-surface-50 text-text-700' : 'bg-[var(--accent-blue)] text-white hover:brightness-95 shadow-sm'
                           }`}
                         >
                           {saving === item.user_id ? (

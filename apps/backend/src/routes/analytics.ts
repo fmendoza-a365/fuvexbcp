@@ -4,6 +4,8 @@ import { authMiddleware } from '../middleware/auth';
 import { getSalesFilter, getSubordinateIds } from '../services/hierarchy';
 import { startOfMonth, endOfMonth, format, startOfDay, endOfDay, subDays, eachDayOfInterval } from 'date-fns';
 import ExcelJS from 'exceljs';
+import { ACTIVE_ESTADOS, KANBAN_COLUMNS } from '../middleware/validate';
+import { buildSlaSnapshot, getSlaInfo } from '../services/sla';
 
 const router = Router();
 
@@ -30,7 +32,7 @@ router.get('/dashboard', authMiddleware, async (req: any, res: any) => {
     const pipelineData = await prisma.sale.aggregate({
       where: {
         ...filter,
-        estado: { in: ['PROSPECTO_NUEVO', 'PENDIENTE_DATOS', 'PENDIENTE_DOCUMENTOS', 'LISTO_SCORE', 'SCORE_APROBADO', 'SIMULACION_ACEPTADA', 'ENVIADO_CONVENIO', 'CONVENIO_APROBADO', 'PREPARANDO_BCP', 'ENVIADO_BCP', 'APROBADO_BCP', 'OBSERVADO', 'PENDIENTE_REASIGNACION'] },
+        estado: { in: ACTIVE_ESTADOS },
         fecha_ingreso: { gte: monthStart, lte: monthEnd }
       },
       _sum: { maf_neto: true },
@@ -73,7 +75,7 @@ router.get('/dashboard', authMiddleware, async (req: any, res: any) => {
     const productivity = activeSellers.length > 0 ? totalEntered / activeSellers.length : 0;
 
     const pendingValue = await prisma.sale.aggregate({
-      where: { ...filter, estado: { in: ['APROBADO_BCP', 'CONVENIO_APROBADO', 'ENVIADO_BCP'] } },
+      where: { ...filter, estado: { in: ['FILE_VALIDADO', 'ENVIADO_BCP_REMESA', 'REMESA_APROBADA', 'REMESA_REDUCIDA', 'PENDIENTE_DESEMBOLSO', 'PENDIENTE_LIBERACION'] } },
       _sum: { maf_neto: true }
     });
 
@@ -235,6 +237,9 @@ router.get('/rankings', authMiddleware, async (req: any, res: any) => {
 router.get('/operations', authMiddleware, async (req: any, res: any) => {
   try {
     const filter = await getSalesFilter(req.user);
+    const now = new Date();
+    const monthStart = startOfMonth(now);
+    const monthEnd = endOfMonth(now);
     
     // 1. Funnel
     const funnel = await prisma.sale.groupBy({
@@ -353,7 +358,26 @@ router.get('/operations', authMiddleware, async (req: any, res: any) => {
       samples: times.length
     })).sort((a, b) => b.hours - a.hours);
 
-    // 6. Inactivity Radar & Efficiency
+    // 6. Alertas SLA por estado activo
+    const activeSalesForSla = await prisma.sale.findMany({
+      where: {
+        ...filter,
+        estado: { in: ACTIVE_ESTADOS }
+      },
+      select: {
+        id: true,
+        estado: true,
+        fecha_estado_desde: true,
+        created_at: true,
+        nombres_cliente: true,
+        maf_neto: true,
+        asesor: { select: { nombre: true, username: true } }
+      }
+    });
+
+    const sla = buildSlaSnapshot(activeSalesForSla, now);
+
+    // 7. Inactivity Radar & Efficiency
     const subordinates = await prisma.user.findMany({
       where: {
         id: { in: await getSubordinateIds(req.user.id) },
@@ -390,14 +414,138 @@ router.get('/operations', authMiddleware, async (req: any, res: any) => {
       };
     }));
 
+    // 8. Tablas de gestión para decisiones comerciales del mes
+    const summaryWhere = {
+      ...filter,
+      fecha_ingreso: { gte: monthStart, lte: monthEnd }
+    };
+
+    const [summarySales, currentGoals] = await Promise.all([
+      prisma.sale.findMany({
+        where: summaryWhere,
+        select: {
+          estado: true,
+          maf_neto: true,
+          convenio: true,
+          plaza: true,
+          departamento: true,
+          zona_comercial: true,
+          asesor_id: true,
+          asesor: {
+            select: {
+              id: true,
+              nombre: true,
+              supervisor_id: true,
+              supervisor: { select: { id: true, nombre: true } },
+              zone: { select: { id: true, nombre: true } }
+            }
+          }
+        }
+      }),
+      prisma.goal.findMany({
+        where: {
+          month: now.getMonth() + 1,
+          year: now.getFullYear()
+        },
+        select: { user_id: true, amount: true }
+      })
+    ]);
+
+    const goalByUser = new Map(currentGoals.map(goal => [goal.user_id, Number(goal.amount) || 0]));
+
+    const createBucket = (key: string, name: string, zone?: string) => ({
+      key,
+      name,
+      zone: zone || 'Sin zona',
+      userIds: new Set<string>(),
+      prospectos: 0,
+      qDesembolso: 0,
+      totalDesembolso: 0,
+      pipeline: 0,
+      evaluacionBcp: 0,
+      pendienteBack: 0,
+      pendienteRemesa: 0,
+      rechazados: 0
+    });
+
+    const addSaleToBucket = (bucket: ReturnType<typeof createBucket>, sale: typeof summarySales[number]) => {
+      const amount = Number(sale.maf_neto) || 0;
+      bucket.userIds.add(sale.asesor_id);
+      bucket.prospectos += 1;
+      if (sale.estado === 'DESEMBOLSADO') {
+        bucket.qDesembolso += 1;
+        bucket.totalDesembolso += amount;
+      }
+      if ((ACTIVE_ESTADOS as readonly string[]).includes(sale.estado)) bucket.pipeline += amount;
+      if (['ENVIADO_BCP_REMESA', 'OBS_BCP'].includes(sale.estado)) bucket.evaluacionBcp += amount;
+      if (['VALIDACION_BACK_OFFICE', 'OBS_BACK_OFFICE'].includes(sale.estado)) bucket.pendienteBack += amount;
+      if (['REMESA_APROBADA', 'REMESA_REDUCIDA', 'PENDIENTE_DESEMBOLSO', 'PENDIENTE_LIBERACION'].includes(sale.estado)) bucket.pendienteRemesa += amount;
+      if (sale.estado === 'RECHAZADO') bucket.rechazados += 1;
+    };
+
+    const finalizeBucket = (bucket: ReturnType<typeof createBucket>) => {
+      const meta = [...bucket.userIds].reduce((acc, userId) => acc + (goalByUser.get(userId) || 0), 0);
+      return {
+        key: bucket.key,
+        name: bucket.name,
+        zone: bucket.zone,
+        prospectos: bucket.prospectos,
+        q_desembolso: bucket.qDesembolso,
+        total_desembolso: Math.round(bucket.totalDesembolso * 100) / 100,
+        pipeline: Math.round(bucket.pipeline * 100) / 100,
+        evaluacion_bcp: Math.round(bucket.evaluacionBcp * 100) / 100,
+        pendiente_back: Math.round(bucket.pendienteBack * 100) / 100,
+        pendiente_remesa: Math.round(bucket.pendienteRemesa * 100) / 100,
+        rechazados: bucket.rechazados,
+        meta: Math.round(meta * 100) / 100,
+        avance: meta > 0 ? Math.round((bucket.totalDesembolso / meta) * 1000) / 10 : 0,
+        ticket_promedio: bucket.qDesembolso > 0 ? Math.round((bucket.totalDesembolso / bucket.qDesembolso) * 100) / 100 : 0
+      };
+    };
+
+    const supervisorBuckets = new Map<string, ReturnType<typeof createBucket>>();
+    const zoneBuckets = new Map<string, ReturnType<typeof createBucket>>();
+    const agreementBuckets = new Map<string, ReturnType<typeof createBucket>>();
+
+    for (const sale of summarySales) {
+      const zoneName = sale.asesor?.zone?.nombre || sale.zona_comercial || sale.plaza || sale.departamento || 'Sin zona';
+      const supervisorId = sale.asesor?.supervisor?.id || sale.asesor?.id || sale.asesor_id;
+      const supervisorName = sale.asesor?.supervisor?.nombre || sale.asesor?.nombre || 'Sin responsable';
+      const agreementName = sale.convenio || 'Sin convenio';
+
+      if (!supervisorBuckets.has(supervisorId)) {
+        supervisorBuckets.set(supervisorId, createBucket(supervisorId, supervisorName, zoneName));
+      }
+      if (!zoneBuckets.has(zoneName)) {
+        zoneBuckets.set(zoneName, createBucket(zoneName, zoneName, zoneName));
+      }
+      if (!agreementBuckets.has(agreementName)) {
+        agreementBuckets.set(agreementName, createBucket(agreementName, agreementName, zoneName));
+      }
+
+      addSaleToBucket(supervisorBuckets.get(supervisorId)!, sale);
+      addSaleToBucket(zoneBuckets.get(zoneName)!, sale);
+      addSaleToBucket(agreementBuckets.get(agreementName)!, sale);
+    }
+
+    const sortSummary = (items: Array<ReturnType<typeof finalizeBucket>>) => (
+      items.sort((a, b) => b.total_desembolso - a.total_desembolso || b.pipeline - a.pipeline || b.prospectos - a.prospectos)
+    );
+
     res.json({
       funnel,
       risk,
       observations,
       agreements: agreements.map(a => ({ name: a.convenio || 'Otros', value: a._sum?.maf_neto || 0 })),
       responseTimes,
+      sla,
       radar: radar.filter(r => r.daysInactive >= 3).sort((a, b) => b.daysInactive - a.daysInactive),
-      efficiency: radar.sort((a, b) => b.efficiency - a.efficiency).slice(0, 5)
+      efficiency: radar.sort((a, b) => b.efficiency - a.efficiency).slice(0, 5),
+      summaries: {
+        supervisors: sortSummary([...supervisorBuckets.values()].map(finalizeBucket)),
+        zones: sortSummary([...zoneBuckets.values()].map(finalizeBucket)),
+        agreements: sortSummary([...agreementBuckets.values()].map(finalizeBucket))
+      }
     });
   } catch (error) {
     console.error(error);
@@ -406,54 +554,149 @@ router.get('/operations', authMiddleware, async (req: any, res: any) => {
 });
 
 // ═══════════════════════════════════════════════════
-// SPRINT 4.1 — PIRÁMIDE DE CONVERSIÓN (FUNNEL)
-// Agrupa los 14+ estados en etapas de negocio
+// SPRINT 4.1 — FUNNEL COMERCIAL ACUMULATIVO
+// Mide cuantos prospectos llegaron a cada hito de negocio.
 // ═══════════════════════════════════════════════════
 
-const ETAPA_MAP: Record<string, string> = {
-  'PROSPECTO_NUEVO': 'Registro',
-  'PENDIENTE_DATOS': 'Registro',
-  'PENDIENTE_DOCUMENTOS': 'Documentacion',
-  'LISTO_SCORE': 'Score',
-  'SCORE_APROBADO': 'Score',
-  'SIMULACION_ACEPTADA': 'Simulacion',
-  'ENVIADO_CONVENIO': 'Convenio',
-  'CONVENIO_APROBADO': 'Convenio',
-  'PREPARANDO_BCP': 'Conformidad BCP',
-  'ENVIADO_BCP': 'Conformidad BCP',
-  'APROBADO_BCP': 'Conformidad BCP',
-  'OBSERVADO': 'Observado',
-  'POR INGRESAR': 'Registro',
-  'EN PROCESO': 'Evaluación Interna',
-  'OBSERVADA': 'Evaluación Interna',
-  'SUBSANADA': 'Evaluación Interna',
-  'PENDIENTE_REASIGNACION': 'Evaluación Interna',
-  'REASIGNADO': 'Evaluación Interna',
-  'ENVIADO': 'Revisión Supervisor',
-  'APROBADA': 'Aprobación',
-  'CONFORMIDAD': 'Conformidad BCP',
-  'EN_PREPARACION': 'Conformidad BCP',
-  'EN_EVALUACION_BCP': 'Conformidad BCP',
-  'DESEMBOLSADO': 'Desembolso',
-  'DESEMBOLSADO_BCP': 'Desembolso',
-  'RECHAZADO': 'Rechazado',
-  'RECHAZADO_BCP': 'Rechazado',
-  'BOLETA_NO_CALIFICA': 'Rechazado'
+const DOCUMENTED_OR_LATER_STATES = [
+  'PENDIENTE_DATOS_FILE',
+  'VALIDACION_BACK_OFFICE',
+  'OBS_BACK_OFFICE',
+  'FILE_VALIDADO',
+  'ENVIADO_BCP_REMESA',
+  'OBS_BCP',
+  'REMESA_APROBADA',
+  'REMESA_REDUCIDA',
+  'PENDIENTE_ACEPTACION_REMESA',
+  'PENDIENTE_DESEMBOLSO',
+  'PENDIENTE_CARTA_PODER',
+  'REENVIADO_BCP_COMPRA_DEUDA',
+  'PENDIENTE_CARTA_NO_ADEUDO',
+  'PENDIENTE_LIBERACION',
+  'DESEMBOLSADO'
+];
+
+const FILE_VALIDATED_OR_LATER_STATES = [
+  'FILE_VALIDADO',
+  'ENVIADO_BCP_REMESA',
+  'OBS_BCP',
+  'REMESA_APROBADA',
+  'REMESA_REDUCIDA',
+  'PENDIENTE_ACEPTACION_REMESA',
+  'PENDIENTE_DESEMBOLSO',
+  'PENDIENTE_CARTA_PODER',
+  'REENVIADO_BCP_COMPRA_DEUDA',
+  'PENDIENTE_CARTA_NO_ADEUDO',
+  'PENDIENTE_LIBERACION',
+  'DESEMBOLSADO'
+];
+
+const SENT_BCP_OR_LATER_STATES = [
+  'ENVIADO_BCP_REMESA',
+  'OBS_BCP',
+  'REMESA_APROBADA',
+  'REMESA_REDUCIDA',
+  'PENDIENTE_ACEPTACION_REMESA',
+  'PENDIENTE_DESEMBOLSO',
+  'PENDIENTE_CARTA_PODER',
+  'REENVIADO_BCP_COMPRA_DEUDA',
+  'PENDIENTE_CARTA_NO_ADEUDO',
+  'PENDIENTE_LIBERACION',
+  'DESEMBOLSADO'
+];
+
+const REMESA_APPROVED_OR_LATER_STATES = [
+  'REMESA_APROBADA',
+  'REMESA_REDUCIDA',
+  'PENDIENTE_ACEPTACION_REMESA',
+  'PENDIENTE_DESEMBOLSO',
+  'PENDIENTE_CARTA_PODER',
+  'REENVIADO_BCP_COMPRA_DEUDA',
+  'PENDIENTE_CARTA_NO_ADEUDO',
+  'PENDIENTE_LIBERACION',
+  'DESEMBOLSADO'
+];
+
+const hasAnyState = (states: Set<string>, candidates: string[]) => (
+  candidates.some((state) => states.has(state))
+);
+
+const isCalculatorApproved = (sale: any, states: Set<string>) => {
+  if (hasAnyState(states, DOCUMENTED_OR_LATER_STATES)) return true;
+
+  const calculadora = String(sale.calculadora_estado || '').toUpperCase();
+  const dictamen = String(sale.simulacion_dictamen || '').toUpperCase();
+  const rechazoMotivo = String(sale.rechazo_motivo || '').toUpperCase();
+
+  if (calculadora === 'RECHAZADO' || rechazoMotivo === 'CALCULADORA_NO_CALIFICA') return false;
+
+  return calculadora === 'APROBADO' ||
+    dictamen === 'CONTINUAR' ||
+    Boolean(sale.simulacion_id);
 };
 
-const ETAPA_ORDEN = [
-  'Registro',
-  'Documentacion',
-  'Score',
-  'Simulacion',
-  'Convenio',
-  'Evaluación Interna',
-  'Revisión Supervisor',
-  'Aprobación',
-  'Conformidad BCP',
-  'Observado',
-  'Desembolso',
-  'Rechazado'
+const hasPassedEvaluation = (sale: any, states: Set<string>) => {
+  const semaforo = String(sale.rcc_semaforo || '').toUpperCase();
+  const rechazoMotivo = String(sale.rechazo_motivo || '').toUpperCase();
+
+  if (sale.estado === 'RECHAZADO' && ['BURO_NO_CALIFICA', 'CLIENTE_CON_MALA_DEUDA', 'CONYUGE_NO_CALIFICA'].includes(rechazoMotivo)) return false;
+
+  return (Boolean(semaforo) && semaforo !== 'ROJO') ||
+    isCalculatorApproved(sale, states) ||
+    hasAnyState(states, DOCUMENTED_OR_LATER_STATES) ||
+    ['SCORE_BCP_NO_CALIFICA', 'CALCULADORA_NO_CALIFICA', 'DOCUMENTOS_INVALIDOS', 'BCP_RECHAZA'].includes(rechazoMotivo);
+};
+
+const FUNNEL_STAGES = [
+  {
+    etapa: 'Prospectos',
+    descripcion: 'Prospectos registrados por vendedores',
+    reached: () => true
+  },
+  {
+    etapa: 'Verificacion OK',
+    descripcion: 'Pasaron filtro de sistema y conyuge si aplica',
+    reached: hasPassedEvaluation
+  },
+  {
+    etapa: 'Score BCP',
+    descripcion: 'Pasaron o llegaron a score interno BCP',
+    reached: (sale: any, states: Set<string>) => hasAnyState(states, ['SCORE_BCP', 'PENDIENTE_BOLETA', 'EVALUACION_CALCULADORA', 'COTIZACION_ENVIADA', ...DOCUMENTED_OR_LATER_STATES]) ||
+      ['SCORE_BCP_NO_CALIFICA', 'CALCULADORA_NO_CALIFICA', 'DOCUMENTOS_INVALIDOS', 'BCP_RECHAZA'].includes(String(sale.rechazo_motivo || ''))
+  },
+  {
+    etapa: 'Calculadora aprobada',
+    descripcion: 'Simulacion calificada para continuar',
+    reached: isCalculatorApproved
+  },
+  {
+    etapa: 'Cliente acepto',
+    descripcion: 'Acepto la propuesta y pasa a documentar',
+    reached: (sale: any, states: Set<string>) => hasAnyState(states, DOCUMENTED_OR_LATER_STATES) ||
+      ['DOCUMENTOS_INVALIDOS', 'BCP_RECHAZA'].includes(String(sale.rechazo_motivo || ''))
+  },
+  {
+    etapa: 'File validado',
+    descripcion: 'Back office valido el expediente',
+    reached: (sale: any, states: Set<string>) => hasAnyState(states, FILE_VALIDATED_OR_LATER_STATES) ||
+      String(sale.rechazo_motivo || '') === 'BCP_RECHAZA'
+  },
+  {
+    etapa: 'Enviado a BCP',
+    descripcion: 'File enviado a BCP para remesa',
+    reached: (sale: any, states: Set<string>) => hasAnyState(states, SENT_BCP_OR_LATER_STATES) ||
+      String(sale.rechazo_motivo || '') === 'BCP_RECHAZA'
+  },
+  {
+    etapa: 'Remesa aprobada',
+    descripcion: 'BCP aprobo remesa completa o reducida',
+    reached: (_sale: any, states: Set<string>) => hasAnyState(states, REMESA_APPROVED_OR_LATER_STATES)
+  },
+  {
+    etapa: 'Desembolsado',
+    descripcion: 'Credito desembolsado',
+    reached: (_sale: any, states: Set<string>) => states.has('DESEMBOLSADO')
+  }
 ];
 
 router.get('/funnel', authMiddleware, async (req: any, res: any) => {
@@ -472,61 +715,66 @@ router.get('/funnel', authMiddleware, async (req: any, res: any) => {
 
     const sales = await prisma.sale.findMany({
       where: whereClause,
-      select: { id: true, estado: true, maf_neto: true, convenio: true }
+      select: {
+        id: true,
+        estado: true,
+        maf_neto: true,
+        convenio: true,
+        rcc_semaforo: true,
+        rechazo_motivo: true,
+        calculadora_estado: true,
+        simulacion_dictamen: true,
+        simulacion_id: true,
+        audit_logs: {
+          select: { estado_nuevo: true },
+          where: { estado_nuevo: { not: null } }
+        }
+      }
     });
 
-    // Agrupar por etapa
-    const etapas: Record<string, { cantidad: number; monto_total: number; estados: Record<string, { cantidad: number; monto: number }> }> = {};
+    const reachedBySale = sales.map((sale) => ({
+      sale,
+      states: new Set([
+        sale.estado,
+        ...(sale.audit_logs || []).map((log) => log.estado_nuevo).filter(Boolean) as string[]
+      ])
+    }));
 
-    for (const etapa of ETAPA_ORDEN) {
-      etapas[etapa] = { cantidad: 0, monto_total: 0, estados: {} };
-    }
-
-    for (const sale of sales) {
-      const etapa = ETAPA_MAP[sale.estado] || 'Otros';
-      if (!etapas[etapa]) etapas[etapa] = { cantidad: 0, monto_total: 0, estados: {} };
-      etapas[etapa].cantidad++;
-      etapas[etapa].monto_total += sale.maf_neto;
-      if (!etapas[etapa].estados[sale.estado]) etapas[etapa].estados[sale.estado] = { cantidad: 0, monto: 0 };
-      etapas[etapa].estados[sale.estado].cantidad++;
-      etapas[etapa].estados[sale.estado].monto += sale.maf_neto;
-    }
-
-    // Construir funnel con tasas de conversión
-    const funnel = ETAPA_ORDEN.map((nombre, idx) => {
-      const data = etapas[nombre] || { cantidad: 0, monto_total: 0, estados: {} };
-      const tasa_entrada = sales.length > 0 ? (data.cantidad / sales.length) * 100 : 0;
-
-      // Tasa de conversión vs etapa anterior (excepto primera y última)
-      let tasa_conversion = 0;
-      if (idx > 0 && idx < ETAPA_ORDEN.length - 1) {
-        const etapaAnterior = etapas[ETAPA_ORDEN[idx - 1]];
-        tasa_conversion = etapaAnterior.cantidad > 0 ? (data.cantidad / etapaAnterior.cantidad) * 100 : 0;
-      }
+    const funnel = FUNNEL_STAGES.map((stage, idx) => {
+      const stageSales = reachedBySale.filter(({ sale, states }) => stage.reached(sale, states));
+      const previousCount = idx === 0
+        ? stageSales.length
+        : reachedBySale.filter(({ sale, states }) => FUNNEL_STAGES[idx - 1].reached(sale, states)).length;
+      const cantidad = stageSales.length;
+      const montoTotal = stageSales.reduce((acc, { sale }) => acc + Number(sale.maf_neto || 0), 0);
+      const tasaEntrada = sales.length > 0 ? (cantidad / sales.length) * 100 : 0;
+      const tasaConversion = idx === 0
+        ? 100
+        : previousCount > 0 ? (cantidad / previousCount) * 100 : 0;
 
       return {
-        etapa: nombre,
+        etapa: stage.etapa,
+        descripcion: stage.descripcion,
         orden: idx + 1,
-        cantidad: data.cantidad,
-        monto_total: Math.round(data.monto_total * 100) / 100,
-        tasa_entrada_pct: Math.round(tasa_entrada * 10) / 10,
-        tasa_conversion_pct: Math.round(tasa_conversion * 10) / 10,
-        estados_detalle: data.estados
-      };
+        cantidad,
+        monto_total: Math.round(montoTotal * 100) / 100,
+        tasa_entrada_pct: Math.round(tasaEntrada * 10) / 10,
+        tasa_conversion_pct: Math.round(tasaConversion * 10) / 10,
+        estados_detalle: {}
+      }
     });
 
-    // Tasa de conversión global (Registro → Desembolso)
-    const totalRegistro = etapas['Registro']?.cantidad || 0;
-    const totalDesembolso = etapas['Desembolso']?.cantidad || 0;
+    const totalRegistro = funnel[0]?.cantidad || 0;
+    const totalDesembolso = funnel[funnel.length - 1]?.cantidad || 0;
     const conversionGlobal = totalRegistro > 0 ? (totalDesembolso / totalRegistro) * 100 : 0;
 
     res.json({
       funnel,
       resumen: {
         total_expedientes: sales.length,
-        monto_total_pipeline: Math.round(sales.reduce((acc, s) => acc + s.maf_neto, 0) * 100) / 100,
+        monto_total_pipeline: Math.round(sales.reduce((acc, s) => acc + Number(s.maf_neto || 0), 0) * 100) / 100,
         conversion_global_pct: Math.round(conversionGlobal * 10) / 10,
-        etapas_activas: ETAPA_ORDEN.filter(e => (etapas[e]?.cantidad || 0) > 0).length
+        etapas_activas: funnel.filter(e => e.cantidad > 0).length
       }
     });
   } catch (error) {
@@ -640,18 +888,14 @@ router.get('/tiempos', authMiddleware, async (req: any, res: any) => {
     const ahora = new Date();
     const tiempoEnEstado = ventasActivas.map(sale => {
       const inicio = (sale as any).fecha_estado_desde || sale.created_at;
-      const diffMs = ahora.getTime() - inicio.getTime();
       return {
         sale_id: sale.id,
         cliente: sale.nombres_cliente,
-        estado: sale.estado,
-        dias_en_estado: Math.round(diffMs / (1000 * 60 * 60 * 24)),
-        horas_en_estado: Math.round(diffMs / (1000 * 60 * 60))
+        ...getSlaInfo(sale.estado, inicio, ahora)
       };
-    }).sort((a, b) => b.dias_en_estado - a.dias_en_estado);
+    }).sort((a, b) => (b.progreso_pct || 0) - (a.progreso_pct || 0));
 
-    // Alertas: expedientes >5 días sin movimiento
-    const alertas = tiempoEnEstado.filter(t => t.dias_en_estado > 5);
+    const alertas = tiempoEnEstado.filter(t => t.vencido || t.nivel === 'POR_VENCER');
 
     res.json({
       transiciones: tiemposPorTransicion,
@@ -662,7 +906,9 @@ router.get('/tiempos', authMiddleware, async (req: any, res: any) => {
       expedientes_activos: tiempoEnEstado,
       alertas_inactividad: {
         total: alertas.length,
-        criticos: alertas.filter(a => a.dias_en_estado > 10).length,
+        criticos: alertas.filter(a => a.nivel === 'CRITICO').length,
+        vencidos: alertas.filter(a => a.vencido).length,
+        por_vencer: alertas.filter(a => a.nivel === 'POR_VENCER').length,
         expedientes: alertas
       }
     });
@@ -703,39 +949,7 @@ router.get('/kanban', authMiddleware, async (req: any, res: any) => {
       orderBy: { fecha_ingreso: 'desc' }
     });
 
-    // Definir columnas del Kanban (14 estados — flujo BCP completo)
-    const columnas = [
-      { key: 'PROSPECTO_NUEVO', label: 'Prospecto', color: '#6B7280', seccion: 'registro' },
-      { key: 'PENDIENTE_DATOS', label: 'Pte. Datos', color: '#F59E0B', seccion: 'registro' },
-      { key: 'PENDIENTE_DOCUMENTOS', label: 'Pte. Docs', color: '#D97706', seccion: 'documentos' },
-      { key: 'LISTO_SCORE', label: 'Listo Score', color: '#3B82F6', seccion: 'score' },
-      { key: 'SCORE_APROBADO', label: 'Score Aprobado', color: '#10B981', seccion: 'score' },
-      { key: 'SIMULACION_ACEPTADA', label: 'Simulacion', color: '#0891B2', seccion: 'simulacion' },
-      { key: 'ENVIADO_CONVENIO', label: 'En Convenio', color: '#4F46E5', seccion: 'convenio' },
-      { key: 'CONVENIO_APROBADO', label: 'Convenio OK', color: '#0D9488', seccion: 'convenio' },
-      { key: 'PREPARANDO_BCP', label: 'Preparando BCP', color: '#7C3AED', seccion: 'bcp' },
-      { key: 'ENVIADO_BCP', label: 'Enviado BCP', color: '#2563EB', seccion: 'bcp' },
-      { key: 'APROBADO_BCP', label: 'Aprobado BCP', color: '#10B981', seccion: 'bcp' },
-      { key: 'OBSERVADO', label: 'Observado', color: '#EA580C', seccion: 'observado' },
-      // Flujo original
-      { key: 'POR INGRESAR', label: 'Por Ingresar', color: '#6B7280', seccion: 'recojo' },
-      { key: 'EN PROCESO', label: 'En Proceso', color: '#3B82F6', seccion: 'evaluacion' },
-      { key: 'OBSERVADA', label: 'Observada', color: '#F59E0B', seccion: 'evaluacion' },
-      { key: 'SUBSANADA', label: 'Subsanada', color: '#8B5CF6', seccion: 'evaluacion' },
-      // Flujo BCP extendido
-      { key: 'PENDIENTE_DOCUMENTAR', label: 'Pte. Documentar', color: '#D97706', seccion: 'pendientes' },
-      { key: 'PENDIENTE_INSTITUCIONES', label: 'Pte. Instituciones', color: '#7C3AED', seccion: 'pendientes' },
-      { key: 'PENDIENTE_REMESA', label: 'Pte. Remesa', color: '#0891B2', seccion: 'pendientes' },
-      { key: 'PENDIENTE_BACK_OFFICE', label: 'Pte. Back Office', color: '#4F46E5', seccion: 'back_office' },
-      { key: 'OBSERVADO_BACK', label: 'Observado Back', color: '#EA580C', seccion: 'back_office' },
-      { key: 'EN_EVALUACION_BCP', label: 'Evaluación BCP', color: '#2563EB', seccion: 'bcp' },
-      // Finales
-      { key: 'APROBADA', label: 'Aprobada', color: '#10B981', seccion: 'final' },
-      { key: 'DESEMBOLSADO', label: 'Desembolsado', color: '#22C55E', seccion: 'final' },
-      { key: 'RECHAZADO', label: 'Rechazado', color: '#EF4444', seccion: 'rechazo' },
-      { key: 'RECHAZADA_POR_SCORE', label: 'Rechazada Score', color: '#DC2626', seccion: 'rechazo' },
-      { key: 'BOLETA_NO_CALIFICA', label: 'Boleta No Califica', color: '#B91C1C', seccion: 'rechazo' },
-    ];
+    const columnas = KANBAN_COLUMNS;
 
     const kanban: Record<string, any[]> = {};
     for (const col of columnas) {
@@ -745,7 +959,7 @@ router.get('/kanban', authMiddleware, async (req: any, res: any) => {
     const ahora = new Date();
     for (const sale of sales) {
       const inicioEstado = (sale as any).fecha_estado_desde || sale.created_at;
-      const diasEnEstado = Math.round((ahora.getTime() - new Date(inicioEstado).getTime()) / (1000 * 60 * 60 * 24));
+      const sla = getSlaInfo(sale.estado, inicioEstado, ahora);
 
       const card = {
         id: sale.id,
@@ -755,8 +969,15 @@ router.get('/kanban', authMiddleware, async (req: any, res: any) => {
         monto: sale.maf_neto,
         estado: sale.estado,
         asesor: sale.asesor,
-        dias_en_estado: diasEnEstado,
-        alerta: diasEnEstado > 5,
+        dias_en_estado: sla.dias_en_estado,
+        horas_en_estado: sla.horas_en_estado,
+        sla_dias: sla.sla_dias,
+        sla_nivel: sla.nivel,
+        sla_responsable: sla.sla_responsable,
+        sla_progreso_pct: sla.progreso_pct,
+        dias_restantes: sla.dias_restantes,
+        siguiente_accion: sla.siguiente_accion,
+        alerta: sla.vencido || sla.nivel === 'POR_VENCER',
         fecha_ingreso: sale.fecha_ingreso,
         simulacion_cuota: (sale as any).simulacion_cuota || null
       };
@@ -1030,7 +1251,7 @@ router.get('/reporte-semanal', authMiddleware, async (req: any, res: any) => {
       transicionesSemana[key] = (transicionesSemana[key] || 0) + 1;
     }
 
-    // 5. Expedientes estancados (>5 días sin movimiento)
+    // 5. Expedientes fuera de SLA o por vencer
     const ventasActivas = await prisma.sale.findMany({
       where: {
         ...filter,
@@ -1040,16 +1261,19 @@ router.get('/reporte-semanal', authMiddleware, async (req: any, res: any) => {
     });
 
     const estancados = ventasActivas
-      .filter(s => {
-        const inicio = (s as any).fecha_estado_desde || new Date();
-        const dias = Math.round((ahora.getTime() - inicio.getTime()) / (1000 * 60 * 60 * 24));
-        return dias > 5;
+      .map(s => {
+        const sla = getSlaInfo(s.estado, (s as any).fecha_estado_desde || ahora, ahora);
+        return {
+          cliente: s.nombres_cliente,
+          estado: s.estado,
+          dias: sla.dias_en_estado,
+          sla_dias: sla.sla_dias,
+          nivel: sla.nivel,
+          responsable: sla.sla_responsable,
+          siguiente_accion: sla.siguiente_accion
+        };
       })
-      .map(s => ({
-        cliente: s.nombres_cliente,
-        estado: s.estado,
-        dias: Math.round((ahora.getTime() - ((s as any).fecha_estado_desde || ahora).getTime()) / (1000 * 60 * 60 * 24))
-      }))
+      .filter(s => ['POR_VENCER', 'VENCIDO', 'CRITICO'].includes(s.nivel))
       .sort((a, b) => b.dias - a.dias);
 
     // 6. Top asesores de la semana

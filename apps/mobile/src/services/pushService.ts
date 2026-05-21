@@ -94,7 +94,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
     console.log('Push token registrado:', pushToken.substring(0, 30) + '...');
     return pushToken;
   } catch (error) {
-    console.error('Error al registrar push token:', error);
+    console.warn('Error al registrar push token:', error);
     return null;
   }
 }
@@ -107,7 +107,7 @@ export async function unregisterPushToken(): Promise<void> {
     await api.delete('/notifications/push-token');
     console.log('Push token eliminado del backend');
   } catch (error) {
-    console.error('Error al eliminar push token:', error);
+    console.warn('Error al eliminar push token:', error);
   }
 }
 
@@ -119,7 +119,7 @@ export async function checkPushTokenStatus(): Promise<{ has_token: boolean; toke
     const res = await api.get('/notifications/push-token/status');
     return res.data;
   } catch (error) {
-    console.error('Error al verificar push token:', error);
+    console.warn('Error al verificar push token:', error);
     return { has_token: false, token_preview: null };
   }
 }

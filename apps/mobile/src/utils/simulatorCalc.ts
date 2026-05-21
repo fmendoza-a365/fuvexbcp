@@ -7,12 +7,15 @@ export const DIA_VENCIMIENTO_DEFAULT = 15;
 export const MESES_PRIMER_VENCIMIENTO = 3;
 
 export function calcTEM(tea: number): number {
+  if (!Number.isFinite(tea)) return 0;
   return Math.pow(1 + tea, 1 / 12) - 1;
 }
 
 export function calcFactorInteresMensualExcel(tea: number): number {
+  if (!Number.isFinite(tea)) return 0;
   const tna365 = (((1 + tea) ** (1 / 12) - 1) * 12) * 365 / 360;
-  return (tna365 / 365) * 31;
+  const factor = (tna365 / 365) * 31;
+  return Number.isFinite(factor) ? factor : 0;
 }
 
 export function getTasaDesgravamenMensual(tipo: string, modalidad: string): number {
@@ -45,8 +48,10 @@ export function parseFechaLocal(value: string | Date): Date {
 }
 
 export function calcCuotaFrancesa(monto: number, tem: number, n: number): number {
+  if (!Number.isFinite(monto) || !Number.isFinite(tem) || !Number.isFinite(n)) return 0;
   if (tem === 0 || n === 0) return 0;
-  return monto * tem / (1 - Math.pow(1 + tem, -n));
+  const cuota = monto * tem / (1 - Math.pow(1 + tem, -n));
+  return Number.isFinite(cuota) ? cuota : 0;
 }
 
 export function calcCEM(ind: number, totalCuotasExternas: number): number {
@@ -75,6 +80,9 @@ export function generarCronograma(
   tasaDesgravamenMensual: number = TASA_DESGRAVAMEN_MENSUAL,
   ajusteCuotaCronograma: number = AJUSTE_CUOTA_CRONOGRAMA
 ): { cronograma: CronogramaRow[]; totales: { interes: number; desgravamen: number; cuota: number } } {
+  if (!Number.isFinite(monto) || !Number.isFinite(factorInteresMensual) || !Number.isFinite(nCuotas) || nCuotas <= 0) {
+    return { cronograma: [], totales: { interes: 0, desgravamen: 0, cuota: 0 } };
+  }
   const factorDesgravamenMensual = (tasaDesgravamenMensual * 12 / 365) * 31;
   const factorTotalMensual = factorInteresMensual + factorDesgravamenMensual;
   const rows: CronogramaRow[] = [];
@@ -139,6 +147,7 @@ export function generarCronograma(
 }
 
 export function calcTCEA(monto: number, cuotaTotal: number, nCuotas: number): number {
+  if (!Number.isFinite(monto) || !Number.isFinite(cuotaTotal) || !Number.isFinite(nCuotas)) return 0;
   if (monto <= 0 || cuotaTotal <= 0 || nCuotas <= 0) return 0;
   let tirMensual = cuotaTotal / monto;
   for (let iter = 0; iter < 100; iter++) {
@@ -150,12 +159,16 @@ export function calcTCEA(monto: number, cuotaTotal: number, nCuotas: number): nu
       df -= t * cuotaTotal * disc / (1 + tirMensual);
     }
     const adj = f / df;
+    if (!Number.isFinite(adj)) return 0;
     tirMensual -= adj;
+    if (!Number.isFinite(tirMensual) || tirMensual <= -0.99) return 0;
     if (Math.abs(adj) < 1e-10) break;
   }
-  return Math.pow(1 + tirMensual, 12) - 1;
+  const tcea = Math.pow(1 + tirMensual, 12) - 1;
+  return Number.isFinite(tcea) ? tcea : 0;
 }
 
 export function fmt(n: number): string {
-  return n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const safe = Number.isFinite(n) ? n : 0;
+  return safe.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

@@ -32,14 +32,34 @@ export default function DniSearch() {
     }
   };
 
+  const fechaCaducidad = result?.fecha_caducidad ? new Date(result.fecha_caducidad) : null;
+  const documentoCaducado = fechaCaducidad && !Number.isNaN(fechaCaducidad.getTime())
+    ? fechaCaducidad < new Date()
+    : null;
+  const camposAdicionales = result ? [
+    { label: 'Sexo', value: result.sexo },
+    { label: 'RUC 10', value: result.ruc10 },
+    { label: 'Digito RUC', value: result.digito_ruc },
+    { label: 'Digito verificador', value: result.digito_verificador },
+    { label: 'Fecha de emision', value: result.fecha_emision },
+    { label: 'Fecha de inscripcion', value: result.fecha_inscripcion },
+    { label: 'Ubigeo nacimiento', value: result.ubigeo_nacimiento },
+    { label: 'Departamento', value: result.departamento },
+    { label: 'Provincia', value: result.provincia },
+    { label: 'Distrito', value: result.distrito },
+    { label: 'Grado instruccion', value: result.grado_instruccion },
+    { label: 'Estatura', value: result.estatura },
+    { label: 'Restricciones', value: result.restricciones }
+  ].filter((field) => field.value) : [];
+
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex justify-between items-end">
+    <div className="page-shell animate-in fade-in duration-500">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold text-text-900 tracking-tight uppercase">
+          <h1 className="page-title">
             Buscador <span className="text-[var(--color-bcp-blue)]">RENIEC</span>
           </h1>
-          <p className="text-text-700 text-sm font-medium mt-1">Consulta integral de identidad nacional</p>
+          <p className="page-subtitle">Consulta integral de identidad nacional</p>
         </div>
       </div>
 
@@ -62,7 +82,7 @@ export default function DniSearch() {
                   type="text"
                   maxLength={8}
                   placeholder="Ej. 73024896"
-                  className="w-full pl-12 pr-4 py-3 bg-surface-50 border-none rounded-2xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-[var(--color-bcp-blue-light)] transition-all"
+                  className="field-input !pl-12 !py-3"
                   value={dni}
                   onChange={(e) => setDni(e.target.value.replace(/\D/g, ''))}
                 />
@@ -99,7 +119,7 @@ export default function DniSearch() {
               <User size={36} />
             </div>
             <div className="flex-1">
-              <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight leading-tight">{result.nombre_completo}</h2>
+              <h2 className="text-2xl font-black text-text-900 uppercase tracking-tight leading-tight">{result.nombre_completo}</h2>
               <div className="flex flex-wrap gap-4 mt-2">
                 <span className="flex items-center gap-1.5 text-[10px] font-black text-text-700 uppercase tracking-widest bg-surface-100 px-3 py-1 rounded-full"><CreditCard size={14} className="text-[var(--color-bcp-blue)]"/> {result.dni}</span>
                 <span className="flex items-center gap-1.5 text-[10px] font-black text-text-700 uppercase tracking-widest bg-surface-100 px-3 py-1 rounded-full"><Shield size={14} className="text-emerald-600"/> {result.estado_civil}</span>
@@ -114,8 +134,8 @@ export default function DniSearch() {
                 <div className="flex items-center gap-3">
                   <div className="p-3 bg-surface-50 rounded-2xl text-[var(--color-bcp-orange)]"><Calendar size={18}/></div>
                   <div>
-                    <div className="text-lg font-bold text-slate-800">{result.fecha_nacimiento}</div>
-                    <div className="text-[10px] font-black text-[var(--color-bcp-orange)] uppercase tracking-widest">{result.edad} años cumplidos</div>
+                    <div className="text-lg font-bold text-text-900">{result.fecha_nacimiento}</div>
+                    <div className="text-[10px] font-black text-[var(--color-bcp-orange)] uppercase tracking-widest">{result.edad || 'Edad no disponible'}</div>
                   </div>
                 </div>
               </div>
@@ -125,7 +145,7 @@ export default function DniSearch() {
                 <div className="flex items-start gap-3">
                   <div className="p-3 bg-surface-50 rounded-2xl text-[var(--color-bcp-blue)] mt-1"><MapPin size={18}/></div>
                   <div>
-                    <div className="text-sm font-bold text-slate-800 leading-snug">{result.direccion}</div>
+                    <div className="text-sm font-bold text-text-900 leading-snug">{result.direccion}</div>
                     <div className="text-[10px] font-black text-text-700 uppercase tracking-widest mt-1 opacity-70">{result.ubigeo}</div>
                   </div>
                 </div>
@@ -138,33 +158,46 @@ export default function DniSearch() {
                 <div className="bg-surface-50 p-5 rounded-3xl space-y-3">
                   <div className="flex justify-between items-center border-b border-white/50 pb-2">
                     <span className="text-[10px] font-bold text-text-700 uppercase">Madre</span>
-                    <span className="text-xs font-black text-slate-800 uppercase">{result.madre}</span>
+                    <span className="text-xs font-black text-text-900 uppercase">{result.madre}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1">
                     <span className="text-[10px] font-bold text-text-700 uppercase">Padre</span>
-                    <span className="text-xs font-black text-slate-800 uppercase">{result.padre}</span>
+                    <span className="text-xs font-black text-text-900 uppercase">{result.padre}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-[rgba(0,42,141,0.03)] p-5 rounded-3xl border border-blue-50">
+              <div className="bg-[var(--accent-blue-soft)] p-5 rounded-lg border border-surface-200">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <Shield size={16} className="text-[var(--color-bcp-blue)]" />
                     <span className="text-[10px] font-black text-text-700 uppercase tracking-widest">Estado del Documento</span>
                   </div>
-                  <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${new Date(result.fecha_caducidad) < new Date() ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                    {new Date(result.fecha_caducidad) < new Date() ? 'CADUCADO' : 'VIGENTE'}
+                  <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${documentoCaducado === true ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                    {documentoCaducado === null ? 'NO DISPONIBLE' : documentoCaducado ? 'CADUCADO' : 'VIGENTE'}
                   </span>
                 </div>
                 <div className="mt-2 text-right">
-                  <span className="text-[9px] font-bold text-text-500 uppercase">Vence: {result.fecha_caducidad}</span>
+                  <span className="text-[9px] font-bold text-text-500 uppercase">Vence: {result.fecha_caducidad || 'No disponible'}</span>
                 </div>
               </div>
             </div>
           </div>
+            {camposAdicionales.length > 0 && (
+              <div className="mt-8 pt-6 border-t border-surface-200">
+                <span className="text-[10px] font-black text-text-500 uppercase tracking-[0.2em] mb-4 block">Datos adicionales del proveedor</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {camposAdicionales.map((field) => (
+                    <div key={field.label} className="bg-surface-50 rounded-2xl px-4 py-3">
+                      <div className="text-[9px] font-black text-text-500 uppercase tracking-widest">{field.label}</div>
+                      <div className="text-xs font-black text-text-900 uppercase mt-1 break-words">{field.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           <div className="absolute -bottom-6 -right-6 p-8 opacity-[0.02] group-hover:scale-110 group-hover:-rotate-6 transition-all duration-700">
-             <User size={160} />
+            <User size={160} />
           </div>
         </div>
       )}

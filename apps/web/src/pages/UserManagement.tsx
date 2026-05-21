@@ -193,16 +193,16 @@ export default function UserManagement() {
   );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="page-shell animate-in fade-in duration-500">
       {/* Header Sincronizado */}
-      <div className="flex justify-between items-center">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold text-text-900 tracking-tight uppercase">
+          <h1 className="page-title">
             Gestión de <span className="text-[var(--color-bcp-blue)]">Usuarios</span>
           </h1>
-          <p className="text-text-700 text-sm font-medium mt-1">Control de accesos y jerarquías operativas</p>
+          <p className="page-subtitle">Control de accesos y jerarquías operativas</p>
         </div>
-        <div className="flex gap-3">
+        <div className="page-actions">
           <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleBulkUpload} />
           <button onClick={() => { setBulkResults(null); setBulkError(''); setIsBulkModalOpen(true); }} className="action-button-secondary">
             <Upload size={18} /> Carga Masiva
@@ -247,7 +247,7 @@ export default function UserManagement() {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
                        <Shield size={14} className="text-blue-600" />
-                       <span className="px-3 py-1 bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] rounded-full text-[10px] font-black uppercase tracking-wider">
+                       <span className="px-3 py-1 bg-[var(--accent-blue-soft)] text-[var(--accent-blue)] rounded-full text-[10px] font-black uppercase tracking-wider">
                          {u.role}
                        </span>
                     </div>
@@ -278,7 +278,7 @@ export default function UserManagement() {
                     <div className="flex items-center justify-center gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
                       <button 
                         onClick={() => openModal(u)}
-                        className="p-2 text-text-700 hover:text-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)] rounded-xl transition-all" title="Editar">
+                        className="p-2 text-text-700 hover:text-[var(--accent-blue)] hover:bg-[var(--accent-blue-soft)] rounded-xl transition-all" title="Editar">
                         <Edit2 size={16} />
                       </button>
                     </div>
@@ -321,7 +321,7 @@ export default function UserManagement() {
               {/* Upload area */}
               <div 
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-surface-300 hover:border-[var(--color-bcp-blue)] rounded-2xl p-10 text-center cursor-pointer transition-all hover:bg-[rgba(0,42,141,0.02)]"
+                className="border-2 border-dashed border-surface-200 hover:border-[var(--accent-blue)] rounded-lg p-10 text-center cursor-pointer transition-all hover:bg-[var(--accent-blue-soft)]"
               >
                 {bulkLoading ? (
                   <div className="flex flex-col items-center gap-3">

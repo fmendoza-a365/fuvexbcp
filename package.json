@@ -2,7 +2,30 @@
   "name": "fuvex-manager-a365",
   "version": "1.0.0",
   "private": true,
+  "scripts": {
+    "build:backend": "npm run build --workspace backend",
+    "build:web": "npm run build --workspace web",
+    "test:backend": "npm run test --workspace backend",
+    "typecheck:mobile": "npx tsc -p apps/mobile/tsconfig.json --noEmit",
+    "prod:env:check": "npm run check:production-env --workspace backend",
+    "preflight:production": "sh scripts/preflight-production.sh",
+    "db:pg:migrate": "sh scripts/postgres-migrate.sh",
+    "db:pg:seed": "sh scripts/postgres-seed.sh",
+    "db:pg:backup": "sh scripts/backup-postgres.sh",
+    "db:pg:restore": "sh scripts/restore-postgres.sh",
+    "local:linux": "bash scripts/local-linux.sh"
+  },
   "workspaces": [
     "apps/*"
-  ]
+  ],
+  "overrides": {
+    "basic-ftp": "^6.0.1",
+    "d3-color": "^3.1.0",
+    "d3-interpolate": "^3.0.1",
+    "postcss": "^8.5.10"
+  },
+  "optionalDependencies": {
+    "@tailwindcss/oxide-linux-x64-gnu": "^4.2.4",
+    "lightningcss-linux-x64-gnu": "^1.32.0"
+  }
 }

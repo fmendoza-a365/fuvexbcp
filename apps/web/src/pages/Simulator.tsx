@@ -257,14 +257,14 @@ export default function Simulator() {
   );
 
   return (
-    <div className="max-w-full space-y-8 pb-20 animate-in fade-in duration-500">
+    <div className="max-w-full page-shell pb-20 animate-in fade-in duration-500">
       {/* Header Estilo Screenshot */}
-      <div className="flex justify-between items-start">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--color-bcp-blue)] tracking-tight uppercase">
-            SIMULADOR <span className="text-text-900">BCP PREMIUM</span>
+          <h1 className="page-title">
+            Simulador <span>BCP</span>
           </h1>
-          <p className="text-text-700 text-sm font-medium mt-1">Evaluación de Riesgo y Capacidad de Pago</p>
+          <p className="page-subtitle">Evaluación de riesgo y capacidad de pago</p>
         </div>
         <button
           onClick={handleSimulate}

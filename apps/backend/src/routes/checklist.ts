@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { canAccessSale } from '../services/hierarchy';
+import { getEstadoLabel } from '../middleware/validate';
 
 const router = Router();
 
@@ -165,7 +166,20 @@ router.get('/:id/tiempo-estado', authMiddleware, async (req: any, res: any) => {
 router.put('/:id/simulacion', authMiddleware, async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    const { simulacion_cuota, simulacion_tea, simulacion_plazo, simulacion_monto, simulacion_id } = req.body;
+    const {
+      simulacion_cuota,
+      simulacion_tea,
+      simulacion_plazo,
+      simulacion_monto,
+      simulacion_id,
+      calculadora_estado,
+      simulacion_dictamen,
+      simulacion_payload,
+      simulacion_resultado,
+      rechazo_motivo,
+      rechazo_detalle,
+      cliente_acepta
+    } = req.body;
 
     const sale = await prisma.sale.findUnique({ where: { id } });
     if (!sale) {
@@ -177,14 +191,49 @@ router.put('/:id/simulacion', authMiddleware, async (req: any, res: any) => {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      const data: any = {
+        simulacion_cuota: simulacion_cuota ? Number(simulacion_cuota) : null,
+        simulacion_tea: simulacion_tea ? Number(simulacion_tea) : null,
+        simulacion_plazo: simulacion_plazo ? Number(simulacion_plazo) : null,
+        simulacion_monto: simulacion_monto ? Number(simulacion_monto) : null,
+        simulacion_id: simulacion_id || null,
+        calculadora_estado: calculadora_estado || null,
+        simulacion_dictamen: simulacion_dictamen || null,
+        simulacion_payload: typeof simulacion_payload === 'string'
+          ? simulacion_payload
+          : simulacion_payload
+            ? JSON.stringify(simulacion_payload)
+            : null,
+        simulacion_resultado: typeof simulacion_resultado === 'string'
+          ? simulacion_resultado
+          : simulacion_resultado
+            ? JSON.stringify(simulacion_resultado)
+            : null
+      };
+
+      if (calculadora_estado === 'RECHAZADO') {
+        data.estado = 'RECHAZADO';
+        data.rechazo_motivo = rechazo_motivo || 'CALCULADORA_NO_CALIFICA';
+        data.rechazo_detalle = rechazo_detalle || 'La simulacion no califica para continuar.';
+        data.fecha_estado_desde = new Date();
+      } else if (['PROSPECTO_NUEVO', 'PENDIENTE_BOLETA', 'EVALUACION_CALCULADORA'].includes(sale.estado) && (calculadora_estado === 'APROBADO' || simulacion_dictamen === 'CONTINUAR')) {
+        data.estado = cliente_acepta ? 'PENDIENTE_DATOS_FILE' : 'COTIZACION_ENVIADA';
+        data.cotizacion_enviada_at = new Date();
+        data.cotizacion_monto = simulacion_monto ? Number(simulacion_monto) : null;
+        data.cotizacion_cuota = simulacion_cuota ? Number(simulacion_cuota) : null;
+        data.cotizacion_plazo = simulacion_plazo ? Number(simulacion_plazo) : null;
+        data.fecha_estado_desde = new Date();
+      } else if (sale.estado === 'PENDIENTE_ACEPTACION_CLIENTE' && cliente_acepta) {
+        data.estado = 'PENDIENTE_DATOS_FILE';
+        data.cotizacion_aceptada_at = new Date();
+        data.fecha_estado_desde = new Date();
+      }
+
       const updatedSale = await tx.sale.update({
         where: { id },
         data: {
-          simulacion_cuota: simulacion_cuota ? Number(simulacion_cuota) : null,
-          simulacion_tea: simulacion_tea ? Number(simulacion_tea) : null,
-          simulacion_plazo: simulacion_plazo ? Number(simulacion_plazo) : null,
-          simulacion_monto: simulacion_monto ? Number(simulacion_monto) : null,
-          simulacion_id: simulacion_id || null
+          ...data,
+          version: { increment: 1 }
         }
       });
 
@@ -246,57 +295,13 @@ function getNextSteps(sale: any, role: string) {
     rol_responsable: string;
   }> = [];
 
-  const estadoOrden = [
-    'POR INGRESAR',
-    'EN PROCESO',
-    'APROBADA',
-    'CONFORMIDAD',
-    'DESEMBOLSADO'
-  ];
-
-  const idxActual = estadoOrden.indexOf(sale.estado);
-
-  // Si el expediente está en estado especial
-  if (sale.estado === 'OBSERVADA') {
-    steps.push(
-      {
-        paso: 1, titulo: 'Registro de Datos',
-        descripcion: 'Datos del cliente registrados',
-        estado: 'COMPLETADO', rol_responsable: 'VENDEDOR'
-      },
-      {
-        paso: 2, titulo: 'Evaluación',
-        descripcion: 'El expediente fue observado por el supervisor',
-        estado: 'ACTUAL',
-        accion: 'Subsanar observaciones y reenviar a Supervisor',
-        rol_responsable: 'VENDEDOR'
-      },
-      {
-        paso: 3, titulo: 'Re-evaluación',
-        descripcion: 'Supervisor revisará las correcciones',
-        estado: 'BLOQUEADO', rol_responsable: 'SUPERVISOR'
-      },
-      {
-        paso: 4, titulo: 'Aprobación',
-        descripcion: 'Esperando aprobación',
-        estado: 'BLOQUEADO', rol_responsable: 'SUPERVISOR'
-      },
-      {
-        paso: 5, titulo: 'Desembolso',
-        descripcion: 'Tramitación final',
-        estado: 'BLOQUEADO', rol_responsable: 'BACK_OFFICE'
-      }
-    );
-    return steps;
-  }
-
   if (sale.estado === 'RECHAZADO') {
     steps.push(
       {
         paso: 1, titulo: 'Expediente Rechazado',
-        descripcion: `El expediente fue rechazado. Motivo: ${sale.feedback || 'No especificado'}`,
+        descripcion: `El expediente fue rechazado. Motivo: ${sale.rechazo_motivo || sale.feedback || 'No especificado'}`,
         estado: 'ACTUAL',
-        accion: 'Contactar al cliente y evaluar reingreso',
+        accion: 'Revisar motivo y decidir si corresponde reingresar el prospecto',
         rol_responsable: role
       }
     );
@@ -327,28 +332,60 @@ function getNextSteps(sale: any, role: string) {
     return steps;
   }
 
-  // Flujo normal
   const pasosDef = [
-    { key: 'POR INGRESAR', titulo: 'Registro de Datos', desc: 'DNI, nombre, plaza, convenio y monto ingresados', rol: 'VENDEDOR' },
-    { key: 'EN PROCESO', titulo: 'Evaluación y Documentos', desc: 'Subir documentos requeridos, revisión del supervisor', rol: 'SUPERVISOR' },
-    { key: 'APROBADA', titulo: 'Aprobación', desc: 'Expediente aprobado, pendiente de conformidad', rol: 'SUPERVISOR' },
-    { key: 'CONFORMIDAD', titulo: 'Conformidad', desc: 'Conformidad de documentos verificada por Back Office', rol: 'BACK_OFFICE' },
-    { key: 'DESEMBOLSADO', titulo: 'Desembolso', desc: 'Crédito desembolsado', rol: 'BACK_OFFICE' }
+    { keys: ['PROSPECTO_NUEVO', 'VERIFICACION_SISTEMA', 'SCORE_BCP'], titulo: 'Evaluacion inicial', desc: 'Prospecto, verificacion de sistema y score BCP', rol: 'VENTA / BACK_OFFICE' },
+    { keys: ['PENDIENTE_BOLETA', 'EVALUACION_CALCULADORA'], titulo: 'Boleta y calculadora', desc: 'Boleta recibida y simulacion del prestamo', rol: 'VENDEDOR' },
+    { keys: ['COTIZACION_ENVIADA', 'PENDIENTE_ACEPTACION_CLIENTE'], titulo: 'Cotizacion', desc: 'Cliente revisa y acepta la propuesta', rol: 'VENDEDOR' },
+    { keys: ['PENDIENTE_DATOS_FILE'], titulo: 'File', desc: 'Vendedor completa datos y documentos desde la app', rol: 'VENDEDOR' },
+    { keys: ['VALIDACION_BACK_OFFICE', 'OBS_BACK_OFFICE'], titulo: 'Back Office', desc: 'Validacion documental y subsanaciones internas', rol: 'BACK_OFFICE' },
+    { keys: ['FILE_VALIDADO', 'ENVIADO_BCP_REMESA', 'OBS_BCP'], titulo: 'BCP Remesa', desc: 'Envio del file y respuesta de remesa BCP', rol: 'BACK_OFFICE' },
+    { keys: ['REMESA_APROBADA', 'REMESA_REDUCIDA', 'PENDIENTE_ACEPTACION_REMESA', 'PENDIENTE_DESEMBOLSO'], titulo: 'Desembolso', desc: 'Confirmacion de remesa y desembolso', rol: 'BACK_OFFICE' },
+    { keys: ['PENDIENTE_CARTA_PODER', 'REENVIADO_BCP_COMPRA_DEUDA', 'PENDIENTE_CARTA_NO_ADEUDO', 'PENDIENTE_LIBERACION'], titulo: 'Compra de deuda', desc: 'Cartas, no adeudo y liberacion del monto', rol: 'BACK_OFFICE' },
+    { keys: ['DESEMBOLSADO'], titulo: 'Desembolso', desc: 'Credito desembolsado', rol: 'BACK_OFFICE' }
   ];
+
+  const accionesPorEstado: Record<string, string> = {
+    PROSPECTO_NUEVO: 'Iniciar verificacion del cliente',
+    VERIFICACION_SISTEMA: 'Consultar deudas del cliente y conyuge si aplica',
+    SCORE_BCP: 'Registrar resultado de score BCP',
+    PENDIENTE_BOLETA: 'Solicitar boleta al cliente',
+    EVALUACION_CALCULADORA: 'Evaluar en calculadora',
+    COTIZACION_ENVIADA: 'Dar seguimiento a la cotizacion',
+    PENDIENTE_ACEPTACION_CLIENTE: 'Registrar aceptacion del cliente',
+    PENDIENTE_DATOS_FILE: 'Cargar documentos obligatorios desde la app',
+    VALIDACION_BACK_OFFICE: 'Validar documentos en central web',
+    OBS_BACK_OFFICE: 'Subsanar observacion de back office',
+    FILE_VALIDADO: 'Enviar file al BCP',
+    ENVIADO_BCP_REMESA: 'Registrar respuesta de remesa BCP',
+    OBS_BCP: 'Subsanar observacion del BCP',
+    REMESA_APROBADA: 'Registrar ruta de desembolso',
+    REMESA_REDUCIDA: 'Consultar aceptacion de nuevo monto',
+    PENDIENTE_ACEPTACION_REMESA: 'Registrar decision del cliente',
+    PENDIENTE_DESEMBOLSO: 'Confirmar desembolso',
+    PENDIENTE_CARTA_PODER: 'Registrar carta poder',
+    REENVIADO_BCP_COMPRA_DEUDA: 'Dar seguimiento a compra de deuda',
+    PENDIENTE_CARTA_NO_ADEUDO: 'Validar carta de no adeudo',
+    PENDIENTE_LIBERACION: 'Registrar liberacion de compra de deuda',
+    DESEMBOLSADO: 'Expediente cerrado'
+  };
+
+  const idxActual = pasosDef.findIndex((p) => p.keys.includes(sale.estado));
 
   for (let i = 0; i < pasosDef.length; i++) {
     const p = pasosDef[i];
     let estado: typeof steps[0]['estado'] = 'PENDIENTE';
 
-    if (i < idxActual) estado = 'COMPLETADO';
+    if (idxActual === -1) estado = i === 0 ? 'ACTUAL' : 'PENDIENTE';
+    else if (i < idxActual) estado = 'COMPLETADO';
     else if (i === idxActual) estado = 'ACTUAL';
     else estado = 'PENDIENTE';
 
     steps.push({
       paso: i + 1,
       titulo: p.titulo,
-      descripcion: p.desc,
+      descripcion: i === idxActual ? `${p.desc}. Estado actual: ${getEstadoLabel(sale.estado)}` : p.desc,
       estado,
+      accion: i === idxActual ? accionesPorEstado[sale.estado] : undefined,
       rol_responsable: p.rol
     });
   }

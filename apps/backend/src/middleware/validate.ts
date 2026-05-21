@@ -2,46 +2,150 @@
 
 export const VALID_ESTADOS = [
   'PROSPECTO_NUEVO',
-  'PENDIENTE_DATOS',
-  'PENDIENTE_DOCUMENTOS',
-  'LISTO_SCORE',
-  'SCORE_APROBADO',
-  'SIMULACION_ACEPTADA',
-  'ENVIADO_CONVENIO',
-  'CONVENIO_APROBADO',
-  'PREPARANDO_BCP',
-  'ENVIADO_BCP',
-  'APROBADO_BCP',
+  'VERIFICACION_SISTEMA',
+  'SCORE_BCP',
+  'PENDIENTE_BOLETA',
+  'EVALUACION_CALCULADORA',
+  'COTIZACION_ENVIADA',
+  'PENDIENTE_ACEPTACION_CLIENTE',
+  'PENDIENTE_DATOS_FILE',
+  'VALIDACION_BACK_OFFICE',
+  'OBS_BACK_OFFICE',
+  'FILE_VALIDADO',
+  'ENVIADO_BCP_REMESA',
+  'OBS_BCP',
+  'REMESA_APROBADA',
+  'REMESA_REDUCIDA',
+  'PENDIENTE_ACEPTACION_REMESA',
+  'PENDIENTE_DESEMBOLSO',
+  'PENDIENTE_CARTA_PODER',
+  'REENVIADO_BCP_COMPRA_DEUDA',
+  'PENDIENTE_CARTA_NO_ADEUDO',
+  'PENDIENTE_LIBERACION',
   'DESEMBOLSADO',
-  'OBSERVADO',
   'RECHAZADO',
+  'DESISTIDO',
   'REASIGNADO',
   'PENDIENTE_REASIGNACION',
 ] as const;
 
 export type EstadoOperativo = typeof VALID_ESTADOS[number];
 
+export const REJECTION_REASONS = [
+  'BURO_NO_CALIFICA',
+  'CLIENTE_CON_MALA_DEUDA',
+  'CONYUGE_NO_CALIFICA',
+  'SCORE_BCP_NO_CALIFICA',
+  'CALCULADORA_NO_CALIFICA',
+  'CLIENTE_NO_ACEPTA_COTIZACION',
+  'DOCUMENTOS_INVALIDOS',
+  'BCP_RECHAZA',
+  'REMESA_REDUCIDA_NO_ACEPTADA',
+  'CLIENTE_DESISTE',
+  'OTRO'
+] as const;
+
+export type RejectionReason = typeof REJECTION_REASONS[number];
+
+export const ACTIVE_ESTADOS: EstadoOperativo[] = [
+  'PROSPECTO_NUEVO',
+  'VERIFICACION_SISTEMA',
+  'SCORE_BCP',
+  'PENDIENTE_BOLETA',
+  'EVALUACION_CALCULADORA',
+  'COTIZACION_ENVIADA',
+  'PENDIENTE_ACEPTACION_CLIENTE',
+  'PENDIENTE_DATOS_FILE',
+  'VALIDACION_BACK_OFFICE',
+  'OBS_BACK_OFFICE',
+  'FILE_VALIDADO',
+  'ENVIADO_BCP_REMESA',
+  'OBS_BCP',
+  'REMESA_APROBADA',
+  'REMESA_REDUCIDA',
+  'PENDIENTE_ACEPTACION_REMESA',
+  'PENDIENTE_DESEMBOLSO',
+  'PENDIENTE_CARTA_PODER',
+  'REENVIADO_BCP_COMPRA_DEUDA',
+  'PENDIENTE_CARTA_NO_ADEUDO',
+  'PENDIENTE_LIBERACION',
+  'PENDIENTE_REASIGNACION',
+];
+
+export const DOCUMENT_REQUIRED_STATES: EstadoOperativo[] = [
+  'VALIDACION_BACK_OFFICE',
+  'FILE_VALIDADO',
+  'ENVIADO_BCP_REMESA',
+  'REMESA_APROBADA',
+  'REMESA_REDUCIDA',
+  'PENDIENTE_DESEMBOLSO',
+  'PENDIENTE_CARTA_PODER',
+  'REENVIADO_BCP_COMPRA_DEUDA',
+  'PENDIENTE_CARTA_NO_ADEUDO',
+  'PENDIENTE_LIBERACION',
+  'DESEMBOLSADO',
+];
+
+export const KANBAN_COLUMNS = [
+  { key: 'PROSPECTO_NUEVO', label: 'Prospecto', color: '#64748B', seccion: 'venta' },
+  { key: 'VERIFICACION_SISTEMA', label: 'Verificacion', color: '#0F766E', seccion: 'venta' },
+  { key: 'SCORE_BCP', label: 'Score BCP', color: '#2563EB', seccion: 'venta' },
+  { key: 'PENDIENTE_BOLETA', label: 'Pte. Boleta', color: '#D97706', seccion: 'venta' },
+  { key: 'EVALUACION_CALCULADORA', label: 'Calculadora', color: '#7C3AED', seccion: 'venta' },
+  { key: 'COTIZACION_ENVIADA', label: 'Cotizacion', color: '#0EA5E9', seccion: 'venta' },
+  { key: 'PENDIENTE_ACEPTACION_CLIENTE', label: 'Pte. Aceptacion', color: '#0284C7', seccion: 'venta' },
+  { key: 'PENDIENTE_DATOS_FILE', label: 'Datos File', color: '#D97706', seccion: 'documentos' },
+  { key: 'VALIDACION_BACK_OFFICE', label: 'Val. Back Office', color: '#4F46E5', seccion: 'back_office' },
+  { key: 'OBS_BACK_OFFICE', label: 'Obs. Back Office', color: '#EA580C', seccion: 'back_office' },
+  { key: 'FILE_VALIDADO', label: 'File Validado', color: '#059669', seccion: 'back_office' },
+  { key: 'ENVIADO_BCP_REMESA', label: 'Enviado BCP', color: '#2563EB', seccion: 'bcp' },
+  { key: 'OBS_BCP', label: 'Obs. BCP', color: '#DC2626', seccion: 'bcp' },
+  { key: 'REMESA_APROBADA', label: 'Remesa OK', color: '#0891B2', seccion: 'cierre' },
+  { key: 'REMESA_REDUCIDA', label: 'Remesa Reducida', color: '#F59E0B', seccion: 'cierre' },
+  { key: 'PENDIENTE_ACEPTACION_REMESA', label: 'Acepta Remesa', color: '#F97316', seccion: 'cierre' },
+  { key: 'PENDIENTE_DESEMBOLSO', label: 'Pte. Desembolso', color: '#0D9488', seccion: 'cierre' },
+  { key: 'PENDIENTE_CARTA_PODER', label: 'Carta Poder', color: '#8B5CF6', seccion: 'cierre' },
+  { key: 'REENVIADO_BCP_COMPRA_DEUDA', label: 'Reenvio BCP', color: '#6366F1', seccion: 'cierre' },
+  { key: 'PENDIENTE_CARTA_NO_ADEUDO', label: 'No Adeudo', color: '#A855F7', seccion: 'cierre' },
+  { key: 'PENDIENTE_LIBERACION', label: 'Pte. Liberacion', color: '#9333EA', seccion: 'cierre' },
+  { key: 'DESEMBOLSADO', label: 'Desembolsado', color: '#22C55E', seccion: 'final' },
+  { key: 'RECHAZADO', label: 'Rechazado', color: '#EF4444', seccion: 'final' },
+  { key: 'DESISTIDO', label: 'Desistido', color: '#6B7280', seccion: 'final' },
+  { key: 'PENDIENTE_REASIGNACION', label: 'Pte. Reasignacion', color: '#F59E0B', seccion: 'admin' },
+] as const;
+
 export const CATALOGO_MOTIVOS = {
-  OBSERVADO: [
-    'Datos del cliente incompletos',
+  OBS_BACK_OFFICE: [
     'Documentacion incompleta',
     'Documento ilegible o vencido',
-    'Datos laborales no coinciden',
-    'RCC requiere validacion',
-    'Convenio solicito subsanacion',
-    'BCP observo el expediente',
+    'Datos del cliente no coinciden',
+    'Datos laborales incompletos',
+    'Otro (especificar)'
+  ],
+  OBS_BCP: [
+    'BCP observo documentos',
+    'BCP solicito informacion adicional',
+    'Datos de expediente BCP incompletos',
     'Otro (especificar)'
   ],
   RECHAZADO: [
-    'Score crediticio insuficiente',
-    'Cliente no cumple requisitos del convenio',
-    'Ingresos insuficientes para el monto solicitado',
-    'Boleta no califica',
-    'Convenio rechazo el expediente',
-    'BCP rechazo el expediente',
-    'Cliente desistio del tramite',
-    'Duplicidad de expediente',
-    'Otro (especificar)'
+    'BURO_NO_CALIFICA',
+    'CLIENTE_CON_MALA_DEUDA',
+    'CONYUGE_NO_CALIFICA',
+    'SCORE_BCP_NO_CALIFICA',
+    'CALCULADORA_NO_CALIFICA',
+    'CLIENTE_NO_ACEPTA_COTIZACION',
+    'DOCUMENTOS_INVALIDOS',
+    'BCP_RECHAZA',
+    'REMESA_REDUCIDA_NO_ACEPTADA',
+    'CLIENTE_DESISTE',
+    'OTRO'
+  ],
+  DESISTIDO: [
+    'Cliente no acepta la propuesta',
+    'Cliente no entrega documentos',
+    'Cliente cancela el tramite',
+    'OTRO'
   ],
 } as const;
 
@@ -72,199 +176,311 @@ const JEFATURA = ['SUPERADMIN', 'GERENTE', 'JEFE_ZONAL', 'SUPERVISOR'];
 export const TRANSICIONES: Transition[] = [
   {
     from: 'PROSPECTO_NUEVO',
-    to: 'PENDIENTE_DATOS',
+    to: 'VERIFICACION_SISTEMA',
     roles: VENTA,
     requiresMotivo: false,
-    label: 'Faltan datos operativos del cliente o del cargo'
+    label: 'Iniciar verificacion de deudas y condicion del cliente'
   },
   {
     from: 'PROSPECTO_NUEVO',
-    to: 'PENDIENTE_DOCUMENTOS',
-    roles: VENTA,
-    requiresMotivo: false,
-    label: 'Cliente registrado, falta documentacion'
-  },
-  {
-    from: 'PROSPECTO_NUEVO',
-    to: 'LISTO_SCORE',
-    roles: REVISION,
-    requiresMotivo: false,
-    label: 'Datos minimos completos, listo para score'
-  },
-  {
-    from: 'PENDIENTE_DATOS',
-    to: 'PENDIENTE_DOCUMENTOS',
-    roles: VENTA,
-    requiresMotivo: false,
-    label: 'Datos completos, falta documentacion'
-  },
-  {
-    from: 'PENDIENTE_DATOS',
-    to: 'LISTO_SCORE',
-    roles: REVISION,
-    requiresMotivo: false,
-    label: 'Datos completos, enviar a score'
-  },
-  {
-    from: 'PENDIENTE_DOCUMENTOS',
-    to: 'LISTO_SCORE',
-    roles: TODOS,
-    requiresMotivo: false,
-    label: 'Documentos completos, listo para score'
-  },
-  {
-    from: 'LISTO_SCORE',
-    to: 'SCORE_APROBADO',
-    roles: REVISION,
-    requiresMotivo: false,
-    label: 'Score/RCC validado'
-  },
-  {
-    from: 'LISTO_SCORE',
-    to: 'OBSERVADO',
-    roles: REVISION,
-    requiresMotivo: true,
-    label: 'Score o documentacion requieren correccion'
-  },
-  {
-    from: 'LISTO_SCORE',
     to: 'RECHAZADO',
     roles: REVISION,
     requiresMotivo: true,
-    label: 'No califica en score o RCC'
+    label: 'No califica en buro o calculadora'
   },
   {
-    from: 'SCORE_APROBADO',
-    to: 'SIMULACION_ACEPTADA',
+    from: 'VERIFICACION_SISTEMA',
+    to: 'SCORE_BCP',
+    roles: REVISION,
+    requiresMotivo: false,
+    label: 'Cliente y conyuge, si aplica, pasan verificacion de sistema'
+  },
+  {
+    from: 'VERIFICACION_SISTEMA',
+    to: 'RECHAZADO',
+    roles: REVISION,
+    requiresMotivo: true,
+    label: 'Cliente o conyuge no califican en verificacion de sistema'
+  },
+  {
+    from: 'SCORE_BCP',
+    to: 'PENDIENTE_BOLETA',
+    roles: REVISION,
+    requiresMotivo: false,
+    label: 'Score BCP aprobado; solicitar boleta al cliente'
+  },
+  {
+    from: 'SCORE_BCP',
+    to: 'RECHAZADO',
+    roles: REVISION,
+    requiresMotivo: true,
+    label: 'Score BCP no califica'
+  },
+  {
+    from: 'PENDIENTE_BOLETA',
+    to: 'EVALUACION_CALCULADORA',
+    roles: VENTA,
+    requiresMotivo: false,
+    label: 'Boleta recibida; evaluar en calculadora'
+  },
+  {
+    from: 'PENDIENTE_BOLETA',
+    to: 'DESISTIDO',
+    roles: VENTA,
+    requiresMotivo: true,
+    label: 'Cliente no entrega boleta o cancela'
+  },
+  {
+    from: 'EVALUACION_CALCULADORA',
+    to: 'COTIZACION_ENVIADA',
+    roles: VENTA,
+    requiresMotivo: false,
+    label: 'Calculadora aprobada; preparar cotizacion'
+  },
+  {
+    from: 'EVALUACION_CALCULADORA',
+    to: 'RECHAZADO',
+    roles: REVISION,
+    requiresMotivo: true,
+    label: 'Calculadora no califica'
+  },
+  {
+    from: 'COTIZACION_ENVIADA',
+    to: 'PENDIENTE_ACEPTACION_CLIENTE',
+    roles: VENTA,
+    requiresMotivo: false,
+    label: 'Cotizacion entregada; esperar aceptacion del cliente'
+  },
+  {
+    from: 'COTIZACION_ENVIADA',
+    to: 'PENDIENTE_DATOS_FILE',
+    roles: VENTA,
+    requiresMotivo: false,
+    label: 'Cliente acepta la cotizacion en el cierre'
+  },
+  {
+    from: 'COTIZACION_ENVIADA',
+    to: 'DESISTIDO',
+    roles: VENTA,
+    requiresMotivo: true,
+    label: 'Cliente no acepta la cotizacion'
+  },
+  {
+    from: 'PENDIENTE_ACEPTACION_CLIENTE',
+    to: 'PENDIENTE_DATOS_FILE',
+    roles: VENTA,
+    requiresMotivo: false,
+    label: 'Cliente acepta; completar datos y documentos del file'
+  },
+  {
+    from: 'PENDIENTE_ACEPTACION_CLIENTE',
+    to: 'DESISTIDO',
+    roles: VENTA,
+    requiresMotivo: true,
+    label: 'Cliente no continua despues de cotizacion'
+  },
+  {
+    from: 'PENDIENTE_DATOS_FILE',
+    to: 'VALIDACION_BACK_OFFICE',
     roles: TODOS,
     requiresMotivo: false,
-    label: 'Cliente acepta simulacion'
+    label: 'File cargado para validacion back office'
   },
   {
-    from: 'SCORE_APROBADO',
-    to: 'OBSERVADO',
+    from: 'PENDIENTE_DATOS_FILE',
+    to: 'DESISTIDO',
+    roles: VENTA,
+    requiresMotivo: true,
+    label: 'Cliente no entrega documentos o cancela'
+  },
+  {
+    from: 'VALIDACION_BACK_OFFICE',
+    to: 'OBS_BACK_OFFICE',
     roles: REVISION,
     requiresMotivo: true,
-    label: 'Ajustar simulacion o datos antes de continuar'
+    label: 'Back office observa documentos o datos'
   },
   {
-    from: 'SIMULACION_ACEPTADA',
-    to: 'ENVIADO_CONVENIO',
+    from: 'VALIDACION_BACK_OFFICE',
+    to: 'FILE_VALIDADO',
     roles: BACK,
     requiresMotivo: false,
-    label: 'Expediente enviado al convenio'
+    label: 'Back office valida el file'
   },
   {
-    from: 'SIMULACION_ACEPTADA',
-    to: 'OBSERVADO',
-    roles: REVISION,
-    requiresMotivo: true,
-    label: 'Falta subsanar antes del envio al convenio'
-  },
-  {
-    from: 'ENVIADO_CONVENIO',
-    to: 'CONVENIO_APROBADO',
-    roles: BACK,
-    requiresMotivo: false,
-    label: 'Convenio responde conforme'
-  },
-  {
-    from: 'ENVIADO_CONVENIO',
-    to: 'OBSERVADO',
-    roles: BACK,
-    requiresMotivo: true,
-    label: 'Convenio observo el expediente'
-  },
-  {
-    from: 'ENVIADO_CONVENIO',
+    from: 'VALIDACION_BACK_OFFICE',
     to: 'RECHAZADO',
     roles: BACK,
     requiresMotivo: true,
-    label: 'Convenio rechazo el expediente'
+    label: 'Documentos o condiciones invalidas'
   },
   {
-    from: 'CONVENIO_APROBADO',
-    to: 'PREPARANDO_BCP',
-    roles: BACK,
+    from: 'OBS_BACK_OFFICE',
+    to: 'PENDIENTE_DATOS_FILE',
+    roles: TODOS,
     requiresMotivo: false,
-    label: 'Preparar expediente fisico/digital para BCP'
+    label: 'Vendedor subsana observacion documental'
   },
   {
-    from: 'PREPARANDO_BCP',
-    to: 'ENVIADO_BCP',
-    roles: BACK,
+    from: 'OBS_BACK_OFFICE',
+    to: 'VALIDACION_BACK_OFFICE',
+    roles: TODOS,
     requiresMotivo: false,
-    label: 'Expediente enviado a BCP'
+    label: 'Observacion subsanada para nueva revision'
   },
   {
-    from: 'PREPARANDO_BCP',
-    to: 'OBSERVADO',
-    roles: BACK,
+    from: 'OBS_BACK_OFFICE',
+    to: 'RECHAZADO',
+    roles: REVISION,
     requiresMotivo: true,
-    label: 'Falta corregir expediente antes de BCP'
+    label: 'Observacion no subsanable'
   },
   {
-    from: 'ENVIADO_BCP',
-    to: 'APROBADO_BCP',
+    from: 'FILE_VALIDADO',
+    to: 'ENVIADO_BCP_REMESA',
     roles: BACK,
     requiresMotivo: false,
-    label: 'BCP aprobo la operacion'
+    label: 'Enviar file al BCP para aprobacion de remesa'
   },
   {
-    from: 'ENVIADO_BCP',
-    to: 'OBSERVADO',
+    from: 'ENVIADO_BCP_REMESA',
+    to: 'OBS_BCP',
     roles: BACK,
     requiresMotivo: true,
     label: 'BCP observo el expediente'
   },
   {
-    from: 'ENVIADO_BCP',
+    from: 'ENVIADO_BCP_REMESA',
+    to: 'REMESA_APROBADA',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'BCP aprobo remesa'
+  },
+  {
+    from: 'ENVIADO_BCP_REMESA',
+    to: 'REMESA_REDUCIDA',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'BCP aprobo remesa por menor monto'
+  },
+  {
+    from: 'ENVIADO_BCP_REMESA',
     to: 'RECHAZADO',
     roles: BACK,
     requiresMotivo: true,
     label: 'BCP rechazo la operacion'
   },
   {
-    from: 'APROBADO_BCP',
+    from: 'OBS_BCP',
+    to: 'ENVIADO_BCP_REMESA',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'Subsanacion BCP lista para nueva evaluacion'
+  },
+  {
+    from: 'OBS_BCP',
+    to: 'RECHAZADO',
+    roles: BACK,
+    requiresMotivo: true,
+    label: 'BCP rechaza despues de observacion'
+  },
+  {
+    from: 'REMESA_APROBADA',
+    to: 'PENDIENTE_DESEMBOLSO',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'Remesa aprobada; esperar confirmacion de desembolso'
+  },
+  {
+    from: 'REMESA_APROBADA',
+    to: 'PENDIENTE_CARTA_PODER',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'Operacion de compra de deuda requiere carta poder'
+  },
+  {
+    from: 'REMESA_REDUCIDA',
+    to: 'PENDIENTE_ACEPTACION_REMESA',
+    roles: VENTA,
+    requiresMotivo: false,
+    label: 'Consultar si cliente acepta la remesa reducida'
+  },
+  {
+    from: 'REMESA_REDUCIDA',
+    to: 'RECHAZADO',
+    roles: REVISION,
+    requiresMotivo: true,
+    label: 'Cliente no acepta la remesa reducida'
+  },
+  {
+    from: 'PENDIENTE_ACEPTACION_REMESA',
+    to: 'PENDIENTE_DESEMBOLSO',
+    roles: VENTA,
+    requiresMotivo: false,
+    label: 'Cliente acepta remesa reducida; esperar desembolso'
+  },
+  {
+    from: 'PENDIENTE_ACEPTACION_REMESA',
+    to: 'DESISTIDO',
+    roles: VENTA,
+    requiresMotivo: true,
+    label: 'Cliente desiste por remesa reducida'
+  },
+  {
+    from: 'PENDIENTE_DESEMBOLSO',
     to: 'DESEMBOLSADO',
     roles: BACK,
     requiresMotivo: false,
-    label: 'Registrar desembolso'
+    label: 'Registrar desembolso libre disponibilidad'
   },
   {
-    from: 'OBSERVADO',
-    to: 'PENDIENTE_DATOS',
-    roles: TODOS,
-    requiresMotivo: false,
-    label: 'Corregir datos'
-  },
-  {
-    from: 'OBSERVADO',
-    to: 'PENDIENTE_DOCUMENTOS',
-    roles: TODOS,
-    requiresMotivo: false,
-    label: 'Subsanar documentos'
-  },
-  {
-    from: 'OBSERVADO',
-    to: 'LISTO_SCORE',
-    roles: REVISION,
-    requiresMotivo: false,
-    label: 'Observacion subsanada, volver a score'
-  },
-  {
-    from: 'OBSERVADO',
-    to: 'ENVIADO_CONVENIO',
+    from: 'PENDIENTE_DESEMBOLSO',
+    to: 'PENDIENTE_CARTA_PODER',
     roles: BACK,
     requiresMotivo: false,
-    label: 'Subsanacion lista, reenviar al convenio'
+    label: 'Desembolso con compra de deuda; esperar carta poder'
   },
   {
-    from: 'OBSERVADO',
-    to: 'PREPARANDO_BCP',
+    from: 'PENDIENTE_CARTA_PODER',
+    to: 'REENVIADO_BCP_COMPRA_DEUDA',
     roles: BACK,
     requiresMotivo: false,
-    label: 'Subsanacion lista, preparar BCP'
+    label: 'Carta poder recibida; reenviar file de compra de deuda al BCP'
+  },
+  {
+    from: 'REENVIADO_BCP_COMPRA_DEUDA',
+    to: 'PENDIENTE_CARTA_NO_ADEUDO',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'BCP procesa compra de deuda; esperar carta de no adeudo'
+  },
+  {
+    from: 'REENVIADO_BCP_COMPRA_DEUDA',
+    to: 'OBS_BCP',
+    roles: BACK,
+    requiresMotivo: true,
+    label: 'BCP observa la compra de deuda'
+  },
+  {
+    from: 'PENDIENTE_CARTA_NO_ADEUDO',
+    to: 'PENDIENTE_LIBERACION',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'Carta de no adeudo validada; liberar monto'
+  },
+  {
+    from: 'PENDIENTE_LIBERACION',
+    to: 'DESEMBOLSADO',
+    roles: BACK,
+    requiresMotivo: false,
+    label: 'Registrar desembolso luego de liberacion'
+  },
+  {
+    from: 'DESISTIDO',
+    to: 'PROSPECTO_NUEVO',
+    roles: ['SUPERADMIN', 'GERENTE'],
+    requiresMotivo: true,
+    label: 'Reabrir expediente desistido'
   },
   {
     from: 'RECHAZADO',
@@ -345,26 +561,36 @@ export function validateTransition(
 export function getEstadoLabel(estado: string): string {
   const labels: Record<string, string> = {
     PROSPECTO_NUEVO: 'Prospecto nuevo',
-    PENDIENTE_DATOS: 'Pendiente datos',
-    PENDIENTE_DOCUMENTOS: 'Pendiente documentos',
-    LISTO_SCORE: 'Listo para score',
-    SCORE_APROBADO: 'Score aprobado',
-    SIMULACION_ACEPTADA: 'Simulacion aceptada',
-    ENVIADO_CONVENIO: 'Enviado a convenio',
-    CONVENIO_APROBADO: 'Convenio aprobado',
-    PREPARANDO_BCP: 'Preparando BCP',
-    ENVIADO_BCP: 'Enviado a BCP',
-    APROBADO_BCP: 'Aprobado BCP',
+    VERIFICACION_SISTEMA: 'Verificacion sistema',
+    SCORE_BCP: 'Score BCP',
+    PENDIENTE_BOLETA: 'Pendiente boleta',
+    EVALUACION_CALCULADORA: 'Evaluacion calculadora',
+    COTIZACION_ENVIADA: 'Cotizacion enviada',
+    PENDIENTE_ACEPTACION_CLIENTE: 'Pendiente aceptacion cliente',
+    PENDIENTE_DATOS_FILE: 'Pendiente datos file',
+    VALIDACION_BACK_OFFICE: 'Validacion back office',
+    OBS_BACK_OFFICE: 'Observado back office',
+    FILE_VALIDADO: 'File validado',
+    ENVIADO_BCP_REMESA: 'Enviado BCP remesa',
+    OBS_BCP: 'Observado BCP',
+    REMESA_APROBADA: 'Remesa aprobada',
+    REMESA_REDUCIDA: 'Remesa reducida',
+    PENDIENTE_ACEPTACION_REMESA: 'Pendiente aceptacion remesa',
+    PENDIENTE_DESEMBOLSO: 'Pendiente desembolso',
+    PENDIENTE_CARTA_PODER: 'Pendiente carta poder',
+    REENVIADO_BCP_COMPRA_DEUDA: 'Reenviado BCP compra deuda',
+    PENDIENTE_CARTA_NO_ADEUDO: 'Pendiente carta no adeudo',
+    PENDIENTE_LIBERACION: 'Pendiente liberacion',
     DESEMBOLSADO: 'Desembolsado',
-    OBSERVADO: 'Observado',
     RECHAZADO: 'Rechazado',
+    DESISTIDO: 'Desistido',
     REASIGNADO: 'Reasignado',
     PENDIENTE_REASIGNACION: 'Pendiente reasignacion',
   };
   return labels[estado] || estado;
 }
 
-const PROTECTED_FIELDS = ['id', 'asesor_id', 'created_at', 'updated_at', 'password_hash'];
+const PROTECTED_FIELDS = ['id', 'asesor_id', 'created_at', 'updated_at', 'password_hash', 'version'];
 
 function sanitizeString(value: any): string {
   if (typeof value !== 'string') return '';
@@ -399,7 +625,10 @@ export const validateCreateSale = (req: any, res: any, next: any) => {
     plazo_deseado,
     convenio,
     cargo_laboral,
-    consentimiento
+    consentimiento,
+    estado_civil_cliente,
+    conyuge_dni,
+    conyuge_nombres
   } = req.body;
 
   const errors: string[] = [];
@@ -439,6 +668,19 @@ export const validateCreateSale = (req: any, res: any, next: any) => {
     errors.push('Consentimiento del cliente requerido');
   }
 
+  const estadoCivilClean = sanitizeOptional(estado_civil_cliente);
+  const conyugeDniClean = conyuge_dni ? String(conyuge_dni).replace(/\D/g, '') : '';
+  const conyugeNombresClean = sanitizeOptional(conyuge_nombres);
+
+  if (estadoCivilClean && /CASAD/i.test(estadoCivilClean)) {
+    if (!conyugeDniClean || !isValidDni(conyugeDniClean)) {
+      errors.push('El DNI del conyuge es requerido y debe tener exactamente 8 digitos para estado civil Casado');
+    }
+    if (!conyugeNombresClean || conyugeNombresClean.length < 3) {
+      errors.push('El nombre del conyuge es requerido (minimo 3 caracteres) para estado civil Casado');
+    }
+  }
+
   if (errors.length > 0) {
     return res.status(400).json({ error: 'Datos invalidos', details: errors });
   }
@@ -457,6 +699,9 @@ export const validateCreateSale = (req: any, res: any, next: any) => {
   req.body.convenio = sanitizeString(convenio);
   req.body.entidad_laboral = sanitizeOptional(req.body.entidad_laboral);
   req.body.cargo_laboral = sanitizeString(cargo_laboral);
+  req.body.estado_civil_cliente = estadoCivilClean;
+  req.body.conyuge_dni = conyugeDniClean || null;
+  req.body.conyuge_nombres = conyugeNombresClean || null;
   req.body.origen_prospecto = sanitizeOptional(req.body.origen_prospecto);
   req.body.feedback = sanitizeOptional(req.body.feedback);
   req.body.maf_neto = monto;

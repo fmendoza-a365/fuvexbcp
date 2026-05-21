@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Check, XCircle, FileText, Download, ExternalLink, Eye, AlertCircle, RefreshCw, Loader2, Search, CheckCircle, AlertOctagon, HelpCircle, ShieldCheck, History, MessageSquare, GitBranch } from 'lucide-react';
+import { X, Check, XCircle, FileText, Download, ExternalLink, Eye, AlertCircle, RefreshCw, Loader2, Search, CheckCircle, AlertOctagon, HelpCircle, ShieldCheck, History, MessageSquare, GitBranch, Mail, Send } from 'lucide-react';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -7,7 +7,7 @@ import { es } from 'date-fns/locale';
 interface DocumentViewerProps {
   sale: any;
   onClose: () => void;
-  onUpdate: () => void;
+  onUpdate: () => void | Promise<void>;
 }
 
 interface TransitionAction {
@@ -32,11 +32,46 @@ interface TraceItem {
   author?: string;
 }
 
+interface TimelineEvent {
+  id: string;
+  source: string;
+  type: string;
+  title: string;
+  text: string;
+  created_at?: string;
+  actor?: {
+    username?: string;
+    nombre?: string;
+    role?: string;
+  };
+}
+
+const TIMELINE_FILTERS = [
+  { key: 'all', label: 'Todo' },
+  { key: 'state', label: 'Estados' },
+  { key: 'note', label: 'Notas' },
+  { key: 'document', label: 'Documentos' },
+  { key: 'rcc', label: 'RCC' },
+  { key: 'mail', label: 'Correos' },
+  { key: 'digitalizacion', label: 'Digitalización' },
+  { key: 'system', label: 'Sistema' }
+];
+
+const getTimelineIcon = (type: string) => {
+  if (type === 'state') return GitBranch;
+  if (type === 'note') return MessageSquare;
+  if (type === 'document') return FileText;
+  if (type === 'rcc') return ShieldCheck;
+  if (type === 'mail') return Mail;
+  return History;
+};
+
 export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentViewerProps) {
   const [detailSale, setDetailSale] = useState<any>(sale);
   const [previewDoc, setPreviewDoc] = useState<any | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showRccDetail, setShowRccDetail] = useState(false);
+  const [rccDetailSujeto, setRccDetailSujeto] = useState<'cliente' | 'conyuge'>('cliente');
   const [activeRccTab, setActiveRccTab] = useState<'general' | 'historico' | 'deudas' | 'otros'>('general');
   const [loading, setLoading] = useState(false);
   const [transitionsLoading, setTransitionsLoading] = useState(true);
@@ -44,10 +79,20 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   const [rccLoading, setRccLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [missingDocs, setMissingDocs] = useState<MissingDocument[]>([]);
+  const [showFullTimeline, setShowFullTimeline] = useState(false);
+  const [timelineFilter, setTimelineFilter] = useState('all');
+  const [timelineItems, setTimelineItems] = useState<TimelineEvent[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelinePage, setTimelinePage] = useState(1);
+  const [timelinePages, setTimelinePages] = useState(1);
+  const [timelineTotal, setTimelineTotal] = useState(0);
+  const [timelineCounts, setTimelineCounts] = useState<Record<string, number>>({});
 
   const traceSource = detailSale || sale;
   const docs = traceSource.documents || sale.documents || [];
-  const rccData = sale.rcc_raw_data ? JSON.parse(sale.rcc_raw_data) : null;
+  const rccData = traceSource.rcc_raw_data ? JSON.parse(traceSource.rcc_raw_data) : null;
+  const conyugeRccData = traceSource.conyuge_rcc_raw_data ? JSON.parse(traceSource.conyuge_rcc_raw_data) : null;
+  const isMarried = /CASAD/i.test(traceSource.estado_civil_cliente || sale.estado_civil_cliente || '');
   const cliente = sale.nombres_cliente || 'Cliente sin nombre';
   const asesor = sale.asesor?.nombre || sale.asesor?.username || 'Desconocido';
   const convenio = sale.convenio || 'Sin convenio';
@@ -63,7 +108,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
     ...(traceSource.feedback ? [{
       id: 'feedback-inicial',
       type: 'note' as const,
-      title: 'Observacion inicial',
+      title: 'Observación inicial',
       text: traceSource.feedback,
       date: traceSource.created_at || traceSource.fecha_ingreso,
       author: traceSource.asesor?.nombre || traceSource.asesor?.username
@@ -81,7 +126,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
       .map((log: any) => ({
         id: log.id,
         type: 'state' as const,
-        title: log.estado_nuevo ? `Cambio a ${log.estado_nuevo}` : (log.accion || 'Actualizacion'),
+        title: log.estado_nuevo ? `Cambio a ${log.estado_nuevo}` : (log.accion || 'Actualización'),
         text: log.detalles,
         date: log.created_at,
         author: log.user?.nombre || log.user?.username
@@ -96,6 +141,32 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
+
+  const fetchFullTimeline = async (page = 1, append = false) => {
+    setTimelineLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`/api/sales/${sale.id}/timeline`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { page, limit: 50, type: timelineFilter }
+      });
+      const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+      setTimelineItems((current) => append ? [...current, ...rows] : rows);
+      setTimelinePage(res.data?.pagination?.page || page);
+      setTimelinePages(res.data?.pagination?.pages || 1);
+      setTimelineTotal(res.data?.pagination?.total || rows.length);
+      setTimelineCounts(res.data?.totalByType || {});
+    } catch (err) {
+      console.error('Error fetching complete timeline', err);
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!showFullTimeline) return;
+    fetchFullTimeline(1, false);
+  }, [showFullTimeline, timelineFilter, sale.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -196,6 +267,82 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
     }
   };
 
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    try {
+      setPdfLoading(true);
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`/api/sales/${sale.id}/pdf?download=1`, {
+        responseType: 'blob',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const objectUrl = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = `SOLICITUD_CONVENIO_${sale.dni_cliente || 'documento'}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error('Error downloading PDF', err);
+      setError('No se pudo descargar el PDF de convenio');
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
+  const handleRegeneratePdf = async () => {
+    try {
+      setPdfLoading(true);
+      const token = localStorage.getItem('token');
+      await axios.post(`/api/sales/${sale.id}/pdf/regenerar`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      // Download the newly generated PDF
+      await handleDownloadPdf();
+      onUpdate();
+    } catch (err: any) {
+      console.error('Error regenerating PDF', err);
+      setError(err?.response?.data?.error || 'No se pudo regenerar el PDF de convenio');
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
+  // ── Email sending state ──
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [emailTo, setEmailTo] = useState('');
+  const [emailResult, setEmailResult] = useState<{ messageId?: string; previewUrl?: string } | null>(null);
+
+  const handleSendEmail = async () => {
+    if (!emailTo || !emailTo.includes('@')) {
+      setError('Ingrese un correo electrónico válido.');
+      return;
+    }
+    try {
+      setEmailLoading(true);
+      setEmailResult(null);
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`/api/mail/send/${sale.id}`, {
+        destinatario: emailTo.trim()
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setEmailResult({
+        messageId: res.data.messageId,
+        previewUrl: res.data.previewUrl
+      });
+      onUpdate();
+    } catch (err: any) {
+      console.error('Error sending email', err);
+      setError(err?.response?.data?.error || 'No se pudo enviar el correo.');
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
   const calificacion: Record<string, any> = {
     VERDE: {
       label: 'CALIFICA',
@@ -231,19 +378,26 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
     }
   };
 
-  const handleConsultarRCC = async () => {
+  const handleConsultarRCC = async (sujeto: 'cliente' | 'conyuge' = 'cliente') => {
     setRccLoading(true);
     setError(null);
     setMissingDocs([]);
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`/api/sales/${sale.id}/rcc`, {}, {
+      await axios.post(`/api/sales/${sale.id}/rcc`, {
+        sujeto,
+        conyuge_dni: sujeto === 'conyuge' ? (traceSource.conyuge_dni || sale.conyuge_dni) : undefined
+      }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       onUpdate(); // Refrescar datos de la venta
+      const res = await axios.get(`/api/sales/${sale.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setDetailSale(res.data);
     } catch (err: any) {
       console.error('Error RCC:', err);
-      setError('Error al consultar Infoburo');
+      setError(err.response?.data?.error || `Error al consultar Infoburo del ${sujeto}`);
     } finally {
       setRccLoading(false);
     }
@@ -262,8 +416,11 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
         { nuevo_estado: newState, motivo: motivo || undefined },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      onUpdate();
-      onClose();
+      const refreshed = await axios.get(`/api/sales/${sale.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setDetailSale(refreshed.data);
+      await onUpdate();
     } catch (err: any) {
       console.error('Error changing state', err);
       const backendError = err.response?.data?.error || 'Error al actualizar el estado del expediente';
@@ -308,20 +465,20 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   );
 
   const getTransitionButtonClass = (destino: string) => {
-    if (destino === 'RECHAZADO') {
+    if (['RECHAZADO', 'DESISTIDO'].includes(destino)) {
       return 'bg-surface-100 hover:bg-rose-50 text-rose-600 border border-rose-200';
     }
-    if (['OBSERVADO', 'PENDIENTE_DATOS', 'PENDIENTE_DOCUMENTOS'].includes(destino)) {
+    if (['OBS_BACK_OFFICE', 'OBS_BCP', 'PENDIENTE_BOLETA', 'PENDIENTE_DATOS_FILE', 'REMESA_REDUCIDA', 'PENDIENTE_ACEPTACION_REMESA'].includes(destino)) {
       return 'bg-surface-100 hover:bg-amber-50 text-amber-700 border border-amber-200';
     }
-    if (['LISTO_SCORE', 'SCORE_APROBADO', 'SIMULACION_ACEPTADA', 'ENVIADO_CONVENIO', 'CONVENIO_APROBADO', 'PREPARANDO_BCP', 'ENVIADO_BCP', 'APROBADO_BCP', 'DESEMBOLSADO'].includes(destino)) {
+    if (['VERIFICACION_SISTEMA', 'SCORE_BCP', 'EVALUACION_CALCULADORA', 'COTIZACION_ENVIADA', 'PENDIENTE_ACEPTACION_CLIENTE', 'VALIDACION_BACK_OFFICE', 'FILE_VALIDADO', 'ENVIADO_BCP_REMESA', 'REMESA_APROBADA', 'PENDIENTE_DESEMBOLSO', 'PENDIENTE_CARTA_PODER', 'REENVIADO_BCP_COMPRA_DEUDA', 'PENDIENTE_CARTA_NO_ADEUDO', 'PENDIENTE_LIBERACION', 'DESEMBOLSADO'].includes(destino)) {
       return 'bg-blue-600 hover:bg-blue-700 text-white';
     }
     return 'bg-surface-100 hover:bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] border border-blue-200';
   };
 
   const getTransitionIcon = (destino: string) => {
-    if (['RECHAZADO', 'OBSERVADO'].includes(destino)) {
+    if (['RECHAZADO', 'DESISTIDO', 'OBS_BACK_OFFICE', 'OBS_BCP'].includes(destino)) {
       return <XCircle size={18} />;
     }
     return <Check size={18} />;
@@ -331,15 +488,18 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
 
   const getStatusColor = (estado: string) => {
     switch (estado) {
-      case 'SCORE_APROBADO':
-      case 'CONVENIO_APROBADO':
-      case 'APROBADO_BCP':
+      case 'FILE_VALIDADO':
+      case 'REMESA_APROBADA':
+      case 'PENDIENTE_DESEMBOLSO':
       case 'DESEMBOLSADO': return 'text-emerald-700 bg-emerald-50 border-emerald-200';
-      case 'OBSERVADO':
-      case 'PENDIENTE_DATOS':
-      case 'PENDIENTE_DOCUMENTOS':
+      case 'OBS_BACK_OFFICE':
+      case 'OBS_BCP':
+      case 'PENDIENTE_BOLETA':
+      case 'PENDIENTE_DATOS_FILE':
+      case 'REMESA_REDUCIDA':
       case 'PROSPECTO_NUEVO': return 'text-amber-700 bg-amber-50 border-amber-200';
       case 'RECHAZADO': return 'text-rose-700 bg-rose-50 border-rose-200';
+      case 'DESISTIDO': return 'text-slate-700 bg-slate-50 border-slate-200';
       case 'PENDIENTE_REASIGNACION': return 'text-amber-700 bg-amber-50 border-amber-200';
       default: return 'text-blue-700 bg-[rgba(0,42,141,0.1)] border-blue-200';
     }
@@ -353,7 +513,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
         aria-modal="true"
         aria-labelledby="modal-title"
       >
-        <div className="bg-surface-100 rounded-xl shadow-xl w-full max-w-6xl h-[90vh] max-h-[900px] flex flex-col overflow-hidden border border-surface-200 animate-in zoom-in-95 duration-200">
+        <div className="bg-surface-100 rounded-xl shadow-xl w-full max-w-[90rem] h-[92vh] max-h-[980px] flex flex-col overflow-hidden border border-surface-200 animate-in zoom-in-95 duration-200">
           <div className="px-5 sm:px-6 py-4 border-b border-surface-200 bg-surface-100 shrink-0">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex items-start gap-4">
@@ -378,6 +538,10 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                     <span>Cargo: <span className="text-slate-700">{cargoLaboral}</span></span>
                     <span>Celular: <span className="text-slate-700">{celular}</span></span>
                     <span>Plaza: <span className="text-slate-700">{plaza}</span></span>
+                    <span>Estado Civil: <span className="text-slate-700">{traceSource.estado_civil_cliente || sale.estado_civil_cliente || 'No especificado'}</span></span>
+                    {isMarried && (
+                      <span>Cónyuge: <span className="text-slate-700">{traceSource.conyuge_nombres || sale.conyuge_nombres || 'No registrado'} ({traceSource.conyuge_dni || sale.conyuge_dni || 'Sin DNI'})</span></span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -410,8 +574,8 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] bg-surface-50/60">
-            <main className="min-h-0 overflow-y-auto p-4 sm:p-6 space-y-5">
+          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_420px] bg-surface-50/60">
+            <main className="min-h-0 overflow-y-auto p-5 sm:p-7 space-y-6">
               <section className="bg-surface-100 border border-surface-200 rounded-xl overflow-hidden shadow-sm">
                 <div className="px-4 py-3 border-b border-surface-200 flex items-center justify-between gap-3 bg-surface-100">
                   <div>
@@ -426,9 +590,9 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
 
                 <div className="divide-y divide-surface-200">
                   {docs.map((doc: any) => (
-                    <div key={doc.id} className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 hover:bg-[rgba(0,42,141,0.04)] transition-colors">
+                    <div key={doc.id} className="group flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-5 py-4 hover:bg-[rgba(0,42,141,0.04)] transition-colors">
                       <div className="min-w-0 flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-[rgba(0,42,141,0.08)] text-[var(--color-bcp-blue)] flex items-center justify-center shrink-0">
+                        <div className="w-11 h-11 rounded-lg bg-[rgba(0,42,141,0.08)] text-[var(--color-bcp-blue)] flex items-center justify-center shrink-0">
                           <FileText size={19} />
                         </div>
                         <div className="min-w-0">
@@ -475,6 +639,105 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                 </div>
               </section>
 
+              {/* ── Solicitud de Convenio BCP (PDF Autollenado) ── */}
+              {sale.convenio && (
+                <section className="bg-gradient-to-br from-[rgba(0,42,141,0.03)] to-[rgba(0,42,141,0.08)] border border-[rgba(0,42,141,0.15)] rounded-xl overflow-hidden shadow-sm">
+                  <div className="px-4 py-3 border-b border-[rgba(0,42,141,0.12)] flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-[var(--color-bcp-blue)] flex items-center gap-2">
+                        <FileText size={18} />
+                        Solicitud de Convenio BCP
+                      </h3>
+                      <p className="text-xs text-text-700 mt-0.5">
+                        Documento PDF autollenado con datos del expediente
+                      </p>
+                    </div>
+                    <span className="bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-wider">
+                      {sale.convenio}
+                    </span>
+                  </div>
+                  <div className="px-4 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Este documento se genera automáticamente al aceptar la cotización. Contiene los datos del cliente, monto, plazo y cuota prellenados en la plantilla del convenio.
+                      </p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={handleDownloadPdf}
+                        disabled={pdfLoading}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-[var(--color-bcp-blue)] hover:bg-[var(--color-bcp-blue-dark,#001a6e)] rounded-lg transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {pdfLoading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                        Descargar PDF
+                      </button>
+                      <button
+                        onClick={handleRegeneratePdf}
+                        disabled={pdfLoading}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-[var(--color-bcp-blue)] bg-white border border-[rgba(0,42,141,0.2)] hover:bg-[rgba(0,42,141,0.06)] rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Regenerar PDF con datos actualizados"
+                      >
+                        <RefreshCw size={14} className={pdfLoading ? 'animate-spin' : ''} />
+                        Regenerar
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              {/* ── Enviar Expediente por Correo ── */}
+              <section className="bg-surface-100 border border-surface-200 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-4 py-3 border-b border-surface-200 flex items-center justify-between gap-3 bg-surface-100">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                      <Mail size={18} className="text-[var(--color-bcp-blue)]" />
+                      Enviar Expediente por Correo
+                    </h3>
+                    <p className="text-xs text-text-700 mt-0.5">Enviar todos los documentos adjuntos al BCP o al convenio</p>
+                  </div>
+                </div>
+                <div className="px-4 py-4 space-y-3">
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      value={emailTo}
+                      onChange={(e) => setEmailTo(e.target.value)}
+                      placeholder="correo@entidad.gob.pe"
+                      className="flex-1 px-3 py-2 text-sm rounded-lg border border-surface-200 bg-white focus:outline-none focus:ring-2 focus:ring-[rgba(0,42,141,0.3)] focus:border-[var(--color-bcp-blue)] placeholder:text-text-700"
+                    />
+                    <button
+                      onClick={handleSendEmail}
+                      disabled={emailLoading || !emailTo}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-[var(--color-bcp-blue)] hover:bg-[var(--color-bcp-blue-dark,#001a6e)] rounded-lg transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {emailLoading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                      Enviar
+                    </button>
+                  </div>
+                  {emailResult && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                      <p className="text-xs font-semibold text-emerald-700">
+                        ✓ Correo enviado exitosamente
+                      </p>
+                      {emailResult.previewUrl && (
+                        <a
+                          href={emailResult.previewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:underline mt-1 inline-flex items-center gap-1"
+                        >
+                          <ExternalLink size={12} />
+                          Ver en Ethereal (modo prueba)
+                        </a>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-text-700 leading-relaxed">
+                    Se adjuntarán todos los documentos del expediente ({docs.length} archivos) al correo electrónico.
+                  </p>
+                </div>
+              </section>
+
               <section className="bg-surface-100 border border-surface-200 rounded-xl overflow-hidden shadow-sm">
                 <div className="px-4 py-3 border-b border-surface-200 flex items-center justify-between gap-3 bg-surface-100">
                   <div>
@@ -482,9 +745,16 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                       <History size={18} className="text-[var(--color-bcp-blue)]" />
                       Historial / trazabilidad
                     </h3>
-                    <p className="text-xs text-text-700 mt-0.5">Movimientos y observaciones del expediente</p>
+                    <p className="text-xs text-text-700 mt-0.5">Últimos movimientos y observaciones del expediente</p>
                   </div>
-                  <span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded text-xs font-bold">{traceItems.length}</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowFullTimeline(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[rgba(0,42,141,0.18)] bg-[rgba(0,42,141,0.06)] px-3 py-2 text-xs font-black text-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)] transition-colors"
+                  >
+                    <History size={14} />
+                    Ver completa
+                  </button>
                 </div>
 
                 {traceItems.length > 0 ? (
@@ -529,7 +799,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
               </section>
             </main>
 
-            <aside className="min-h-0 overflow-y-auto bg-surface-100 border-t lg:border-t-0 lg:border-l border-surface-200 p-5 space-y-5">
+            <aside className="min-h-0 overflow-y-auto bg-surface-100 border-t lg:border-t-0 lg:border-l border-surface-200 p-6 space-y-6">
               <section className="space-y-3">
                 <h3 className="text-xs font-semibold text-text-700 uppercase tracking-wider">Credito</h3>
                 <div className="rounded-xl border border-surface-200 bg-surface-50 overflow-hidden">
@@ -540,7 +810,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                   <div className="grid grid-cols-2 divide-x divide-surface-200">
                     <div className="p-3">
                       <p className="text-[10px] font-black uppercase text-text-700">Ubicacion</p>
-                      <p className="text-sm font-bold text-slate-700 truncate">{plaza}</p>
+                      <p className="text-sm font-bold text-slate-700 leading-snug">{plaza}</p>
                     </div>
                     <div className="p-3">
                       <p className="text-[10px] font-black uppercase text-text-700">Plazo</p>
@@ -554,113 +824,181 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                   <div className="grid grid-cols-2 divide-x divide-surface-200 border-t border-surface-200">
                     <div className="p-3">
                       <p className="text-[10px] font-black uppercase text-text-700">Cargo</p>
-                      <p className="text-sm font-bold text-slate-700 truncate">{cargoLaboral}</p>
+                      <p className="text-sm font-bold text-slate-700 leading-snug">{cargoLaboral}</p>
                     </div>
                     <div className="p-3">
                       <p className="text-[10px] font-black uppercase text-text-700">Entidad</p>
-                      <p className="text-sm font-bold text-slate-700 truncate">{entidadLaboral}</p>
+                      <p className="text-sm font-bold text-slate-700 leading-snug">{entidadLaboral}</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 divide-x divide-surface-200 border-t border-surface-200">
                     <div className="p-3">
                       <p className="text-[10px] font-black uppercase text-text-700">Celular</p>
-                      <p className="text-sm font-bold text-slate-700 truncate">{celular}</p>
+                      <p className="text-sm font-bold text-slate-700 break-words">{celular}</p>
                     </div>
                     <div className="p-3">
                       <p className="text-[10px] font-black uppercase text-text-700">Correo</p>
-                      <p className="text-sm font-bold text-slate-700 truncate">{correo}</p>
+                      <p className="text-sm font-bold text-slate-700 break-words">{correo}</p>
                     </div>
                   </div>
                 </div>
               </section>
 
               <section className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold text-text-700 uppercase tracking-wider">Riesgo crediticio</h3>
-                  {sale.rcc_semaforo && (
+                <h3 className="text-xs font-semibold text-text-700 uppercase tracking-wider">Riesgo crediticio</h3>
+                
+                {/* --- TITULAR --- */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-bold text-text-700 uppercase">Titular: {cliente}</p>
+                    {traceSource.rcc_semaforo && (
+                      <button
+                        onClick={() => handleConsultarRCC('cliente')}
+                        disabled={rccLoading}
+                        className="p-1 text-text-700 hover:text-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)] rounded transition-all disabled:opacity-30"
+                        title="Actualizar score titular"
+                      >
+                        <RefreshCw size={13} className={rccLoading ? 'animate-spin' : ''} />
+                      </button>
+                    )}
+                  </div>
+                  {!traceSource.rcc_semaforo ? (
                     <button
-                      onClick={handleConsultarRCC}
+                      onClick={() => handleConsultarRCC('cliente')}
                       disabled={rccLoading}
-                      className="p-1.5 text-text-700 hover:text-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)] rounded transition-all disabled:opacity-30"
-                      title="Actualizar score"
+                      className="w-full group flex items-center justify-center gap-2 py-3 bg-surface-100 border-2 border-dashed border-surface-200 rounded-xl hover:border-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)]/30 transition-all disabled:opacity-50"
                     >
-                      <RefreshCw size={14} className={rccLoading ? 'animate-spin' : ''} />
+                      {rccLoading ? (
+                        <Loader2 size={20} className="animate-spin text-[var(--color-bcp-blue)]" />
+                      ) : (
+                        <>
+                          <Search size={16} className="text-[var(--color-bcp-blue)]" />
+                          <span className="text-xs font-bold text-slate-800">Consultar Titular (DNI {sale.dni_cliente})</span>
+                        </>
+                      )}
                     </button>
+                  ) : (
+                    <div className={`p-3 rounded-xl border ${calificacion[traceSource.rcc_semaforo]?.border} ${calificacion[traceSource.rcc_semaforo]?.bg} transition-all duration-300`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`p-1.5 bg-surface-100 rounded shadow-sm ${calificacion[traceSource.rcc_semaforo]?.color}`}>
+                          {(() => {
+                            const Icon = calificacion[traceSource.rcc_semaforo]?.icon || HelpCircle;
+                            return <Icon size={18} />;
+                          })()}
+                        </div>
+                        <div>
+                          <p className={`text-xs font-black leading-tight ${calificacion[traceSource.rcc_semaforo]?.color}`}>
+                            {calificacion[traceSource.rcc_semaforo]?.label}
+                          </p>
+                          {traceSource.rcc_ultima_act && (
+                            <p className="text-[9px] text-text-700 font-medium">
+                              {formatDistanceToNow(new Date(traceSource.rcc_ultima_act), { addSuffix: true, locale: es })}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-1 text-[10px]">
+                        <div className="flex justify-between items-center">
+                          <span className="text-text-700 uppercase">Deuda total</span>
+                          <span className="text-slate-800 font-black">S/ {traceSource.rcc_monto_deuda?.toLocaleString('es-PE') || '0'}</span>
+                        </div>
+                        {rccData?.score && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-text-700 uppercase">Score buro</span>
+                            <span className="text-slate-800 font-black">{rccData.score}</span>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          setRccDetailSujeto('cliente');
+                          setShowRccDetail(true);
+                        }}
+                        className="w-full mt-2 py-1 text-[9px] font-bold text-[var(--color-bcp-blue)] hover:bg-white/50 border border-blue-100 rounded-lg transition-colors flex items-center justify-center gap-1 uppercase"
+                      >
+                        Ver reporte detallado <ExternalLink size={10} />
+                      </button>
+                    </div>
                   )}
                 </div>
 
-                {!sale.rcc_semaforo ? (
-                  <button
-                    onClick={handleConsultarRCC}
-                    disabled={rccLoading}
-                    className="w-full group flex items-center justify-center gap-3 py-4 bg-surface-100 border-2 border-dashed border-surface-200 rounded-xl hover:border-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)]/30 transition-all disabled:opacity-50"
-                  >
-                    {rccLoading ? (
-                      <Loader2 size={24} className="animate-spin text-[var(--color-bcp-blue)]" />
-                    ) : (
-                      <>
-                        <div className="p-2 bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] rounded-lg group-hover:scale-105 transition-transform">
-                          <Search size={20} />
-                        </div>
-                        <div className="text-left">
-                          <p className="text-sm font-bold text-slate-800">Consultar Infoburo</p>
-                          <p className="text-[10px] text-text-700 uppercase font-semibold">Validacion inmediata</p>
-                        </div>
-                      </>
-                    )}
-                  </button>
-                ) : (
-                  <div className={`p-4 rounded-xl border ${calificacion[sale.rcc_semaforo]?.border} ${calificacion[sale.rcc_semaforo]?.bg} ${calificacion[sale.rcc_semaforo]?.glow} transition-all duration-500`}>
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className={`p-2 bg-surface-100 rounded-lg shadow-sm ${calificacion[sale.rcc_semaforo]?.color}`}>
-                        {(() => {
-                          const Icon = calificacion[sale.rcc_semaforo]?.icon;
-                          return <Icon size={24} />;
-                        })()}
-                      </div>
-                      <div>
-                        <p className={`text-sm font-black leading-tight ${calificacion[sale.rcc_semaforo]?.color}`}>
-                          {calificacion[sale.rcc_semaforo]?.label}
-                        </p>
-                        {sale.rcc_ultima_act && (
-                          <p className="text-[10px] text-text-700 font-medium">
-                            {formatDistanceToNow(new Date(sale.rcc_ultima_act), { addSuffix: true, locale: es })}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center text-[11px]">
-                        <span className="text-text-700 font-medium uppercase">Deuda total</span>
-                        <span className="text-slate-800 font-black">S/ {sale.rcc_monto_deuda?.toLocaleString('es-PE') || '0'}</span>
-                      </div>
-                      {rccData?.score && (
-                        <div className="flex justify-between items-center text-[11px]">
-                          <span className="text-text-700 font-medium uppercase">Score buro</span>
-                          <span className="text-slate-800 font-black">{rccData.score}</span>
-                        </div>
+                {/* --- CONYUGE --- */}
+                {isMarried && (
+                  <div className="space-y-2 pt-2 border-t border-surface-200">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-bold text-text-700 uppercase">Cónyuge: {traceSource.conyuge_nombres || sale.conyuge_nombres || 'No registrado'}</p>
+                      {traceSource.conyuge_rcc_semaforo && (
+                        <button
+                          onClick={() => handleConsultarRCC('conyuge')}
+                          disabled={rccLoading}
+                          className="p-1 text-text-700 hover:text-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)] rounded transition-all disabled:opacity-30"
+                          title="Actualizar score cónyuge"
+                        >
+                          <RefreshCw size={13} className={rccLoading ? 'animate-spin' : ''} />
+                        </button>
                       )}
-                      <div className="h-1 w-full bg-black/5 rounded-full overflow-hidden mt-2">
-                        <div
-                          className={`h-full transition-all duration-1000 ${
-                            sale.rcc_semaforo === 'VERDE' ? 'w-full bg-emerald-500' :
-                            sale.rcc_semaforo === 'AMARILLO' ? 'w-2/3 bg-amber-500' :
-                            'w-1/3 bg-rose-500'
-                          }`}
-                        />
-                      </div>
                     </div>
+                    {!traceSource.conyuge_rcc_semaforo ? (
+                      <button
+                        onClick={() => handleConsultarRCC('conyuge')}
+                        disabled={rccLoading || !(traceSource.conyuge_dni || sale.conyuge_dni)}
+                        className="w-full group flex items-center justify-center gap-2 py-3 bg-surface-100 border-2 border-dashed border-surface-200 rounded-xl hover:border-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)]/30 transition-all disabled:opacity-50"
+                      >
+                        {rccLoading ? (
+                          <Loader2 size={20} className="animate-spin text-[var(--color-bcp-blue)]" />
+                        ) : (
+                          <>
+                            <Search size={16} className="text-[var(--color-bcp-blue)]" />
+                            <span className="text-xs font-bold text-slate-800">
+                              Consultar Cónyuge (DNI {traceSource.conyuge_dni || sale.conyuge_dni || 'N/A'})
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <div className={`p-3 rounded-xl border ${calificacion[traceSource.conyuge_rcc_semaforo]?.border} ${calificacion[traceSource.conyuge_rcc_semaforo]?.bg} transition-all duration-300`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className={`p-1.5 bg-surface-100 rounded shadow-sm ${calificacion[traceSource.conyuge_rcc_semaforo]?.color}`}>
+                            {(() => {
+                              const Icon = calificacion[traceSource.conyuge_rcc_semaforo]?.icon || HelpCircle;
+                              return <Icon size={18} />;
+                            })()}
+                          </div>
+                          <div>
+                            <p className={`text-xs font-black leading-tight ${calificacion[traceSource.conyuge_rcc_semaforo]?.color}`}>
+                              {calificacion[traceSource.conyuge_rcc_semaforo]?.label}
+                            </p>
+                            {traceSource.conyuge_rcc_ultima_act && (
+                              <p className="text-[9px] text-text-700 font-medium">
+                                {formatDistanceToNow(new Date(traceSource.conyuge_rcc_ultima_act), { addSuffix: true, locale: es })}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-1 text-[10px]">
+                          <div className="flex justify-between items-center">
+                            <span className="text-text-700 uppercase">Deuda total</span>
+                            <span className="text-slate-800 font-black">S/ {traceSource.conyuge_rcc_monto_deuda?.toLocaleString('es-PE') || '0'}</span>
+                          </div>
+                          {conyugeRccData?.score && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-text-700 uppercase">Score buro</span>
+                              <span className="text-slate-800 font-black">{conyugeRccData.score}</span>
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setRccDetailSujeto('conyuge');
+                            setShowRccDetail(true);
+                          }}
+                          className="w-full mt-2 py-1 text-[9px] font-bold text-[var(--color-bcp-blue)] hover:bg-white/50 border border-blue-100 rounded-lg transition-colors flex items-center justify-center gap-1 uppercase"
+                        >
+                          Ver reporte detallado <ExternalLink size={10} />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-
-                {sale.rcc_semaforo && (
-                  <button
-                    onClick={() => setShowRccDetail(true)}
-                    className="w-full py-2 text-[10px] font-bold text-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)] border border-blue-100 rounded-lg transition-colors flex items-center justify-center gap-1 uppercase tracking-wider"
-                  >
-                    Ver reporte detallado <ExternalLink size={12} />
-                  </button>
                 )}
               </section>
 
@@ -721,6 +1059,111 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
         </div>
       </div>
 
+      {showFullTimeline && (
+        <div className="fixed inset-0 z-[100000] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+          <div className="w-full max-w-5xl max-h-[88vh] bg-surface-100 rounded-2xl border border-surface-200 shadow-2xl flex flex-col overflow-hidden">
+            <div className="px-5 py-4 border-b border-surface-200 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-bcp-blue)]">Auditoría del expediente</p>
+                <h3 className="text-lg font-black text-slate-900 mt-1">Trazabilidad completa</h3>
+                <p className="text-xs font-semibold text-text-700 mt-1">
+                  {timelineTotal} eventos registrados para DNI {sale.dni_cliente}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFullTimeline(false)}
+                className="p-2 rounded-xl text-text-700 hover:text-slate-900 hover:bg-surface-50 transition-colors"
+                aria-label="Cerrar trazabilidad completa"
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="px-5 py-3 border-b border-surface-200 bg-surface-50/70 flex flex-wrap gap-2">
+              {TIMELINE_FILTERS.map((filter) => (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => setTimelineFilter(filter.key)}
+                  className={`rounded-lg px-3 py-2 text-[11px] font-black uppercase transition-colors ${
+                    timelineFilter === filter.key
+                      ? 'bg-[var(--color-bcp-blue)] text-white'
+                      : 'bg-surface-100 border border-surface-200 text-text-700 hover:text-[var(--color-bcp-blue)]'
+                  }`}
+                >
+                  {filter.label}
+                  {filter.key !== 'all' && timelineCounts[filter.key] ? ` (${timelineCounts[filter.key]})` : ''}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto p-5">
+              {timelineLoading && timelineItems.length === 0 ? (
+                <div className="py-16 flex flex-col items-center justify-center gap-3 text-text-700">
+                  <Loader2 size={24} className="animate-spin text-[var(--color-bcp-blue)]" />
+                  <p className="text-xs font-black uppercase tracking-widest">Cargando trazabilidad</p>
+                </div>
+              ) : timelineItems.length > 0 ? (
+                <div className="relative space-y-4 before:absolute before:left-[22px] before:top-2 before:bottom-2 before:w-px before:bg-surface-200">
+                  {timelineItems.map((item) => {
+                    const Icon = getTimelineIcon(item.type);
+                    return (
+                      <div key={`${item.source}-${item.id}`} className="relative flex gap-4">
+                        <div className="w-11 h-11 rounded-xl bg-[rgba(0,42,141,0.08)] text-[var(--color-bcp-blue)] flex items-center justify-center shrink-0 z-10 border border-blue-100">
+                          <Icon size={19} />
+                        </div>
+                        <div className="min-w-0 flex-1 rounded-xl border border-surface-200 bg-surface-50 px-4 py-3">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <p className="text-sm font-black uppercase tracking-tight text-slate-900">{item.title}</p>
+                            <span className="rounded bg-surface-100 border border-surface-200 px-2 py-0.5 text-[9px] font-black uppercase text-text-700">
+                              {TIMELINE_FILTERS.find((f) => f.key === item.type)?.label || 'Sistema'}
+                            </span>
+                            {item.created_at && (
+                              <span className="text-[10px] font-bold uppercase text-text-700">
+                                {new Date(item.created_at).toLocaleString('es-PE')}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm font-semibold text-text-700 leading-relaxed mt-2 whitespace-pre-wrap">{item.text}</p>
+                          {(item.actor?.nombre || item.actor?.username) && (
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--color-bcp-blue)] mt-3">
+                              {item.actor.nombre || item.actor.username}{item.actor.role ? ` · ${item.actor.role}` : ''}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-16 text-center">
+                  <History size={34} className="text-text-700 mx-auto mb-3" />
+                  <p className="text-xs font-black uppercase tracking-widest text-text-700">Sin eventos para este filtro</p>
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-surface-200 bg-surface-50 flex items-center justify-between gap-3">
+              <p className="text-[11px] font-bold text-text-700">
+                Página {timelinePage} de {timelinePages}
+              </p>
+              {timelinePage < timelinePages && (
+                <button
+                  type="button"
+                  onClick={() => fetchFullTimeline(timelinePage + 1, true)}
+                  disabled={timelineLoading}
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-800 disabled:opacity-50"
+                >
+                  {timelineLoading && <Loader2 size={14} className="animate-spin" />}
+                  Cargar más
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Preview Modal Overlay */}
       {previewDoc && (
         <div className="fixed inset-0 z-[99999] bg-slate-950 flex flex-col p-2 sm:p-4 animate-in fade-in duration-200">
@@ -776,231 +1219,237 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
         </div>
       )}
       {/* Modal Reporte RCC Detallado */}
-      {showRccDetail && rccData && (
-        <div className="fixed inset-0 z-[10000] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
-          <div className="bg-surface-100 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden border border-surface-200">
-            <div className="px-6 py-4 border-b border-surface-200 flex justify-between items-center bg-surface-50/50">
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${calificacion[sale.rcc_semaforo]?.bg} ${calificacion[sale.rcc_semaforo]?.color}`}>
-                  <ShieldCheck size={20} />
+      {showRccDetail && (rccDetailSujeto === 'conyuge' ? conyugeRccData : rccData) && (() => {
+        const activeRccData = rccDetailSujeto === 'conyuge' ? conyugeRccData : rccData;
+        const activeSemaforo = rccDetailSujeto === 'conyuge' ? traceSource.conyuge_rcc_semaforo : traceSource.rcc_semaforo;
+        return (
+          <div className="fixed inset-0 z-[10000] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
+            <div className="bg-surface-100 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden border border-surface-200">
+              <div className="px-6 py-4 border-b border-surface-200 flex justify-between items-center bg-surface-50/50">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${calificacion[activeSemaforo]?.bg} ${calificacion[activeSemaforo]?.color}`}>
+                    <ShieldCheck size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800 uppercase tracking-tight">
+                      Reporte Crediticio - {rccDetailSujeto === 'conyuge' ? 'Cónyuge' : 'Titular'}
+                    </h3>
+                    <p className="text-xs text-text-700 font-medium">{activeRccData.nombres} • DNI: {activeRccData.dni}</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-800 uppercase tracking-tight">Reporte Crediticio Completo</h3>
-                  <p className="text-xs text-text-700 font-medium">{rccData.nombres} • DNI: {rccData.dni}</p>
-                </div>
-              </div>
-              <button onClick={() => setShowRccDetail(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
-                <X size={20} className="text-text-700" />
-              </button>
-            </div>
-
-            {/* Pestañas del Reporte */}
-            <div className="flex bg-surface-50 border-b border-surface-200 overflow-x-auto no-scrollbar shrink-0" role="tablist" aria-label="Secciones del reporte crediticio">
-              {[
-                { id: 'general', label: 'Información General' },
-                { id: 'historico', label: 'Histórico SBS' },
-                { id: 'deudas', label: 'Deudas por Entidad' },
-                { id: 'otros', label: 'Otros Datos' },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  role="tab"
-                  aria-selected={activeRccTab === tab.id}
-                  aria-controls={`tabpanel-${tab.id}`}
-                  id={`tab-${tab.id}`}
-                  onClick={() => setActiveRccTab(tab.id as any)}
-                  className={`px-6 py-3 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 whitespace-nowrap outline-none focus-visible:bg-[rgba(0,42,141,0.1)] ${
-                    activeRccTab === tab.id 
-                      ? 'text-[var(--color-bcp-blue)] border-[var(--color-bcp-blue)] bg-surface-100' 
-                      : 'text-text-700 border-transparent hover:text-text-700 hover:bg-slate-100/50'
-                  }`}
-                >
-                  {tab.label}
+                <button onClick={() => setShowRccDetail(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                  <X size={20} className="text-text-700" />
                 </button>
-              ))}
-            </div>
+              </div>
 
-            <div className="h-[500px] overflow-y-auto p-6 sm:p-8 scrollbar-thin scrollbar-thumb-slate-200 bg-surface-100">
-              <div 
-                key={activeRccTab}
-                role="tabpanel" 
-                id={`tabpanel-${activeRccTab}`} 
-                aria-labelledby={`tab-${activeRccTab}`}
-                className="animate-in fade-in slide-in-from-bottom-3 duration-500 ease-out h-full"
-              >
-                {activeRccTab === 'general' && (
-                  <div className="space-y-8">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      <div className="space-y-4">
-                        <h4 className="text-[10px] font-black text-text-700 uppercase tracking-widest flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full bg-[rgba(0,42,141,0.1)]0"></div> Datos Personales
-                        </h4>
-                        <div className="grid grid-cols-2 gap-4">
-                          {[
-                            { label: 'DNI', value: rccData.dni },
-                            { label: 'Estado Civil', value: rccData.infoGeneral?.estadoCivil },
-                            { label: 'Sexo', value: rccData.infoGeneral?.sexo },
-                            { label: 'Nacimiento', value: rccData.infoGeneral?.nacimiento },
-                          ].map((f, i) => (
-                            <div key={i} className="p-4 bg-surface-50 rounded-xl border border-surface-200 hover:bg-surface-100 hover:shadow-sm transition-all group">
-                              <p className="text-[9px] text-text-700 font-bold uppercase mb-1 group-hover:text-blue-500 transition-colors">{f.label}</p>
-                              <p className="text-xs font-black text-slate-800">{f.value || 'N/A'}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      {rccData.ruc && (
+              {/* Pestañas del Reporte */}
+              <div className="flex bg-surface-50 border-b border-surface-200 overflow-x-auto no-scrollbar shrink-0" role="tablist" aria-label="Secciones del reporte crediticio">
+                {[
+                  { id: 'general', label: 'Información General' },
+                  { id: 'historico', label: 'Histórico SBS' },
+                  { id: 'deudas', label: 'Deudas por Entidad' },
+                  { id: 'otros', label: 'Otros Datos' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    role="tab"
+                    aria-selected={activeRccTab === tab.id}
+                    aria-controls={`tabpanel-${tab.id}`}
+                    id={`tab-${tab.id}`}
+                    onClick={() => setActiveRccTab(tab.id as any)}
+                    className={`px-6 py-3 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 whitespace-nowrap outline-none focus-visible:bg-[rgba(0,42,141,0.1)] ${
+                      activeRccTab === tab.id 
+                        ? 'text-[var(--color-bcp-blue)] border-[var(--color-bcp-blue)] bg-surface-100' 
+                        : 'text-text-700 border-transparent hover:text-text-700 hover:bg-slate-100/50'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="h-[500px] overflow-y-auto p-6 sm:p-8 scrollbar-thin scrollbar-thumb-slate-200 bg-surface-100">
+                <div 
+                  key={activeRccTab}
+                  role="tabpanel" 
+                  id={`tabpanel-${activeRccTab}`} 
+                  aria-labelledby={`tab-${activeRccTab}`}
+                  className="animate-in fade-in slide-in-from-bottom-3 duration-500 ease-out h-full"
+                >
+                  {activeRccTab === 'general' && (
+                    <div className="space-y-8">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-4">
                           <h4 className="text-[10px] font-black text-text-700 uppercase tracking-widest flex items-center gap-2">
-                            <div className="w-1.5 h-1.5 rounded-full bg-[rgba(0,42,141,0.1)]0"></div> Información RUC
+                            <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div> Datos Personales
                           </h4>
-                          <div className="p-5 bg-[rgba(0,42,141,0.1)]/50 rounded-2xl border border-blue-100 hover:bg-[rgba(0,42,141,0.1)] transition-all">
-                            <p className="text-[9px] text-blue-400 font-bold uppercase mb-1">Razón Social</p>
-                            <p className="text-sm font-black text-slate-800 mb-4">{rccData.ruc.razonSocial || 'No registra'}</p>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <p className="text-[9px] text-blue-400 font-bold uppercase">RUC</p>
-                                <p className="text-xs font-black text-slate-700">{rccData.ruc.ruc || '-'}</p>
+                          <div className="grid grid-cols-2 gap-4">
+                            {[
+                              { label: 'DNI', value: activeRccData.dni },
+                              { label: 'Estado Civil', value: activeRccData.infoGeneral?.estadoCivil },
+                              { label: 'Sexo', value: activeRccData.infoGeneral?.sexo },
+                              { label: 'Nacimiento', value: activeRccData.infoGeneral?.nacimiento },
+                            ].map((f, i) => (
+                              <div key={i} className="p-4 bg-surface-50 rounded-xl border border-surface-200 hover:bg-surface-100 hover:shadow-sm transition-all group">
+                                <p className="text-[9px] text-text-700 font-bold uppercase mb-1 group-hover:text-blue-500 transition-colors">{f.label}</p>
+                                <p className="text-xs font-black text-slate-800">{f.value || 'N/A'}</p>
                               </div>
-                              <div>
-                                <p className="text-[9px] text-blue-400 font-bold uppercase">Estado</p>
-                                <p className="text-xs font-black text-slate-700">{rccData.ruc.estado || '-'}</p>
-                              </div>
-                            </div>
+                            ))}
                           </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {activeRccTab === 'historico' && (
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-                      {rccData.historico?.map((h: any, i: number) => (
-                        <div key={i} className="p-4 bg-surface-100 rounded-xl border border-surface-200 shadow-sm text-center group hover:border-blue-300 hover:shadow-md transition-all">
-                          <p className="text-[10px] font-bold text-text-700 mb-2">{h.mes} {h.fecha}</p>
-                          <div className="flex gap-0.5 h-2 rounded-full overflow-hidden mb-3 bg-slate-100">
-                            {parseFloat(h.porNOR) > 0 && <div style={{ width: `${h.porNOR}%` }} className="bg-emerald-500 h-full"></div>}
-                            {parseFloat(h.porCPP) > 0 && <div style={{ width: `${h.porCPP}%` }} className="bg-amber-400 h-full"></div>}
-                            {parseFloat(h.porDEF) > 0 && <div style={{ width: `${h.porDEF}%` }} className="bg-[rgba(255,120,0,0.1)]0 h-full"></div>}
-                            {parseFloat(h.porDUD) > 0 && <div style={{ width: `${h.porDUD}%` }} className="bg-rose-500 h-full"></div>}
-                            {parseFloat(h.porPER) > 0 && <div style={{ width: `${h.porPER}%` }} className="bg-slate-800 h-full"></div>}
-                          </div>
-                          <p className="text-sm font-black text-slate-800">S/ {h.deudaTotal}</p>
-                          <p className="text-[9px] font-bold text-text-700 mt-1 uppercase tracking-tighter">{h.numEntidades} Entidades</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {activeRccTab === 'deudas' && (
-                  <div className="space-y-6">
-                    <div className="overflow-hidden rounded-2xl border border-surface-200 shadow-sm bg-surface-100">
-                      <table className="w-full text-left border-collapse">
-                        <thead className="bg-surface-50/80 text-[10px] text-text-700 font-black uppercase tracking-widest">
-                          <tr>
-                            <th className="px-6 py-5">Entidad Financiera</th>
-                            <th className="px-6 py-5">Línea Aprobada</th>
-                            <th className="px-6 py-5">Línea Utilizada</th>
-                            <th className="px-6 py-5">No Utilizada</th>
-                          </tr>
-                        </thead>
-                        <tbody className="text-xs text-slate-700 divide-y divide-slate-50">
-                          {rccData.lineasCredito?.map((l: any, i: number) => (
-                            <tr key={i} className="hover:bg-[rgba(0,42,141,0.1)]/50 transition-all group">
-                              <td className="px-6 py-4 font-bold text-slate-800 group-hover:text-[var(--color-bcp-blue)]">{l.entidad}</td>
-                              <td className="px-6 py-4 font-medium text-text-700">S/ {l.lineaAprobada}</td>
-                              <td className="px-6 py-4 font-black text-rose-600">S/ {l.lineaUtilizada}</td>
-                              <td className="px-6 py-4 text-emerald-600 font-bold">S/ {l.lineaNoUtilizada}</td>
-                            </tr>
-                          ))}
-                          {(!rccData.lineasCredito || rccData.lineasCredito.length === 0) && (
-                            <tr>
-                              <td colSpan={4} className="px-6 py-12 text-center text-text-700 font-bold uppercase tracking-widest text-[10px]">No se registran líneas activas</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {activeRccTab === 'otros' && (
-                  <div className="space-y-8">
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                      <div className="lg:col-span-4 p-6 bg-surface-50 rounded-2xl border border-surface-200 h-fit">
-                        <h4 className="text-[10px] font-black text-text-700 uppercase tracking-widest mb-6 flex items-center gap-2">
-                           <div className="w-1.5 h-1.5 rounded-full bg-[rgba(0,42,141,0.1)]0"></div> Información de Filtro
-                        </h4>
-                        <div className="space-y-4">
-                          {[
-                            { label: 'Score Buró', value: rccData.score },
-                            { label: 'Producto', value: rccData.producto },
-                            { label: 'Color DxP', value: rccData.colorDxP },
-                            { label: 'Filtro Vehicular', value: rccData.filtroVehicular },
-                            { label: 'Motivo Caída DxP', value: rccData.motivoCaida },
-                          ].map((f, i) => (
-                            <div key={i} className="flex justify-between items-center border-b border-surface-200/50 pb-3">
-                              <span className="text-[9px] text-text-700 font-bold uppercase">{f.label}</span>
-                              <span className="text-xs font-black text-slate-800">{f.value || '-'}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      
-                      <div className="lg:col-span-8 space-y-6">
-                        {rccData.otros && rccData.otros.length > 0 && (
+                        {activeRccData.ruc && (
                           <div className="space-y-4">
                             <h4 className="text-[10px] font-black text-text-700 uppercase tracking-widest flex items-center gap-2">
-                               <div className="w-1.5 h-1.5 rounded-full bg-[rgba(0,42,141,0.1)]0"></div> Resumen Financiero Detallado
+                              <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div> Información RUC
                             </h4>
-                            <div className="overflow-hidden rounded-2xl border border-surface-200 bg-surface-100 shadow-sm">
-                              <table className="w-full text-[10px]">
-                                <thead className="bg-surface-50 text-text-700 font-black uppercase border-b border-surface-200">
-                                  <tr>
-                                    {Object.keys(rccData.otros[0] || {}).map(k => <th key={k} className="px-4 py-4 text-left">{k}</th>)}
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-50 text-slate-700">
-                                  {rccData.otros.map((row: any, i: number) => (
-                                    <tr key={i} className="hover:bg-[rgba(0,42,141,0.1)]/30 transition-colors">
-                                      {Object.values(row).map((v: any, j: number) => (
-                                        <td key={j} className={`px-4 py-4 font-bold ${j > 0 ? 'text-text-900' : 'text-blue-700'}`}>
-                                          {v === '0.00' ? <span className="text-text-700 font-medium">0.00</span> : v}
-                                        </td>
-                                      ))}
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                            <div className="p-5 bg-[rgba(0,42,141,0.1)]/50 rounded-2xl border border-blue-100 hover:bg-[rgba(0,42,141,0.1)] transition-all">
+                              <p className="text-[9px] text-blue-400 font-bold uppercase mb-1">Razón Social</p>
+                              <p className="text-sm font-black text-slate-800 mb-4">{activeRccData.ruc.razonSocial || 'No registra'}</p>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <p className="text-[9px] text-blue-400 font-bold uppercase">RUC</p>
+                                  <p className="text-xs font-black text-slate-700">{activeRccData.ruc.ruc || '-'}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[9px] text-blue-400 font-bold uppercase">Estado</p>
+                                  <p className="text-xs font-black text-slate-700">{activeRccData.ruc.estado || '-'}</p>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         )}
+                      </div>
+                    </div>
+                  )}
+
+                  {activeRccTab === 'historico' && (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                        {activeRccData.historico?.map((h: any, i: number) => (
+                          <div key={i} className="p-4 bg-surface-100 rounded-xl border border-surface-200 shadow-sm text-center group hover:border-blue-300 hover:shadow-md transition-all">
+                            <p className="text-[10px] font-bold text-text-700 mb-2">{h.mes} {h.fecha}</p>
+                            <div className="flex gap-0.5 h-2 rounded-full overflow-hidden mb-3 bg-slate-100">
+                              {parseFloat(h.porNOR) > 0 && <div style={{ width: `${h.porNOR}%` }} className="bg-emerald-500 h-full"></div>}
+                              {parseFloat(h.porCPP) > 0 && <div style={{ width: `${h.porCPP}%` }} className="bg-amber-400 h-full"></div>}
+                              {parseFloat(h.porDEF) > 0 && <div style={{ width: `${h.porDEF}%` }} className="bg-orange-500 h-full"></div>}
+                              {parseFloat(h.porDUD) > 0 && <div style={{ width: `${h.porDUD}%` }} className="bg-rose-500 h-full"></div>}
+                              {parseFloat(h.porPER) > 0 && <div style={{ width: `${h.porPER}%` }} className="bg-slate-800 h-full"></div>}
+                            </div>
+                            <p className="text-sm font-black text-slate-800">S/ {h.deudaTotal}</p>
+                            <p className="text-[9px] font-bold text-text-700 mt-1 uppercase tracking-tighter">{h.numEntidades} Entidades</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {activeRccTab === 'deudas' && (
+                    <div className="space-y-6">
+                      <div className="overflow-hidden rounded-2xl border border-surface-200 shadow-sm bg-surface-100">
+                        <table className="w-full text-left border-collapse">
+                          <thead className="bg-surface-50/80 text-[10px] text-text-700 font-black uppercase tracking-widest">
+                            <tr>
+                              <th className="px-6 py-5">Entidad Financiera</th>
+                              <th className="px-6 py-5">Línea Aprobada</th>
+                              <th className="px-6 py-5">Línea Utilizada</th>
+                              <th className="px-6 py-5">No Utilizada</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-xs text-slate-700 divide-y divide-slate-50">
+                            {activeRccData.lineasCredito?.map((l: any, i: number) => (
+                              <tr key={i} className="hover:bg-[rgba(0,42,141,0.1)]/50 transition-all group">
+                                <td className="px-6 py-4 font-bold text-slate-800 group-hover:text-[var(--color-bcp-blue)]">{l.entidad}</td>
+                                <td className="px-6 py-4 font-medium text-text-700">S/ {l.lineaAprobada}</td>
+                                <td className="px-6 py-4 font-black text-rose-600">S/ {l.lineaUtilizada}</td>
+                                <td className="px-6 py-4 text-emerald-600 font-bold">S/ {l.lineaNoUtilizada}</td>
+                              </tr>
+                            ))}
+                            {(!activeRccData.lineasCredito || activeRccData.lineasCredito.length === 0) && (
+                              <tr>
+                                <td colSpan={4} className="px-6 py-12 text-center text-text-700 font-bold uppercase tracking-widest text-[10px]">No se registran líneas activas</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeRccTab === 'otros' && (
+                    <div className="space-y-8">
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                        <div className="lg:col-span-4 p-6 bg-surface-50 rounded-2xl border border-surface-200 h-fit">
+                          <h4 className="text-[10px] font-black text-text-700 uppercase tracking-widest mb-6 flex items-center gap-2">
+                             <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div> Información de Filtro
+                          </h4>
+                          <div className="space-y-4">
+                            {[
+                              { label: 'Score Buró', value: activeRccData.score },
+                              { label: 'Producto', value: activeRccData.producto },
+                              { label: 'Color DxP', value: activeRccData.colorDxP },
+                              { label: 'Filtro Vehicular', value: activeRccData.filtroVehicular },
+                              { label: 'Motivo Caída DxP', value: activeRccData.motivoCaida },
+                            ].map((f, i) => (
+                              <div key={i} className="flex justify-between items-center border-b border-surface-200/50 pb-3">
+                                <span className="text-[9px] text-text-700 font-bold uppercase">{f.label}</span>
+                                <span className="text-xs font-black text-slate-800">{f.value || '-'}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                         
-                        <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
-                          <p className="text-[10px] text-amber-700 font-bold uppercase mb-1 flex items-center gap-1">
-                            <AlertCircle size={12} /> Nota Importante
-                          </p>
-                          <p className="text-[10px] text-amber-600 leading-relaxed font-medium">
-                            La información mostrada en esta pestaña corresponde a filtros adicionales y deudas castigadas/provisionales capturadas durante la última consulta.
-                          </p>
+                        <div className="lg:col-span-8 space-y-6">
+                          {activeRccData.otros && activeRccData.otros.length > 0 && (
+                            <div className="space-y-4">
+                              <h4 className="text-[10px] font-black text-text-700 uppercase tracking-widest flex items-center gap-2">
+                                 <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div> Resumen Financiero Detallado
+                              </h4>
+                              <div className="overflow-hidden rounded-2xl border border-surface-200 bg-surface-100 shadow-sm">
+                                <table className="w-full text-[10px]">
+                                  <thead className="bg-surface-50 text-text-700 font-black uppercase border-b border-surface-200">
+                                    <tr>
+                                      {Object.keys(activeRccData.otros[0] || {}).map(k => <th key={k} className="px-4 py-4 text-left">{k}</th>)}
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-50 text-slate-700">
+                                    {activeRccData.otros.map((row: any, i: number) => (
+                                      <tr key={i} className="hover:bg-[rgba(0,42,141,0.1)]/30 transition-colors">
+                                        {Object.values(row).map((v: any, j: number) => (
+                                          <td key={j} className={`px-4 py-4 font-bold ${j > 0 ? 'text-text-900' : 'text-blue-700'}`}>
+                                            {v === '0.00' ? <span className="text-text-700 font-medium">0.00</span> : v}
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
+                            <p className="text-[10px] text-amber-700 font-bold uppercase mb-1 flex items-center gap-1">
+                              <AlertCircle size={12} /> Nota Importante
+                            </p>
+                            <p className="text-[10px] text-amber-600 leading-relaxed font-medium">
+                              La información mostrada en esta pestaña corresponde a filtros adicionales y deudas castigadas/provisionales capturadas durante la última consulta.
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+              </div>
+              <div className="px-6 py-4 border-t border-surface-200 bg-surface-50 flex justify-end">
+                 <button onClick={() => setShowRccDetail(false)} className="px-6 py-2 bg-slate-800 text-white rounded-xl text-sm font-bold hover:bg-slate-900 transition-all">
+                   Entendido
+                 </button>
               </div>
             </div>
-            <div className="px-6 py-4 border-t border-surface-200 bg-surface-50 flex justify-end">
-               <button onClick={() => setShowRccDetail(false)} className="px-6 py-2 bg-slate-800 text-white rounded-xl text-sm font-bold hover:bg-slate-900 transition-all">
-                 Entendido
-               </button>
-            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
       {/* Modal de Motivo para Observación */}
       {showMotivoModal && (
         <div className="fixed inset-0 z-[100000] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">

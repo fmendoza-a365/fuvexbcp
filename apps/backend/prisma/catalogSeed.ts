@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import * as xlsx from 'xlsx';
+import ExcelJS from 'exceljs';
 import path from 'path';
 
 type RequiredDoc = {
@@ -89,20 +89,39 @@ const getSpecialRule = (convenio: string, cargo: string) => (
   SPECIAL_RCI.find(rule => rule.convenio === convenio && rule.cargo === cargo)
 );
 
-const getWorkbook = () => {
+const getWorkbook = async () => {
   const filePath = path.resolve(__dirname, EXCEL_RELATIVE_PATH);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+
   return {
     filePath,
-    workbook: xlsx.readFile(filePath),
+    workbook,
   };
 };
 
-const sheetRows = (workbook: xlsx.WorkBook, sheetName: string) => {
-  const sheet = workbook.Sheets[sheetName];
+const cellValue = (value: ExcelJS.CellValue): unknown => {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value;
+  if (typeof value !== 'object') return value;
+  if ('result' in value) return value.result ?? '';
+  if ('text' in value) return value.text ?? '';
+  if ('richText' in value) return value.richText.map(item => item.text).join('');
+  return String(value);
+};
+
+const sheetRows = (workbook: ExcelJS.Workbook, sheetName: string) => {
+  const sheet = workbook.getWorksheet(sheetName);
   if (!sheet) {
     throw new Error(`No se encontro la hoja "${sheetName}" en el simulador Excel`);
   }
-  return xlsx.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: '' }) as unknown[][];
+
+  const rows: unknown[][] = [];
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    const values = Array.isArray(row.values) ? row.values.slice(1) : [];
+    rows.push(values.map(cellValue));
+  });
+  return rows;
 };
 
 async function seedGlobalConfig(prisma: PrismaClient) {
@@ -292,7 +311,7 @@ async function seedDocumentosRequeridos(prisma: PrismaClient, convenios: Iterabl
 }
 
 export async function seedOperationalCatalogs(prisma: PrismaClient) {
-  const { filePath, workbook } = getWorkbook();
+  const { filePath, workbook } = await getWorkbook();
   console.log(`Leyendo catalogos operativos desde: ${filePath}`);
 
   await seedGlobalConfig(prisma);

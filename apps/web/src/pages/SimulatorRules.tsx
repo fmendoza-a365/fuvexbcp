@@ -201,13 +201,13 @@ export default function SimulatorRules() {
   if (loading) return <div className="text-center py-20 animate-pulse text-[var(--color-bcp-blue)]">Cargando reglas...</div>;
 
   return (
-    <div className="space-y-8">
-      <div className="flex justify-between items-center">
+    <div className="page-shell">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold text-text-900 tracking-tight uppercase">
+          <h1 className="page-title">
             Reglas del <span className="text-[var(--color-bcp-blue)]">Simulador</span>
           </h1>
-          <p className="text-text-700 text-sm font-medium mt-1">Configuración global del motor matemático y convenios.</p>
+          <p className="page-subtitle">Configuración global del motor matemático y convenios.</p>
         </div>
         {isAdmin && (
           <button onClick={() => setIsNewModalOpen(true)} className="action-button-primary">
@@ -216,8 +216,8 @@ export default function SimulatorRules() {
         )}
       </div>
 
-      <div className="bg-[rgba(255,120,0,0.05)] border border-[rgba(255,120,0,0.1)] p-5 rounded-[2rem] flex items-center gap-4">
-        <div className="h-12 w-12 bg-white rounded-2xl shadow-sm flex items-center justify-center text-[var(--color-bcp-orange)]">
+      <div className="bg-[var(--accent-orange-soft)] border border-[rgba(255,120,0,0.18)] p-5 rounded-lg flex items-center gap-4">
+        <div className="h-12 w-12 bg-surface-100 rounded-lg shadow-sm flex items-center justify-center text-[var(--color-bcp-orange)]">
           <ShieldCheck size={24} />
         </div>
         <div className="flex-1">

@@ -80,7 +80,7 @@ export const createStyles = (isDark: boolean) => {
     loginWelcomeTitle: {
       fontSize: 28,
       fontWeight: '900',
-      color: theme.blueDark,
+      color: theme.text,
       letterSpacing: 0
     },
     loginWelcomeSubtitle: {
@@ -287,7 +287,7 @@ export const createStyles = (isDark: boolean) => {
     uploadTitle: {
       fontSize: 14,
       fontWeight: '900',
-      color: theme.blueDark
+      color: theme.text
     },
     uploadSubtitle: {
       fontSize: 11,
@@ -429,7 +429,7 @@ export const createStyles = (isDark: boolean) => {
     kpiValue: {
       fontSize: 34,
       fontWeight: '900',
-      color: theme.blueDark,
+      color: theme.text,
       letterSpacing: 0
     },
     kpiSubValue: {
@@ -536,8 +536,8 @@ export const createStyles = (isDark: boolean) => {
     fullSaleCard: {
       backgroundColor: theme.white,
       borderRadius: DESIGN.radius.lg,
-      padding: 15,
-      marginBottom: 12,
+      padding: 18,
+      marginBottom: 14,
       borderWidth: 1,
       borderColor: theme.border,
       ...cardShadow
@@ -556,7 +556,8 @@ export const createStyles = (isDark: boolean) => {
     pill: {
       paddingHorizontal: 9,
       paddingVertical: 5,
-      borderRadius: 8
+      borderRadius: 8,
+      maxWidth: 150
     },
     pillText: {
       fontSize: 10,
@@ -564,10 +565,11 @@ export const createStyles = (isDark: boolean) => {
       textTransform: 'uppercase'
     },
     cardName: {
-      fontSize: 17,
+      fontSize: 18,
       fontWeight: '900',
       color: theme.text,
-      marginBottom: 12
+      lineHeight: 23,
+      marginBottom: 14
     },
     cardFooter: {
       flexDirection: 'row',
@@ -582,7 +584,35 @@ export const createStyles = (isDark: boolean) => {
     cardDate: {
       fontSize: 12,
       color: theme.subtext,
-      fontWeight: '700'
+      fontWeight: '700',
+      marginTop: 3
+    },
+    saleMetricGrid: {
+      flexDirection: 'row',
+      gap: 10
+    },
+    saleMetricBox: {
+      flex: 1,
+      minHeight: 58,
+      backgroundColor: theme.surfaceAlt,
+      borderRadius: DESIGN.radius.md,
+      borderWidth: 1,
+      borderColor: theme.border,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      justifyContent: 'center'
+    },
+    saleMetricLabel: {
+      fontSize: 9,
+      fontWeight: '900',
+      letterSpacing: 0.5,
+      color: theme.subtext,
+      marginBottom: 4
+    },
+    saleMetricValue: {
+      fontSize: 13,
+      fontWeight: '900',
+      color: theme.text
     },
     tracePreview: {
       marginTop: 13,
@@ -644,10 +674,26 @@ export const createStyles = (isDark: boolean) => {
       borderColor: theme.border,
       ...cardShadow
     },
+    formSection: {
+      paddingBottom: 18,
+      marginBottom: 20,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.divider
+    },
+    formSectionLast: {
+      paddingBottom: 0,
+      marginBottom: 22,
+      borderBottomWidth: 0
+    },
+    formSectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 14
+    },
     inputLabel: {
       fontSize: 11,
       fontWeight: '900',
-      color: theme.blueDark,
+      color: theme.text,
       letterSpacing: 0.8
     },
     input: {
@@ -663,6 +709,52 @@ export const createStyles = (isDark: boolean) => {
       borderWidth: 1,
       borderColor: theme.border
     },
+    formHintRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 14,
+      paddingHorizontal: 2
+    },
+    formInfoCard: {
+      backgroundColor: theme.blueSoft,
+      padding: 12,
+      borderRadius: DESIGN.radius.md,
+      marginBottom: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderLeftWidth: 4,
+      borderLeftColor: theme.blue
+    },
+    phoneRow: {
+      flexDirection: 'row',
+      gap: 10,
+      marginBottom: 13
+    },
+    phonePrefixBox: {
+      width: 72,
+      minHeight: 52,
+      backgroundColor: theme.input,
+      borderRadius: DESIGN.radius.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: theme.border
+    },
+    emailDomainRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 0,
+      marginBottom: 16,
+      flexWrap: 'wrap'
+    },
+    emailDomainChip: {
+      borderWidth: 1,
+      borderColor: theme.border,
+      backgroundColor: theme.surfaceAlt,
+      borderRadius: 10,
+      paddingVertical: 8,
+      paddingHorizontal: 10
+    },
     pickerWrapper: {
       width: '100%',
       minHeight: 52,
@@ -673,6 +765,28 @@ export const createStyles = (isDark: boolean) => {
       paddingHorizontal: 8,
       borderWidth: 1,
       borderColor: theme.border
+    },
+    formPicker: {
+      marginBottom: 13
+    },
+    moneyInputWrapper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.input,
+      borderRadius: DESIGN.radius.md,
+      paddingHorizontal: 12,
+      minHeight: 52,
+      borderWidth: 1,
+      borderColor: theme.border,
+      marginBottom: 13
+    },
+    consentCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 14,
+      borderRadius: DESIGN.radius.md,
+      borderWidth: 1,
+      marginBottom: 18
     },
     attachmentBtn: {
       width: '100%',
@@ -732,31 +846,61 @@ export const createStyles = (isDark: boolean) => {
       bottom: Platform.OS === 'android' ? 24 : 22,
       left: 16,
       right: 16,
-      minHeight: 68,
-      backgroundColor: theme.blueDark,
-      borderRadius: 18,
+      minHeight: 82,
+      backgroundColor: isDark ? 'rgba(31,31,31,0.98)' : theme.blueDark,
+      borderRadius: 26,
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-around',
+      justifyContent: 'space-between',
+      paddingHorizontal: 8,
+      paddingVertical: 8,
       shadowColor: theme.blueDark,
-      shadowOpacity: isDark ? 0.36 : 0.22,
-      shadowRadius: 16,
-      elevation: 8,
+      shadowOpacity: isDark ? 0.42 : 0.26,
+      shadowRadius: 22,
+      shadowOffset: { width: 0, height: 14 },
+      elevation: 12,
       borderWidth: 1,
-      borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)'
+      borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.18)'
     },
     tabItem: {
+      flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
-      minWidth: 58,
-      minHeight: 52
+      minWidth: 74,
+      minHeight: 64,
+      borderRadius: 20,
+      paddingTop: 6,
+      paddingBottom: 5
+    },
+    tabItemActive: {
+      backgroundColor: isDark ? 'rgba(255,138,31,0.13)' : 'rgba(255,255,255,0.12)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255,138,31,0.22)' : 'rgba(255,255,255,0.14)'
+    },
+    tabActiveIndicator: {
+      position: 'absolute',
+      top: 5,
+      width: 24,
+      height: 3,
+      borderRadius: 999,
+      backgroundColor: theme.orange
+    },
+    tabIconWrap: {
+      width: 34,
+      height: 30,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center'
+    },
+    tabIconWrapActive: {
+      backgroundColor: isDark ? 'rgba(255,138,31,0.12)' : 'rgba(255,255,255,0.10)'
     },
     tabText: {
       fontSize: 10,
       fontWeight: '900',
       color: 'rgba(255,255,255,0.58)',
-      letterSpacing: 0.5,
-      marginTop: 4
+      letterSpacing: 0,
+      marginTop: 3
     },
     tabActive: {
       color: theme.whiteText

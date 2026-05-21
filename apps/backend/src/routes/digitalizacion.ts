@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../db';
 import { authMiddleware } from '../middleware/auth';
+import { requireAction } from '../middleware/permissions';
 import { canAccessSale } from '../services/hierarchy';
 import { sendPushNotification } from '../services/push';
 
@@ -35,7 +36,7 @@ router.get('/:id/instituciones', authMiddleware, async (req: any, res: any) => {
 
 // POST /api/sales/:id/instituciones
 // Registrar una nueva institución asociada al expediente
-router.post('/:id/instituciones', authMiddleware, async (req: any, res: any) => {
+router.post('/:id/instituciones', authMiddleware, requireAction('MANAGE_CONVENIO'), async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const { institucion, observaciones } = req.body;
@@ -80,7 +81,7 @@ router.post('/:id/instituciones', authMiddleware, async (req: any, res: any) => 
 
 // PUT /api/sales/:saleId/instituciones/:instId
 // Actualizar estado de envío/respuesta de una institución
-router.put('/:saleId/instituciones/:instId', authMiddleware, async (req: any, res: any) => {
+router.put('/:saleId/instituciones/:instId', authMiddleware, requireAction('MANAGE_CONVENIO'), async (req: any, res: any) => {
   try {
     const { saleId, instId } = req.params;
     const { estado, fecha_envio, fecha_respuesta, observaciones } = req.body;
@@ -124,12 +125,13 @@ router.put('/:saleId/instituciones/:instId', authMiddleware, async (req: any, re
         }
       });
 
-      if (estado === 'ENVIADO' && sale.estado === 'SIMULACION_ACEPTADA') {
+      if (estado === 'ENVIADO' && sale.estado === 'FILE_VALIDADO') {
         await tx.sale.update({
           where: { id: saleId },
           data: {
-            estado: 'ENVIADO_CONVENIO',
-            fecha_estado_desde: new Date()
+            estado: 'ENVIADO_BCP_REMESA',
+            fecha_estado_desde: new Date(),
+            version: { increment: 1 }
           }
         });
 
@@ -137,9 +139,9 @@ router.put('/:saleId/instituciones/:instId', authMiddleware, async (req: any, re
           data: {
             sale_id: saleId,
             user_id: req.user.id,
-            accion: "Auto-avance: Envio a Convenio",
+            accion: "Auto-avance: Envio a BCP",
             estado_anterior: sale.estado,
-            estado_nuevo: 'ENVIADO_CONVENIO',
+            estado_nuevo: 'ENVIADO_BCP_REMESA',
             detalles: `Envio registrado para ${inst.institucion}.`
           }
         });
@@ -154,6 +156,10 @@ router.put('/:saleId/instituciones/:instId', authMiddleware, async (req: any, re
       await checkAutoAdvanceInstituciones(saleId, req.user.id);
     }
 
+    if (estado === 'RECHAZADO') {
+      await markConvenioObserved(saleId, req.user.id, observaciones);
+    }
+
     res.json(updated);
   } catch (error) {
     console.error(error);
@@ -163,7 +169,7 @@ router.put('/:saleId/instituciones/:instId', authMiddleware, async (req: any, re
 
 // DELETE /api/sales/:saleId/instituciones/:instId
 // Eliminar una institución del expediente
-router.delete('/:saleId/instituciones/:instId', authMiddleware, async (req: any, res: any) => {
+router.delete('/:saleId/instituciones/:instId', authMiddleware, requireAction('MANAGE_CONVENIO'), async (req: any, res: any) => {
   try {
     const { saleId, instId } = req.params;
 
@@ -274,7 +280,7 @@ router.get('/:id/expediente-bcp', authMiddleware, async (req: any, res: any) => 
 
 // PUT /api/sales/:id/expediente-bcp
 // Actualizar expediente BCP (datos generales)
-router.put('/:id/expediente-bcp', authMiddleware, async (req: any, res: any) => {
+router.put('/:id/expediente-bcp', authMiddleware, requireAction('MANAGE_BCP'), async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const { nro_expediente, agencia, estado, observaciones_bcp, checklist } = req.body;
@@ -331,12 +337,13 @@ router.put('/:id/expediente-bcp', authMiddleware, async (req: any, res: any) => 
     });
 
     // ═══ AUTO-AVANCE (SPRINT 3.3) ═══
-    // Si BCP aprobó → avanzar a CONFORMIDAD
+    // Si BCP aprobó, avanzar hacia remesa o liberacion segun corresponda.
     const saleStateByBcpState: Record<string, string> = {
-      EN_PREPARACION: 'PREPARANDO_BCP',
-      ENVIADO_BCP: 'ENVIADO_BCP',
-      EN_EVALUACION_BCP: 'ENVIADO_BCP',
-      APROBADO_BCP: 'APROBADO_BCP',
+      EN_PREPARACION: 'FILE_VALIDADO',
+      ENVIADO_BCP: 'ENVIADO_BCP_REMESA',
+      EN_EVALUACION_BCP: 'ENVIADO_BCP_REMESA',
+      OBS_BCP: 'OBS_BCP',
+      APROBADO_BCP: 'REMESA_APROBADA',
       RECHAZADO_BCP: 'RECHAZADO',
       DESEMBOLSADO_BCP: 'DESEMBOLSADO'
     };
@@ -344,14 +351,6 @@ router.put('/:id/expediente-bcp', authMiddleware, async (req: any, res: any) => 
     if (estado && saleStateByBcpState[estado]) {
       await checkAutoAdvanceBCP(id, saleStateByBcpState[estado], req.user.id, observaciones_bcp);
       return res.json(updated);
-    }
-
-    if (estado === 'APROBADO_BCP') {
-      await checkAutoAdvanceBCP(id, 'APROBADO_BCP', req.user.id);
-    }
-    // Si BCP rechazó → marcar OBSERVADA
-    if (estado === 'RECHAZADO_BCP') {
-      await checkAutoAdvanceBCP(id, 'OBSERVADO', req.user.id, observaciones_bcp);
     }
 
     res.json(updated);
@@ -363,7 +362,7 @@ router.put('/:id/expediente-bcp', authMiddleware, async (req: any, res: any) => 
 
 // PUT /api/sales/:id/expediente-bcp/checklist/:tipo
 // Marcar/desmarcar un documento del checklist BCP
-router.put('/:id/expediente-bcp/checklist/:tipo', authMiddleware, async (req: any, res: any) => {
+router.put('/:id/expediente-bcp/checklist/:tipo', authMiddleware, requireAction('MANAGE_BCP'), async (req: any, res: any) => {
   try {
     const { id, tipo } = req.params;
     const { completado, observacion } = req.body;
@@ -432,6 +431,37 @@ router.put('/:id/expediente-bcp/checklist/:tipo', authMiddleware, async (req: an
 // SPRINT 3.3 — AUTO-AVANCE DE ESTADOS
 // ═══════════════════════════════════════════════════
 
+async function markConvenioObserved(saleId: string, userId: string, observacion?: string) {
+  try {
+    const sale = await prisma.sale.findUnique({ where: { id: saleId } });
+    if (!sale || !['ENVIADO_BCP_REMESA', 'FILE_VALIDADO'].includes(sale.estado)) return;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.sale.update({
+        where: { id: saleId },
+        data: {
+          estado: 'OBS_BACK_OFFICE',
+          fecha_estado_desde: new Date(),
+          feedback: observacion || sale.feedback,
+          version: { increment: 1 }
+        }
+      });
+      await tx.auditLog.create({
+        data: {
+          sale_id: saleId,
+          user_id: userId,
+          accion: 'Observacion operativa',
+          estado_anterior: sale.estado,
+          estado_nuevo: 'OBS_BACK_OFFICE',
+          detalles: observacion || 'El expediente fue devuelto con observaciones.'
+        }
+      });
+    });
+  } catch (error) {
+    console.error('Error marcando observacion de convenio:', error);
+  }
+}
+
 /**
  * Verifica si todas las instituciones de un expediente están RECIBIDO
  * y auto-avanza el estado del Sale si corresponde
@@ -449,14 +479,15 @@ async function checkAutoAdvanceInstituciones(saleId: string, userId: string) {
 
     const todasRecibidas = instituciones.every(i => i.estado === 'RECIBIDO');
 
-    if (todasRecibidas && ['ENVIADO_CONVENIO', 'SIMULACION_ACEPTADA'].includes(sale.estado)) {
+    if (todasRecibidas && sale.estado === 'FILE_VALIDADO') {
       // Auto-avanzar a ENVIADO (instituciones listas para revisión del supervisor)
       await prisma.$transaction(async (tx) => {
         await tx.sale.update({
           where: { id: saleId },
           data: {
-            estado: 'CONVENIO_APROBADO',
-            fecha_estado_desde: new Date()
+            estado: 'ENVIADO_BCP_REMESA',
+            fecha_estado_desde: new Date(),
+            version: { increment: 1 }
           }
         });
 
@@ -466,8 +497,8 @@ async function checkAutoAdvanceInstituciones(saleId: string, userId: string) {
             user_id: userId,
             accion: "Auto-avance: Instituciones Completas",
             estado_anterior: sale.estado,
-            estado_nuevo: 'CONVENIO_APROBADO',
-            detalles: `Todas las respuestas del convenio/instituciones (${instituciones.length}) fueron recibidas.`
+            estado_nuevo: 'ENVIADO_BCP_REMESA',
+            detalles: `Todas las respuestas operativas (${instituciones.length}) fueron recibidas.`
           }
         });
       });
@@ -477,7 +508,7 @@ async function checkAutoAdvanceInstituciones(saleId: string, userId: string) {
         await sendPushNotification(
           sale.asesor_id,
           '✅ Auto-avance: Instituciones Completas',
-          `El expediente de ${sale.nombres_cliente} avanzo a CONVENIO_APROBADO. Todas las respuestas fueron recibidas.`,
+          `El expediente de ${sale.nombres_cliente} avanzo a ENVIADO_BCP_REMESA. Todas las respuestas fueron recibidas.`,
           { saleId, type: 'AUTO_ADVANCE' }
         );
       } catch (e) { console.error('Push notification failed:', e); }
@@ -501,7 +532,12 @@ async function checkAutoAdvanceBCP(saleId: string, nuevoEstado: string, userId: 
         data: {
           estado: nuevoEstado,
           fecha_estado_desde: new Date(),
-          ...(observacion ? { feedback: observacion } : {})
+          version: { increment: 1 },
+          ...(observacion ? { feedback: observacion } : {}),
+          ...(nuevoEstado === 'RECHAZADO' ? {
+            rechazo_motivo: 'BCP_RECHAZA',
+            rechazo_detalle: observacion || 'BCP rechazo el expediente.'
+          } : {})
         }
       });
 
@@ -543,7 +579,7 @@ async function checkAutoAdvanceChecklist(saleId: string, checklist: any[], userI
     const todosCompletos = obligatorios.every((c: any) => c.completado === true);
 
     if (todosCompletos) {
-      // Si el expediente BCP está en EN_PREPARACION, pasarlo a ENVIADO_BCP
+      // Si el expediente BCP está en EN_PREPARACION, pasarlo a evaluacion BCP
       const expediente = await prisma.expedienteBCP.findUnique({ where: { sale_id: saleId } });
         if (expediente && expediente.estado === 'EN_PREPARACION') {
         await prisma.$transaction(async (tx) => {
@@ -558,8 +594,9 @@ async function checkAutoAdvanceChecklist(saleId: string, checklist: any[], userI
           await tx.sale.update({
             where: { id: saleId },
             data: {
-              estado: 'ENVIADO_BCP',
-              fecha_estado_desde: new Date()
+              estado: 'ENVIADO_BCP_REMESA',
+              fecha_estado_desde: new Date(),
+              version: { increment: 1 }
             }
           });
 
@@ -569,7 +606,7 @@ async function checkAutoAdvanceChecklist(saleId: string, checklist: any[], userI
               user_id: userId,
               accion: "Auto-avance: Checklist BCP Completo",
               estado_anterior: sale.estado,
-              estado_nuevo: 'ENVIADO_BCP',
+              estado_nuevo: 'ENVIADO_BCP_REMESA',
               detalles: 'Todos los documentos obligatorios del checklist BCP fueron verificados.'
             }
           });
@@ -579,8 +616,8 @@ async function checkAutoAdvanceChecklist(saleId: string, checklist: any[], userI
         try {
           await sendPushNotification(
             sale.asesor_id,
-            '📤 Checklist BCP Completo',
-            `El expediente de ${sale.nombres_cliente} tiene todos los documentos obligatorios verificados y fue enviado a BCP.`,
+            'Checklist BCP Completo',
+            `El expediente de ${sale.nombres_cliente} tiene todos los documentos obligatorios verificados y fue enviado a evaluacion BCP.`,
             { saleId, type: 'CHECKLIST_COMPLETE' }
           );
         } catch (e) { console.error('Push notification failed:', e); }

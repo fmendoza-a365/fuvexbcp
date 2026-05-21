@@ -7,6 +7,13 @@ dist
 .vscode
 *.log
 .env
+.env.*
 .DS_Store
+data
+backups
+screenshots
+apps/mobile/.expo
+apps/mobile/android
+apps/mobile/ios
 storage/expedientes/*
 !storage/expedientes/.gitkeep

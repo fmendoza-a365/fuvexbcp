@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import jwt from 'jsonwebtoken';
 
 // SEGURIDAD: Sin fallback — si JWT_SECRET no existe, el servidor NO debe arrancar

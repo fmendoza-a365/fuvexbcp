@@ -7,6 +7,16 @@ type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
 
 function formatMessage(level: LogLevel, module: string, message: string, meta?: any): string {
   const timestamp = new Date().toISOString();
+  if (process.env.LOG_FORMAT === 'json') {
+    return JSON.stringify({
+      timestamp,
+      level,
+      module,
+      message,
+      ...(meta ? { meta } : {})
+    });
+  }
+
   const base = `[${timestamp}] [${level}] [${module}] ${message}`;
   if (meta) {
     return `${base} ${JSON.stringify(meta)}`;
@@ -36,6 +46,11 @@ export const logger = {
   // Log de request HTTP (para middleware)
   request(req: any) {
     const { method, url, ip } = req;
-    console.log(formatMessage('INFO', 'HTTP', `${method} ${url}`, { ip }));
+    console.log(formatMessage('INFO', 'HTTP', `${method} ${url}`, {
+      request_id: req.requestId,
+      ip,
+      user_id: req.user?.id,
+      role: req.user?.role
+    }));
   }
 };

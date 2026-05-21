@@ -135,8 +135,8 @@ const FunnelPage = () => {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1 className="text-2xl font-black uppercase tracking-tight text-slate-800">Funnel de Conversión</h1>
-          <p className="text-xs font-bold text-text-700 uppercase tracking-widest mt-1">Pirámide de etapas del pipeline</p>
+          <h1 className="page-title">Funnel de Conversión</h1>
+          <p className="page-subtitle">Pirámide de etapas del pipeline</p>
         </div>
         <div className="page-actions">
           <button onClick={() => setShowFilters(!showFilters)} className="action-button-secondary">
@@ -196,7 +196,7 @@ const FunnelPage = () => {
             </div>
           </div>
           <div className="metric-card">
-            <div className="icon-badge bg-[rgba(255,120,0,0.1)]">
+            <div className="icon-badge bg-[var(--accent-orange-soft)]">
               <Percent size={24} className="text-[var(--color-bcp-orange)]" />
             </div>
             <div>
@@ -210,7 +210,7 @@ const FunnelPage = () => {
       {/* Funnel Visualization */}
       {data && (
         <div className="premium-card">
-          <h2 className="text-sm font-black uppercase tracking-tight text-slate-800 mb-6">Embudo de Conversión</h2>
+          <h2 className="chart-title mb-6">Embudo de Conversión</h2>
           <div className="space-y-3">
             {data.funnel.map((stage, idx) => {
               const colors = STAGE_COLORS[idx % STAGE_COLORS.length];
@@ -220,7 +220,7 @@ const FunnelPage = () => {
                 <div key={stage.etapa} className="flex items-center gap-4">
                   {/* Label */}
                   <div className="w-48 flex-shrink-0 text-right">
-                    <div className="text-xs font-black text-slate-800 uppercase">{stage.label}</div>
+                    <div className="text-xs font-black text-text-900 uppercase">{stage.label}</div>
                     <div className="text-[10px] font-bold text-text-700">{stage.cantidad} expedientes</div>
                   </div>
 
@@ -259,7 +259,7 @@ const FunnelPage = () => {
       {data && (
         <div className="table-shell">
           <div className="p-4 border-b border-surface-200">
-            <h2 className="text-sm font-black uppercase tracking-tight text-slate-800">Detalle por Etapa</h2>
+            <h2 className="chart-title">Detalle por Etapa</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -278,11 +278,11 @@ const FunnelPage = () => {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className={`w-2.5 h-2.5 rounded-full bg-gradient-to-r ${STAGE_COLORS[idx % STAGE_COLORS.length].bg}`}></div>
-                        <span className="text-xs font-bold text-slate-800 uppercase">{stage.label}</span>
+                        <span className="text-xs font-bold text-text-900 uppercase">{stage.label}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-center text-xs font-black text-slate-800">{stage.cantidad}</td>
-                    <td className="px-4 py-3 text-right text-xs font-bold text-slate-800">S/ {stage.monto_total.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-center text-xs font-black text-text-900">{stage.cantidad}</td>
+                    <td className="px-4 py-3 text-right text-xs font-bold text-text-900">S/ {stage.monto_total.toLocaleString()}</td>
                     <td className="px-4 py-3 text-center">
                       <span className={`text-xs font-black px-2 py-0.5 rounded-full ${STAGE_COLORS[idx % STAGE_COLORS.length].light} ${STAGE_COLORS[idx % STAGE_COLORS.length].text}`}>
                         {stage.porcentaje_del_total.toFixed(1)}%

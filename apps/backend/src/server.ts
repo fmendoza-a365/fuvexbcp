@@ -9,6 +9,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 
 import salesRouter from './routes/sales';
 import usersRouter from './routes/users';
@@ -23,13 +24,16 @@ import geoRouter from './routes/geo';
 import dniRouter from './routes/dni';
 import checklistRouter from './routes/checklist';
 import digitalizacionRouter from './routes/digitalizacion';
+import mailRouter from './routes/mail';
 import { consultarRCC } from './services/infoburo';
 import { authMiddleware } from './middleware/auth';
 import { logger } from './services/logger';
 import { globalErrorHandler } from './middleware/errorHandler';
 import { firstExistingPath, publicDownloadsPath } from './services/storage';
+import { validateEnvironment } from './config/env';
 
 dotenv.config();
+validateEnvironment();
 
 const app = express();
 const prisma = new PrismaClient();
@@ -103,6 +107,12 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false
 }));
 
+app.use((req: any, res, next) => {
+  req.requestId = req.header('X-Request-Id') || crypto.randomUUID();
+  res.setHeader('X-Request-Id', req.requestId);
+  next();
+});
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -124,6 +134,25 @@ app.use('/api/', apiLimiter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() });
+});
+
+app.get('/api/ready', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({
+      status: 'ready',
+      database: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
+  } catch (error) {
+    logger.error('HEALTH', 'Readiness check fallo', { error });
+    res.status(503).json({
+      status: 'not_ready',
+      database: 'error',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 app.use((req, _res, next) => {
@@ -177,6 +206,7 @@ app.use('/api/geo', geoRouter);
 app.use('/api/dni', dniRouter);
 app.use('/api/sales', checklistRouter);
 app.use('/api/sales', digitalizacionRouter);
+app.use('/api/mail', mailRouter);
 
 app.get('/api/infoburo/:dni', authMiddleware, async (req: any, res: any) => {
   try {

@@ -17,6 +17,9 @@ Plataforma integral de gestión de ventas de crédito y simulación financiera p
 - [Seguridad](#-seguridad)
 - [Docker](#-docker)
 - [Scripts](#-scripts)
+- [Plan ERP](docs/PLAN_ERP.md)
+- [Preproducción](docs/PREPRODUCCION.md)
+- [PostgreSQL y Docker](docs/OPERACION_POSTGRES_DOCKER.md)
 
 ---
 
@@ -24,7 +27,7 @@ Plataforma integral de gestión de ventas de crédito y simulación financiera p
 
 | Capa | Tecnología |
 |------|-----------|
-| **Backend** | Node.js 20, Express 5, TypeScript, Prisma ORM 5, SQLite |
+| **Backend** | Node.js 20, Express 5, TypeScript, Prisma ORM 5, SQLite local / PostgreSQL producción |
 | **Frontend Web** | React 19, Vite 8, Tailwind CSS 4, TypeScript, Recharts, React Router 7, Lucide Icons, jsPDF |
 | **Mobile** | React Native 0.81, Expo SDK 54, TypeScript |
 | **Infraestructura** | Docker (multi-stage Alpine), Docker Compose |
@@ -38,7 +41,7 @@ Plataforma integral de gestión de ventas de crédito y simulación financiera p
 ```
 fuvex-manager-a365/
 ├── apps/
-│   ├── backend/           # API REST (Express + Prisma + SQLite)
+│   ├── backend/           # API REST (Express + Prisma)
 │   │   ├── prisma/        # Schema, migraciones y seeds
 │   │   └── src/
 │   │       ├── routes/    # Endpoints: users, sales, simulator, rcc
@@ -49,13 +52,12 @@ fuvex-manager-a365/
 │   ├── mobile/            # App móvil (React Native + Expo)
 │   │   └── src/           # Components, utils, constants
 │   └── storage/           # Servicio de almacenamiento de archivos
-├── design-system/
-│   ├── fuvex-bcp/         # Design system BCP
-│   └── fuvex-manager/     # Design system Manager
-├── Recursos/              # Assets: logos, Excel de convenios
+├── Recursos/              # Excel de convenios para seed del simulador
 ├── scripts/               # Scripts de mantenimiento
 ├── docker-compose.yml
+├── docker-compose.prod.yml
 ├── Dockerfile
+├── Dockerfile.postgres
 └── package.json           # Monorepo con npm workspaces
 ```
 
@@ -126,7 +128,7 @@ Crear el archivo `apps/backend/.env` basado en `.env.example`:
 | Variable | Descripción | Ejemplo |
 |----------|-------------|---------|
 | `PORT` | Puerto del backend | `3001` |
-| `DATABASE_URL` | URL de conexión SQLite | `file:./dev.db` |
+| `DATABASE_URL` | URL de conexión SQLite local o PostgreSQL producción | `file:../../../data/dev.db` |
 | `JWT_SECRET` | Secret para tokens JWT (⚠️ usar uno fuerte) | `tu-secreto-super-seguro` |
 | `JWT_EXPIRES_IN` | Duración del token | `24h` |
 | `INFOBURO_USER` | Usuario API Infoburo | `tu-usuario` |
@@ -253,6 +255,8 @@ npx ts-node src/simulator_seed.ts
 
 ## 🐳 Docker
 
+### Desarrollo/local con SQLite
+
 ```bash
 # Construir imagen
 docker build -t fuvex-manager .
@@ -267,11 +271,27 @@ docker-compose logs -f
 docker-compose down
 ```
 
+### Producción con PostgreSQL
+
+```bash
+cp apps/backend/.env.production.example apps/backend/.env.production
+# Editar secretos y dominios antes de levantar.
+
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml logs -f app
+```
+
+Ver guia completa: [PostgreSQL y Docker](docs/OPERACION_POSTGRES_DOCKER.md).
+
 ---
 
 ## 📜 Scripts
 
 | Comando | Descripción |
 |---------|-------------|
-| `npm run dev` | Iniciar backend en modo desarrollo |
-| `npm run build` | Compilar TypeScript |
+| `npm run build:backend` | Compilar backend |
+| `npm run build:web` | Compilar web |
+| `npm run test:backend` | Ejecutar pruebas del flujo operativo |
+| `npm run typecheck:mobile` | Validar TypeScript de la app móvil |
+| `scripts/smoke-local.sh` | Probar health, login, Kanban, dashboard y web local |
+| `scripts/backup-postgres.sh` | Crear backup comprimido de PostgreSQL en producción |

@@ -105,6 +105,39 @@ model Sale {
   monto_remesa             Float?
   vencimiento_remesa       DateTime?
   feedback                 String?
+  rechazo_motivo           String?
+  rechazo_detalle          String?
+  calculadora_estado       String?
+  simulacion_dictamen      String?
+  simulacion_payload       String?
+  simulacion_resultado     String?
+  compra_deuda             Boolean                 @default(false)
+  compra_deuda_entidad     String?
+  compra_deuda_monto       Float?
+  compra_deuda_estado      String?
+  fecha_liberacion         DateTime?
+  estado_civil_cliente     String?
+  conyuge_dni              String?
+  conyuge_nombres          String?
+  conyuge_rcc_semaforo     String?
+  conyuge_rcc_monto_deuda  Float?
+  conyuge_rcc_ultima_act   DateTime?
+  conyuge_rcc_calificacion String?
+  conyuge_rcc_raw_data     String?
+  score_bcp_estado         String?
+  score_bcp_detalle        String?
+  score_bcp_fecha          DateTime?
+  boleta_recibida_at       DateTime?
+  cotizacion_monto         Float?
+  cotizacion_cuota         Float?
+  cotizacion_plazo         Int?
+  cotizacion_enviada_at    DateTime?
+  cotizacion_aceptada_at   DateTime?
+  remesa_monto_original    Float?
+  remesa_monto_aprobado    Float?
+  remesa_reducida_aceptada Boolean?
+  carta_poder_recibida_at  DateTime?
+  carta_no_adeudo_at       DateTime?
   rcc_semaforo             String?
   rcc_monto_deuda          Float?
   rcc_ultima_act           DateTime?
@@ -118,6 +151,7 @@ model Sale {
   fecha_estado_desde       DateTime? // Timestamp de cuándo entró al estado actual
   created_at               DateTime                @default(now())
   updated_at               DateTime                @updatedAt
+  version                  Int                     @default(1)
   rcc_raw_data             String?
   simulacion_cuota         Float? // Cuota mensual simulada
   simulacion_tea           Float? // TEA de la simulación
@@ -130,17 +164,42 @@ model Sale {
   documents                Document[]
   feedbackNotes            FeedbackNote[]
   asesor                   User                    @relation("AsesorSales", fields: [asesor_id], references: [id])
+
+  @@index([asesor_id])
+  @@index([estado])
+  @@index([created_at])
+  @@index([updated_at])
+  @@index([dni_cliente])
+  @@index([fecha_ingreso])
+  @@index([fecha_desembolso])
+  @@index([departamento, provincia, distrito])
+  @@index([reasignacion_estado])
+  @@index([estado, updated_at])
 }
 
 model Document {
-  id             String   @id @default(uuid())
-  sale_id        String
-  tipo_documento String
-  file_path      String
-  uploaded_by    String
-  created_at     DateTime @default(now())
-  uploader       User     @relation(fields: [uploaded_by], references: [id])
-  sale           Sale     @relation(fields: [sale_id], references: [id])
+  id               String   @id @default(uuid())
+  sale_id          String
+  tipo_documento   String
+  file_path        String
+  original_name    String?
+  mime_type        String?
+  size_bytes       Int?
+  checksum_sha256  String?
+  storage_provider String   @default("local")
+  storage_key      String?
+  estado_validacion String  @default("VIGENTE")
+  observacion      String?
+  uploaded_by      String
+  created_at       DateTime @default(now())
+  uploader         User     @relation(fields: [uploaded_by], references: [id])
+  sale             Sale     @relation(fields: [sale_id], references: [id])
+
+  @@index([sale_id])
+  @@index([uploaded_by])
+  @@index([created_at])
+  @@index([tipo_documento])
+  @@index([estado_validacion])
 }
 
 model AuditLog {
@@ -154,6 +213,11 @@ model AuditLog {
   created_at      DateTime @default(now())
   user            User     @relation(fields: [user_id], references: [id])
   sale            Sale     @relation(fields: [sale_id], references: [id])
+
+  @@index([sale_id])
+  @@index([user_id])
+  @@index([created_at])
+  @@index([estado_nuevo])
 }
 
 model FeedbackNote {
@@ -164,6 +228,10 @@ model FeedbackNote {
   created_at DateTime @default(now())
   user       User     @relation(fields: [user_id], references: [id])
   sale       Sale     @relation(fields: [sale_id], references: [id])
+
+  @@index([sale_id])
+  @@index([user_id])
+  @@index([created_at])
 }
 
 // ══════════════════════════════════════════════════
@@ -209,6 +277,9 @@ model ExpedienteBCP {
 
   sale    Sale  @relation(fields: [sale_id], references: [id], onDelete: Cascade)
   usuario User? @relation(fields: [creado_por], references: [id])
+
+  @@index([estado])
+  @@index([creado_por])
 }
 
 // ══════════════════════════════════════════════════
@@ -266,6 +337,10 @@ model Simulacion {
   ingreso_neto     Float
   created_at       DateTime @default(now())
   user             User     @relation(fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@index([dni_cliente])
+  @@index([created_at])
 }
 
 model ConfiguracionGlobal {

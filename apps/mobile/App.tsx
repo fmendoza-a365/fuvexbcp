@@ -10,12 +10,12 @@ import {
   useWindowDimensions,
   ActivityIndicator,
   useColorScheme,
-  AppState
+  AppState,
+  BackHandler
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
-import * as DocumentPicker from 'expo-document-picker';
-import { Picker } from '@react-native-picker/picker';
+import CustomPicker from './src/components/CustomPicker';
 import { Ionicons } from '@expo/vector-icons';
 
 import { COLORS, DARK_COLORS, API_URL, CONVENIOS } from './src/constants/theme';
@@ -32,39 +32,78 @@ import {
 import { setApiBaseUrl, setAuthToken } from './src/api/client';
 import { clearSavedApiUrl, loadSavedApiUrl, saveApiUrl } from './src/config/api';
 
-interface Attachment {
-  uri: string;
-  name: string;
-  type: string;
-  docType: string;
+interface SimulatorCatalog {
+  convenios: Array<{
+    id: string;
+    nombre: string;
+    sector?: string;
+    rci_default?: number;
+    periodo_gracia?: number;
+    variables_reserva?: number;
+  }>;
+  cargos: Array<{ id: string; nombre: string }>;
+  reglas: Array<{
+    convenio_id: string;
+    cargo_id: string;
+    rci_especifico?: number;
+    edad_maxima?: number | null;
+  }>;
 }
 
-const DOCUMENT_TYPE_OPTIONS = [
-  { label: 'DNI - Frente', value: 'DNI_FRENTE' },
-  { label: 'DNI - Reverso', value: 'DNI_REVERSO' },
-  { label: 'Boleta de pago', value: 'BOLETA_PAGO' },
-  { label: 'Ticket CTS', value: 'TICKET_CTS' },
-  { label: 'Resolucion / nombramiento', value: 'RESOLUCION' },
-  { label: 'Cara anterior boleta', value: 'CARA_ANTES_BOLETA' },
-  { label: 'Carne identidad', value: 'CARNE_IDENTIDAD' },
-  { label: 'Practillas', value: 'PRACTILLAS' },
-  { label: 'Memorandum', value: 'MEMORANDO' },
-  { label: 'Documento alternativo 1', value: 'DOC_ALTERNO1' },
-  { label: 'Documento alternativo 2', value: 'DOC_ALTERNO2' },
-  { label: 'Documento alternativo 3', value: 'DOC_ALTERNO3' },
-  { label: 'Otros', value: 'OTROS' },
-];
+interface GeoDepartamento {
+  id: number;
+  departamento: string;
+  ubigeo: string;
+}
 
-const DEFAULT_DOCUMENT_SEQUENCE = [
-  'DNI_FRENTE',
-  'DNI_REVERSO',
-  'BOLETA_PAGO',
-  'TICKET_CTS',
-  'RESOLUCION',
-  'CARA_ANTES_BOLETA',
-];
+interface GeoProvincia {
+  id: number;
+  provincia: string;
+  ubigeo: string;
+  departamento_id: number;
+}
+
+interface GeoDistrito {
+  id: number;
+  distrito: string;
+  ubigeo: string;
+  provincia_id: number;
+  departamento_id: number;
+}
 
 type ActiveTab = 'home' | 'list' | 'form' | 'simulator';
+
+const EMAIL_DOMAIN_OPTIONS = ['gmail.com', 'outlook.com', 'yahoo.com'];
+const ESTADO_CIVIL_OPTIONS = [
+  { label: 'Seleccionar estado civil...', value: '' },
+  { label: 'Soltero/a', value: 'SOLTERO' },
+  { label: 'Casado/a', value: 'CASADO' },
+  { label: 'Conviviente', value: 'CONVIVIENTE' },
+  { label: 'Divorciado/a', value: 'DIVORCIADO' },
+  { label: 'Viudo/a', value: 'VIUDO' },
+];
+
+const onlyDigits = (value: string, maxLength: number) => value.replace(/\D/g, '').slice(0, maxLength);
+
+const getEmailLocalPart = (value: string) => value
+  .split('@')[0]
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9._%+-]/g, '');
+
+const isValidPeruMobile = (value: string) => /^9\d{8}$/.test(value);
+
+const isValidPeruPhone = (value: string) => {
+  if (!value) return true;
+  return /^\d{6,9}$/.test(value);
+};
+
+const isValidEmail = (value: string) => {
+  if (!value) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
+};
+
+const requiresSpouseEvaluation = (value: string) => ['CASADO', 'CASADA', 'CONVIVIENTE'].includes(value);
 
 const normalizeSalesResponse = (payload: any): any[] => {
   if (Array.isArray(payload)) return payload;
@@ -88,6 +127,7 @@ export default function App() {
   const [apiReady, setApiReady] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+  const [calculatorSale, setCalculatorSale] = useState<any | null>(null);
 
   const [mySales, setMySales] = useState<any[]>([]);
   const [kpi, setKpi] = useState<any>(null);
@@ -98,27 +138,34 @@ export default function App() {
   const [dni, setDni] = useState('');
   const [nombres, setNombres] = useState('');
   const [plaza, setPlaza] = useState('');
+  const [sectorLaboral, setSectorLaboral] = useState('');
   const [convenio, setConvenio] = useState('');
   const [convenioOptions, setConvenioOptions] = useState(CONVENIOS);
+  const [simulatorCatalog, setSimulatorCatalog] = useState<SimulatorCatalog | null>(null);
   const [maf, setMaf] = useState('');
   const [celular, setCelular] = useState('');
   const [telefonoAlt, setTelefonoAlt] = useState('');
   const [correo, setCorreo] = useState('');
+  const [estadoCivil, setEstadoCivil] = useState('');
+  const [conyugeDni, setConyugeDni] = useState('');
+  const [conyugeNombres, setConyugeNombres] = useState('');
   const [direccion, setDireccion] = useState('');
   const [departamento, setDepartamento] = useState('LIMA');
   const [provincia, setProvincia] = useState('');
   const [distrito, setDistrito] = useState('');
   const [zonaComercial, setZonaComercial] = useState('');
-  const [entidadLaboral, setEntidadLaboral] = useState('');
+  const [departamentoOptions, setDepartamentoOptions] = useState<GeoDepartamento[]>([]);
+  const [provinciaOptions, setProvinciaOptions] = useState<GeoProvincia[]>([]);
+  const [distritoOptions, setDistritoOptions] = useState<GeoDistrito[]>([]);
   const [cargoLaboral, setCargoLaboral] = useState('');
   const [plazoDeseado, setPlazoDeseado] = useState('');
   const [origenProspecto, setOrigenProspecto] = useState('Prospeccion directa');
   const [consentimiento, setConsentimiento] = useState(false);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [feedback, setFeedback] = useState('');
   const [clientAge, setClientAge] = useState<string | null>(null);
   const [clientData, setClientData] = useState<any>(null);
   const [isSearchingDni, setIsSearchingDni] = useState(false);
+  const [isSearchingConyugeDni, setIsSearchingConyugeDni] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -165,6 +212,22 @@ export default function App() {
     }
   };
 
+  const fetchConyugeDniInfo = async (id: string) => {
+    setIsSearchingConyugeDni(true);
+    try {
+      const res = await axios.get(`${apiUrl}/dni/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data?.nombre_completo) {
+        setConyugeNombres(res.data.nombre_completo);
+      }
+    } catch (e) {
+      console.log('Spouse DNI not found or error');
+    } finally {
+      setIsSearchingConyugeDni(false);
+    }
+  };
+
   const fetchData = async () => {
     try {
       const headers = { Authorization: `Bearer ${token}` };
@@ -175,7 +238,7 @@ export default function App() {
       setMySales(normalizeSalesResponse(salesRes.data));
       setKpi(kpiRes.data);
     } catch (error) {
-      console.error('Fetch error:', error);
+      console.warn('Fetch error:', error);
     }
   };
 
@@ -187,8 +250,14 @@ export default function App() {
         headers: { Authorization: `Bearer ${token}` }
       });
       const convenios = Array.isArray(res.data?.convenios) ? res.data.convenios : [];
+      setSimulatorCatalog({
+        convenios,
+        cargos: Array.isArray(res.data?.cargos) ? res.data.cargos : [],
+        reglas: Array.isArray(res.data?.reglas) ? res.data.reglas : []
+      });
       const options = convenios
         .filter((item: any) => item?.nombre)
+        .sort((a: any, b: any) => String(a.nombre).localeCompare(String(b.nombre)))
         .map((item: any) => ({ label: item.nombre, value: item.nombre }));
 
       setConvenioOptions([
@@ -196,9 +265,172 @@ export default function App() {
         ...(options.length > 0 ? options : CONVENIOS.slice(1))
       ]);
     } catch (error) {
-      console.error('Convenios fetch error:', error);
+      console.warn('Convenios fetch error:', error);
+      setSimulatorCatalog(null);
       setConvenioOptions(CONVENIOS);
     }
+  };
+
+  const selectedConvenio = useMemo(() => (
+    simulatorCatalog?.convenios.find(item => item.nombre === convenio) || null
+  ), [simulatorCatalog, convenio]);
+
+  const sectorOptions = useMemo(() => {
+    if (!simulatorCatalog) return [];
+    return Array.from(new Set(
+      simulatorCatalog.convenios
+        .map(item => item.sector || 'Otros')
+        .filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b));
+  }, [simulatorCatalog]);
+
+  const filteredConvenioOptions = useMemo(() => {
+    if (!simulatorCatalog) return convenioOptions;
+
+    const rows = simulatorCatalog.convenios
+      .filter(item => !sectorLaboral || (item.sector || 'Otros') === sectorLaboral)
+      .filter(item => item?.nombre)
+      .sort((a, b) => a.nombre.localeCompare(b.nombre))
+      .map(item => ({ label: item.nombre, value: item.nombre }));
+
+    return [
+      { label: sectorLaboral ? 'Seleccionar convenio...' : 'Primero selecciona sector', value: '' },
+      ...rows
+    ];
+  }, [simulatorCatalog, sectorLaboral, convenioOptions]);
+
+  const cargoOptions = useMemo(() => {
+    if (!simulatorCatalog || !selectedConvenio) return [];
+
+    const validCargoIds = new Set(
+      simulatorCatalog.reglas
+        .filter(regla => regla.convenio_id === selectedConvenio.id)
+        .map(regla => regla.cargo_id)
+    );
+
+    return simulatorCatalog.cargos
+      .filter(cargo => validCargoIds.has(cargo.id))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }, [simulatorCatalog, selectedConvenio]);
+
+  const handleSectorChange = (value: string) => {
+    setSectorLaboral(value);
+    setConvenio('');
+    setCargoLaboral('');
+  };
+
+  const handleConvenioChange = (value: string) => {
+    const selected = simulatorCatalog?.convenios.find(item => item.nombre === value);
+    if (selected?.sector && !sectorLaboral) {
+      setSectorLaboral(selected.sector);
+    }
+    setConvenio(value);
+    setCargoLaboral('');
+  };
+
+  const applyEmailDomain = (domainValue: string) => {
+    const localPart = getEmailLocalPart(correo);
+    const domain = domainValue.trim().toLowerCase().replace(/^@+/, '');
+
+    if (!localPart) {
+      Alert.alert('Correo incompleto', 'Primero escribe el usuario del correo antes del @.');
+      return;
+    }
+
+    setCorreo(`${localPart}@${domain}`);
+  };
+
+  const fetchDepartamentos = async () => {
+    if (!token) return;
+    try {
+      const res = await axios.get(`${apiUrl}/geo/departamentos`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+      setDepartamentoOptions(rows);
+
+      if (!departamento && rows.length > 0) {
+        setDepartamento(rows[0].departamento);
+      }
+    } catch (error) {
+      console.warn('Geo departamentos error:', error);
+    }
+  };
+
+  const fetchProvincias = async (departamentoValue: string) => {
+    if (!token || !departamentoValue) return;
+    try {
+      const res = await axios.get(`${apiUrl}/geo/provincias`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { departamento: departamentoValue }
+      });
+      setProvinciaOptions(Array.isArray(res.data?.data) ? res.data.data : []);
+    } catch (error) {
+      console.warn('Geo provincias error:', error);
+      setProvinciaOptions([]);
+    }
+  };
+
+  const fetchDistritos = async (departamentoValue: string, provinciaValue: string) => {
+    if (!token || !departamentoValue || !provinciaValue) return;
+    try {
+      const res = await axios.get(`${apiUrl}/geo/distritos`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { departamento: departamentoValue, provincia: provinciaValue }
+      });
+      setDistritoOptions(Array.isArray(res.data?.data) ? res.data.data : []);
+    } catch (error) {
+      console.warn('Geo distritos error:', error);
+      setDistritoOptions([]);
+    }
+  };
+
+  const handleDepartamentoChange = (value: string) => {
+    setDepartamento(value);
+    setProvincia('');
+    setDistrito('');
+    setZonaComercial('');
+    setProvinciaOptions([]);
+    setDistritoOptions([]);
+    fetchProvincias(value);
+  };
+
+  const handleProvinciaChange = (value: string) => {
+    setProvincia(value);
+    setDistrito('');
+    setZonaComercial('');
+    setDistritoOptions([]);
+    fetchDistritos(departamento, value);
+  };
+
+  const handleDistritoChange = (value: string) => {
+    setDistrito(value);
+    if (!zonaComercial) setZonaComercial(value);
+  };
+
+  const handleEstadoCivilChange = (value: string) => {
+    setEstadoCivil(value);
+    if (!requiresSpouseEvaluation(value)) {
+      setConyugeDni('');
+      setConyugeNombres('');
+    }
+  };
+
+  const openCalculatorForSale = (sale: any) => {
+    setSelectedSaleId(null);
+    setCalculatorSale(sale);
+    setActiveTab('simulator');
+  };
+
+  const closeCalculator = () => {
+    setCalculatorSale(null);
+    setActiveTab('list');
+    fetchData();
+  };
+
+  const closeSelectedSale = () => {
+    setSelectedSaleId(null);
+    fetchData();
   };
 
   useEffect(() => {
@@ -229,6 +461,8 @@ export default function App() {
 
     fetchData();
     fetchConvenios();
+    fetchDepartamentos();
+    fetchProvincias(departamento);
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, [token]);
@@ -244,6 +478,31 @@ export default function App() {
 
     return () => subscription.remove();
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (selectedSaleId) {
+        closeSelectedSale();
+        return true;
+      }
+
+      if (activeTab === 'simulator') {
+        closeCalculator();
+        return true;
+      }
+
+      if (activeTab !== 'home') {
+        setActiveTab('home');
+        return true;
+      }
+
+      return false;
+    });
+
+    return () => subscription.remove();
+  }, [token, selectedSaleId, activeTab]);
 
   const testPush = async () => {
     try {
@@ -315,6 +574,7 @@ export default function App() {
     setToken(null);
     setUser(null);
     setSelectedSaleId(null);
+    setCalculatorSale(null);
     setActiveTab('home');
   };
 
@@ -332,49 +592,34 @@ export default function App() {
     return calculateCommission(totalDisbursed);
   }, [kpi]);
 
-  const pickDocument = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/*'],
-        multiple: true
-      });
-
-      if (!result.canceled) {
-        const usedTypes = new Set(attachments.map(att => att.docType));
-        const newAttachments = result.assets.map(asset => ({
-          uri: asset.uri,
-          name: asset.name,
-          type: asset.mimeType || 'application/octet-stream',
-          docType: (() => {
-            const nextType = DEFAULT_DOCUMENT_SEQUENCE.find(type => !usedTypes.has(type)) || 'OTROS';
-            usedTypes.add(nextType);
-            return nextType;
-          })()
-        }));
-        setAttachments([...attachments, ...newAttachments]);
-      }
-    } catch (err) {
-      Alert.alert('Error', 'No se pudo seleccionar el documento');
-    }
-  };
-
-  const removeAttachment = (index: number) => {
-    const newAttachments = [...attachments];
-    newAttachments.splice(index, 1);
-    setAttachments(newAttachments);
-  };
-
-  const updateAttachmentType = (index: number, docType: string) => {
-    const newAttachments = [...attachments];
-    newAttachments[index] = { ...newAttachments[index], docType };
-    setAttachments(newAttachments);
-  };
-
   const handleSubmit = async () => {
-    if (!dni || !nombres || !celular || !maf || !convenio || !cargoLaboral || !plazoDeseado || !consentimiento) {
-      Alert.alert('Faltan datos', 'Completa DNI, nombre, celular, convenio, cargo, monto, plazo y consentimiento.');
+    const evaluaConyuge = requiresSpouseEvaluation(estadoCivil);
+
+    if (!dni || !nombres || !celular || !maf || !convenio || !cargoLaboral || !plazoDeseado || !estadoCivil || !consentimiento || (sectorOptions.length > 0 && !sectorLaboral)) {
+      Alert.alert('Faltan datos', 'Completa DNI, nombre, celular, estado civil, sector, convenio, cargo, monto referencial, plazo y consentimiento.');
       return;
     }
+
+    if (evaluaConyuge && (!/^\d{8}$/.test(conyugeDni) || conyugeNombres.trim().length < 3)) {
+      Alert.alert('Datos del conyuge', 'Si el cliente es casado o conviviente, registra DNI y nombres del conyuge para su evaluacion.');
+      return;
+    }
+
+    if (!isValidPeruMobile(celular)) {
+      Alert.alert('Celular invalido', 'El celular debe tener 9 digitos y empezar con 9. El prefijo +51 se agrega automaticamente.');
+      return;
+    }
+
+    if (!isValidPeruPhone(telefonoAlt)) {
+      Alert.alert('Telefono alterno invalido', 'El telefono alterno debe contener solo numeros y tener entre 6 y 9 digitos.');
+      return;
+    }
+
+    if (!isValidEmail(correo)) {
+      Alert.alert('Correo invalido', 'Ingresa un correo valido o deja el campo vacio.');
+      return;
+    }
+
     setLoading(true);
     try {
       const saleRes = await axios.post(
@@ -382,9 +627,12 @@ export default function App() {
         {
           dni_cliente: dni,
           nombres_cliente: nombres,
-          celular,
-          telefono_alt: telefonoAlt,
-          correo,
+          celular: `+51${celular}`,
+          telefono_alt: telefonoAlt || undefined,
+          correo: correo.trim() || undefined,
+          estado_civil_cliente: estadoCivil,
+          conyuge_dni: evaluaConyuge ? conyugeDni : undefined,
+          conyuge_nombres: evaluaConyuge ? conyugeNombres.trim() : undefined,
           direccion,
           plaza,
           departamento,
@@ -392,7 +640,6 @@ export default function App() {
           distrito,
           zona_comercial: zonaComercial,
           convenio,
-          entidad_laboral: entidadLaboral,
           cargo_laboral: cargoLaboral,
           maf_neto: parseFloat(maf),
           monto_solicitado: parseFloat(maf),
@@ -406,25 +653,13 @@ export default function App() {
       );
 
       const saleId = saleRes.data.id;
-      for (const att of attachments) {
-        const formData = new FormData();
-        formData.append('tipo_documento', att.docType || 'OTROS');
-        formData.append('dni_cliente', dni);
-        formData.append('documento', { uri: att.uri, name: att.name, type: att.type } as any);
-
-        await axios.post(`${apiUrl}/sales/${saleId}/documentos?dni=${dni}`, formData, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data'
-          }
-        });
-      }
-      Alert.alert('Exito', 'Expediente registrado correctamente.');
+      Alert.alert('Exito', 'Prospecto registrado. Ahora inicia la verificacion desde el detalle.');
       resetForm();
+      setSelectedSaleId(saleId);
       setActiveTab('list');
       fetchData();
     } catch (error: any) {
-      console.error(error);
+      console.warn(error);
       const details = error.response?.data?.details;
       Alert.alert('Error', Array.isArray(details) ? details.join('\n') : (error.response?.data?.error || 'No se pudo registrar la operacion.'));
     } finally {
@@ -436,37 +671,39 @@ export default function App() {
     setDni('');
     setNombres('');
     setPlaza('');
+    setSectorLaboral('');
     setConvenio('');
     setMaf('');
     setCelular('');
     setTelefonoAlt('');
     setCorreo('');
+    setEstadoCivil('');
+    setConyugeDni('');
+    setConyugeNombres('');
     setDireccion('');
     setDepartamento('LIMA');
     setProvincia('');
     setDistrito('');
     setZonaComercial('');
-    setEntidadLaboral('');
     setCargoLaboral('');
     setPlazoDeseado('');
     setOrigenProspecto('Prospeccion directa');
     setConsentimiento(false);
-    setAttachments([]);
     setFeedback('');
     setClientAge(null);
     setClientData(null);
   };
 
   const statusColor = (estado: string) => {
-    if (['DESEMBOLSADO', 'APROBADO_BCP', 'CONVENIO_APROBADO', 'SCORE_APROBADO'].includes(estado)) return theme.emerald;
-    if (['OBSERVADO', 'PENDIENTE_DATOS', 'PENDIENTE_DOCUMENTOS', 'PROSPECTO_NUEVO', 'PENDIENTE_REASIGNACION'].includes(estado)) return theme.orange;
+    if (['DESEMBOLSADO', 'FILE_VALIDADO', 'REMESA_APROBADA', 'PENDIENTE_DESEMBOLSO'].includes(estado)) return theme.emerald;
+    if (estado?.startsWith('OBS_') || estado?.startsWith('PENDIENTE_') || ['PROSPECTO_NUEVO', 'REMESA_REDUCIDA'].includes(estado)) return theme.orange;
     if (estado?.includes('RECHAZ')) return theme.rose;
     return theme.blue;
   };
 
   const statusBg = (estado: string) => {
-    if (['DESEMBOLSADO', 'APROBADO_BCP', 'CONVENIO_APROBADO', 'SCORE_APROBADO'].includes(estado)) return theme.emeraldSoft;
-    if (['OBSERVADO', 'PENDIENTE_DATOS', 'PENDIENTE_DOCUMENTOS', 'PROSPECTO_NUEVO', 'PENDIENTE_REASIGNACION'].includes(estado)) return theme.orangeSoft;
+    if (['DESEMBOLSADO', 'FILE_VALIDADO', 'REMESA_APROBADA', 'PENDIENTE_DESEMBOLSO'].includes(estado)) return theme.emeraldSoft;
+    if (estado?.startsWith('OBS_') || estado?.startsWith('PENDIENTE_') || ['PROSPECTO_NUEVO', 'REMESA_REDUCIDA'].includes(estado)) return theme.orangeSoft;
     if (estado?.includes('RECHAZ')) return theme.roseSoft;
     return theme.blueSoft;
   };
@@ -638,18 +875,25 @@ export default function App() {
           return (
             <TouchableOpacity key={sale.id} style={styles.fullSaleCard} onPress={() => setSelectedSaleId(sale.id)}>
               <View style={styles.cardHeader}>
-                <Text style={styles.cardDni}>DNI {sale.dni_cliente}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardDni}>DNI {sale.dni_cliente}</Text>
+                  <Text style={styles.cardDate}>{new Date(sale.fecha_ingreso).toLocaleDateString()}</Text>
+                </View>
                 <View style={[styles.pill, { backgroundColor: statusBg(sale.estado) }]}>
-                  <Text style={[styles.pillText, { color: statusColor(sale.estado) }]}>{sale.estado}</Text>
+                  <Text numberOfLines={1} style={[styles.pillText, { color: statusColor(sale.estado) }]}>{sale.estado}</Text>
                 </View>
               </View>
-              <Text style={styles.cardName}>{sale.nombres_cliente}</Text>
-              <View style={styles.cardFooter}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Ionicons name="wallet-outline" size={14} color={theme.text} style={{ marginRight: 5 }} />
-                  <Text style={styles.cardAmount}>S/ {(Number(sale.monto_solicitado ?? sale.maf_neto) || 0).toLocaleString()}</Text>
+              <Text style={styles.cardName} numberOfLines={2}>{sale.nombres_cliente}</Text>
+
+              <View style={styles.saleMetricGrid}>
+                <View style={styles.saleMetricBox}>
+                  <Text style={styles.saleMetricLabel}>MONTO</Text>
+                  <Text style={styles.saleMetricValue}>S/ {(Number(sale.monto_solicitado ?? sale.maf_neto) || 0).toLocaleString()}</Text>
                 </View>
-                <Text style={styles.cardDate}>{new Date(sale.fecha_ingreso).toLocaleDateString()}</Text>
+                <View style={styles.saleMetricBox}>
+                  <Text style={styles.saleMetricLabel}>CONVENIO</Text>
+                  <Text style={styles.saleMetricValue} numberOfLines={1}>{sale.convenio || 'Sin convenio'}</Text>
+                </View>
               </View>
 
               {trace && (
@@ -688,101 +932,165 @@ export default function App() {
 
   const renderForm = () => (
     <ScrollView style={styles.mainScroll} showsVerticalScrollIndicator={false}>
-      {renderHeader('Nuevo expediente', 'Registra al cliente y adjunta la documentacion requerida.')}
+      {renderHeader('Nuevo prospecto', 'Registra datos base. La documentacion se carga despues de la aceptacion del cliente.')}
 
       <View style={styles.formCard}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
-          <Ionicons name="person-circle" size={20} color={theme.blue} style={{ marginRight: 10 }} />
-          <Text style={styles.inputLabel}>DATOS DEL CLIENTE</Text>
-        </View>
-
-        <TextInput
-          style={styles.input}
-          placeholder="DNI del cliente"
-          placeholderTextColor={theme.subtext}
-          value={dni}
-          onChangeText={(text) => {
-            const cleaned = text.replace(/[^0-9]/g, '');
-            if (cleaned.length <= 8) {
-              setDni(cleaned);
-              if (cleaned.length === 8) fetchDniInfo(cleaned);
-              else setClientAge(null);
-            }
-          }}
-          keyboardType="number-pad"
-          maxLength={8}
-        />
-
-        {isSearchingDni && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, marginTop: -5 }}>
-            <ActivityIndicator size="small" color={theme.orange} />
-            <Text style={{ fontSize: 12, color: theme.subtext, marginLeft: 10 }}>Buscando informacion...</Text>
+        <View style={styles.formSection}>
+          <View style={styles.formSectionHeader}>
+            <Ionicons name="person-circle" size={20} color={theme.blue} style={{ marginRight: 10 }} />
+            <Text style={styles.inputLabel}>DATOS DEL CLIENTE</Text>
           </View>
-        )}
 
-        {clientAge && (
-          <View
-            style={{
-              backgroundColor: theme.blueSoft,
-              padding: 12,
-              borderRadius: 10,
-              marginTop: -10,
-              marginBottom: 15,
-              flexDirection: 'row',
-              alignItems: 'center',
-              borderLeftWidth: 4,
-              borderLeftColor: theme.blue
+          <TextInput
+            style={styles.input}
+            placeholder="DNI del cliente"
+            placeholderTextColor={theme.subtext}
+            value={dni}
+            onChangeText={(text) => {
+              const cleaned = text.replace(/[^0-9]/g, '');
+              if (cleaned.length <= 8) {
+                setDni(cleaned);
+                if (cleaned.length === 8) fetchDniInfo(cleaned);
+                else setClientAge(null);
+              }
             }}
-          >
-            <Ionicons name="calendar" size={18} color={theme.blue} style={{ marginRight: 10 }} />
-            <View>
-              <Text style={{ fontSize: 10, fontWeight: '900', color: theme.subtext, letterSpacing: 1 }}>EDAD ESTIMADA</Text>
-              <Text style={{ fontSize: 15, fontWeight: 'bold', color: theme.blue }}>{clientAge}</Text>
+            keyboardType="number-pad"
+            maxLength={8}
+          />
+
+          {isSearchingDni && (
+            <View style={styles.formHintRow}>
+              <ActivityIndicator size="small" color={theme.orange} />
+              <Text style={{ fontSize: 12, color: theme.subtext, marginLeft: 10 }}>Buscando informacion...</Text>
             </View>
+          )}
+
+          {clientAge && (
+            <View style={styles.formInfoCard}>
+              <Ionicons name="calendar" size={18} color={theme.blue} style={{ marginRight: 10 }} />
+              <View>
+                <Text style={{ fontSize: 10, fontWeight: '900', color: theme.subtext, letterSpacing: 1 }}>EDAD ESTIMADA</Text>
+                <Text style={{ fontSize: 15, fontWeight: 'bold', color: theme.blue }}>{clientAge}</Text>
+              </View>
+            </View>
+          )}
+
+          <TextInput
+            style={styles.input}
+            placeholder="Nombres completos"
+            placeholderTextColor={theme.subtext}
+            value={nombres}
+            onChangeText={(text) => setNombres(text.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g, ''))}
+            autoCapitalize="words"
+          />
+
+          <View style={styles.phoneRow}>
+            <View style={styles.phonePrefixBox}>
+              <Text style={{ color: theme.blue, fontSize: 14, fontWeight: '900' }}>+51</Text>
+            </View>
+            <TextInput
+              style={[styles.input, { flex: 1, marginBottom: 0 }]}
+              placeholder="Celular 9 digitos"
+              placeholderTextColor={theme.subtext}
+              value={celular}
+              onChangeText={(text) => setCelular(onlyDigits(text, 9))}
+              keyboardType="number-pad"
+              maxLength={9}
+            />
           </View>
-        )}
 
-        <TextInput
-          style={styles.input}
-          placeholder="Nombres completos"
-          placeholderTextColor={theme.subtext}
-          value={nombres}
-          onChangeText={(text) => setNombres(text.replace(/[^\p{L}\s]/gu, ''))}
-          autoCapitalize="words"
-        />
+          <TextInput
+            style={styles.input}
+            placeholder="Telefono alterno fijo o movil"
+            placeholderTextColor={theme.subtext}
+            value={telefonoAlt}
+            onChangeText={(text) => setTelefonoAlt(onlyDigits(text, 9))}
+            keyboardType="number-pad"
+            maxLength={9}
+          />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Celular / WhatsApp"
-          placeholderTextColor={theme.subtext}
-          value={celular}
-          onChangeText={(text) => setCelular(text.replace(/[^0-9+]/g, '').slice(0, 15))}
-          keyboardType="phone-pad"
-        />
+          <TextInput
+            style={styles.input}
+            placeholder="Correo del cliente"
+            placeholderTextColor={theme.subtext}
+            value={correo}
+            onChangeText={(text) => setCorreo(text.trim().toLowerCase())}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Telefono alterno"
-          placeholderTextColor={theme.subtext}
-          value={telefonoAlt}
-          onChangeText={(text) => setTelefonoAlt(text.replace(/[^0-9+]/g, '').slice(0, 15))}
-          keyboardType="phone-pad"
-        />
+          <View style={styles.emailDomainRow}>
+            {EMAIL_DOMAIN_OPTIONS.map(domain => (
+              <TouchableOpacity
+                key={domain}
+                onPress={() => applyEmailDomain(domain)}
+                style={styles.emailDomainChip}
+              >
+                <Text style={{ color: theme.blue, fontSize: 11, fontWeight: '900' }}>@{domain}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Correo del cliente"
-          placeholderTextColor={theme.subtext}
-          value={correo}
-          onChangeText={setCorreo}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
+          <CustomPicker
+            selectedValue={estadoCivil}
+            onValueChange={handleEstadoCivilChange}
+            options={ESTADO_CIVIL_OPTIONS}
+            placeholder="Seleccionar estado civil..."
+            theme={theme}
+            isDark={isDark}
+            style={styles.formPicker}
+          />
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, marginTop: 10 }}>
-          <Ionicons name="location" size={20} color={theme.blue} style={{ marginRight: 10 }} />
-          <Text style={styles.inputLabel}>UBICACION</Text>
+          {requiresSpouseEvaluation(estadoCivil) && (
+            <View>
+              <View style={styles.formInfoCard}>
+                <Ionicons name="people" size={18} color={theme.orange} style={{ marginRight: 10 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: theme.subtext, letterSpacing: 1 }}>EVALUACION DE CONYUGE</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: theme.text }}>
+                    Si el conyuge presenta problemas en sistema/BCP, el cliente no aplica.
+                  </Text>
+                </View>
+              </View>
+
+              <TextInput
+                style={styles.input}
+                placeholder="DNI del conyuge"
+                placeholderTextColor={theme.subtext}
+                value={conyugeDni}
+                onChangeText={(text) => {
+                  const cleaned = onlyDigits(text, 8);
+                  setConyugeDni(cleaned);
+                  if (cleaned.length === 8) fetchConyugeDniInfo(cleaned);
+                }}
+                keyboardType="number-pad"
+                maxLength={8}
+              />
+
+              {isSearchingConyugeDni && (
+                <View style={styles.formHintRow}>
+                  <ActivityIndicator size="small" color={theme.orange} />
+                  <Text style={{ fontSize: 12, color: theme.subtext, marginLeft: 10 }}>Buscando conyuge...</Text>
+                </View>
+              )}
+
+              <TextInput
+                style={styles.input}
+                placeholder="Nombres del conyuge"
+                placeholderTextColor={theme.subtext}
+                value={conyugeNombres}
+                onChangeText={(text) => setConyugeNombres(text.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g, ''))}
+                autoCapitalize="words"
+              />
+            </View>
+          )}
         </View>
+
+        <View style={styles.formSection}>
+          <View style={styles.formSectionHeader}>
+            <Ionicons name="location" size={20} color={theme.blue} style={{ marginRight: 10 }} />
+            <Text style={styles.inputLabel}>UBICACION</Text>
+          </View>
 
         <TextInput
           style={styles.input}
@@ -792,68 +1100,134 @@ export default function App() {
           onChangeText={setDireccion}
         />
 
-        <View style={{ flexDirection: 'row', gap: 10 }}>
+        {departamentoOptions.length > 0 ? (
+          <CustomPicker
+            selectedValue={departamento}
+            onValueChange={handleDepartamentoChange}
+            options={[{ label: 'Seleccionar departamento...', value: '' }, ...departamentoOptions.map(item => ({ label: item.departamento, value: item.departamento }))]}
+            placeholder="Seleccionar departamento..."
+            theme={theme}
+            isDark={isDark}
+            style={styles.formPicker}
+          />
+        ) : (
           <TextInput
-            style={[styles.input, { flex: 1 }]}
+            style={styles.input}
             placeholder="Departamento"
             placeholderTextColor={theme.subtext}
             value={departamento}
             onChangeText={(text) => setDepartamento(text.toUpperCase())}
           />
+        )}
+
+        {provinciaOptions.length > 0 ? (
+          <CustomPicker
+            selectedValue={provincia}
+            onValueChange={handleProvinciaChange}
+            options={[{ label: 'Seleccionar provincia...', value: '' }, ...provinciaOptions.map(item => ({ label: item.provincia, value: item.provincia }))]}
+            placeholder="Seleccionar provincia..."
+            theme={theme}
+            isDark={isDark}
+            style={styles.formPicker}
+          />
+        ) : (
           <TextInput
-            style={[styles.input, { flex: 1 }]}
+            style={styles.input}
             placeholder="Provincia"
             placeholderTextColor={theme.subtext}
             value={provincia}
             onChangeText={(text) => setProvincia(text.toUpperCase())}
           />
-        </View>
+        )}
 
-        <View style={{ flexDirection: 'row', gap: 10 }}>
+        {distritoOptions.length > 0 ? (
+          <CustomPicker
+            selectedValue={distrito}
+            onValueChange={handleDistritoChange}
+            options={[{ label: 'Seleccionar distrito...', value: '' }, ...distritoOptions.map(item => ({ label: item.distrito, value: item.distrito }))]}
+            placeholder="Seleccionar distrito..."
+            theme={theme}
+            isDark={isDark}
+            style={styles.formPicker}
+          />
+        ) : (
           <TextInput
-            style={[styles.input, { flex: 1 }]}
+            style={styles.input}
             placeholder="Distrito"
             placeholderTextColor={theme.subtext}
             value={distrito}
             onChangeText={(text) => setDistrito(text.toUpperCase())}
           />
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
-            placeholder="Zona"
-            placeholderTextColor={theme.subtext}
-            value={zonaComercial}
-            onChangeText={(text) => setZonaComercial(text.toUpperCase())}
+        )}
+
+        <TextInput
+          style={styles.input}
+          placeholder="Zona"
+          placeholderTextColor={theme.subtext}
+          value={zonaComercial}
+          onChangeText={(text) => setZonaComercial(text.toUpperCase())}
+        />
+        </View>
+
+        <View style={styles.formSection}>
+          <View style={styles.formSectionHeader}>
+            <Ionicons name="briefcase" size={20} color={theme.blue} style={{ marginRight: 10 }} />
+            <Text style={styles.inputLabel}>CONDICIONES</Text>
+          </View>
+
+        {sectorOptions.length > 0 && (
+          <CustomPicker
+            selectedValue={sectorLaboral}
+            onValueChange={handleSectorChange}
+            options={[{ label: 'Seleccionar sector...', value: '' }, ...sectorOptions.map(s => ({ label: s, value: s }))]}
+            placeholder="Seleccionar sector..."
+            theme={theme}
+            isDark={isDark}
+            style={styles.formPicker}
           />
-        </View>
+        )}
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, marginTop: 10 }}>
-          <Ionicons name="briefcase" size={20} color={theme.blue} style={{ marginRight: 10 }} />
-          <Text style={styles.inputLabel}>CONDICIONES</Text>
-        </View>
-
-        <View style={styles.pickerWrapper}>
-          <Picker selectedValue={convenio} onValueChange={setConvenio} style={{ height: 50, color: theme.text }}>
-            {convenioOptions.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}
-          </Picker>
-        </View>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Entidad laboral"
-          placeholderTextColor={theme.subtext}
-          value={entidadLaboral}
-          onChangeText={(text) => setEntidadLaboral(text.toUpperCase())}
+        <CustomPicker
+          selectedValue={convenio}
+          onValueChange={handleConvenioChange}
+          options={filteredConvenioOptions}
+          placeholder="Seleccionar convenio..."
+          theme={theme}
+          isDark={isDark}
+          style={styles.formPicker}
         />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Cargo laboral"
-          placeholderTextColor={theme.subtext}
-          value={cargoLaboral}
-          onChangeText={(text) => setCargoLaboral(text.toUpperCase())}
-        />
+        {simulatorCatalog && !selectedConvenio ? (
+          <CustomPicker
+            selectedValue=""
+            onValueChange={() => undefined}
+            options={[{ label: 'Primero selecciona convenio', value: '' }]}
+            placeholder="Seleccionar cargo..."
+            theme={theme}
+            isDark={isDark}
+            style={styles.formPicker}
+          />
+        ) : cargoOptions.length > 0 ? (
+          <CustomPicker
+            selectedValue={cargoLaboral}
+            onValueChange={setCargoLaboral}
+            options={[{ label: 'Seleccionar cargo...', value: '' }, ...cargoOptions.map(cargo => ({ label: cargo.nombre, value: cargo.nombre }))]}
+            placeholder="Seleccionar cargo..."
+            theme={theme}
+            isDark={isDark}
+            style={styles.formPicker}
+          />
+        ) : (
+          <TextInput
+            style={styles.input}
+            placeholder="Cargo laboral"
+            placeholderTextColor={theme.subtext}
+            value={cargoLaboral}
+            onChangeText={(text) => setCargoLaboral(text.toUpperCase())}
+          />
+        )}
 
-        <View style={styles.inputWrapper}>
+        <View style={styles.moneyInputWrapper}>
           <Text style={{ fontSize: 16, fontWeight: '900', color: theme.blue, marginRight: 5 }}>S/</Text>
           <TextInput
             style={[styles.input, { marginBottom: 0, flex: 1, backgroundColor: 'transparent', borderWidth: 0 }]}
@@ -894,19 +1268,19 @@ export default function App() {
           onChangeText={setFeedback}
           multiline
         />
+        </View>
+
+        <View style={[styles.formSection, styles.formSectionLast]}>
 
         <TouchableOpacity
           onPress={() => setConsentimiento(!consentimiento)}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            padding: 14,
-            borderRadius: 12,
-            borderWidth: 1,
+          style={[
+            styles.consentCard,
+            {
             borderColor: consentimiento ? theme.blue : theme.border,
-            backgroundColor: consentimiento ? theme.blueSoft : theme.white,
-            marginBottom: 18
-          }}
+            backgroundColor: consentimiento ? theme.blueSoft : theme.white
+            }
+          ]}
         >
           <Ionicons
             name={consentimiento ? 'checkbox' : 'square-outline'}
@@ -919,56 +1293,15 @@ export default function App() {
           </Text>
         </TouchableOpacity>
 
-        <View style={styles.attachmentSection}>
-          <View style={styles.attachmentHeader}>
-            <Ionicons name="attach" size={20} color={theme.blue} style={{ marginRight: 10 }} />
-            <Text style={styles.inputLabel}>DOCUMENTACION ADJUNTA</Text>
-            <View style={styles.attachmentCount}>
-              <Text style={styles.attachmentCountText}>{attachments.length}</Text>
-            </View>
+        <View style={styles.formInfoCard}>
+          <Ionicons name="document-text" size={18} color={theme.blue} style={{ marginRight: 10 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 10, fontWeight: '900', color: theme.subtext, letterSpacing: 1 }}>DOCUMENTOS DESPUES DEL CIERRE</Text>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: theme.text }}>
+              DNI, boleta y documentos del file se cargan desde el detalle cuando el cliente acepta la cotizacion.
+            </Text>
           </View>
-
-          <TouchableOpacity style={styles.uploadZone} onPress={pickDocument}>
-            <View style={styles.uploadCircle}>
-              <Ionicons name="cloud-upload" size={24} color={theme.orange} />
-            </View>
-            <Text style={styles.uploadTitle}>Seleccionar archivos</Text>
-            <Text style={styles.uploadSubtitle}>PDF o imagenes hasta 10MB</Text>
-          </TouchableOpacity>
-
-          {attachments.length > 0 && (
-            <View style={styles.attachmentsList}>
-              {attachments.map((att, index) => (
-                <View key={`${att.name}-${index}`} style={styles.attachmentCard}>
-                  <View style={styles.fileIconBox}>
-                    <Ionicons
-                      name={att.type.includes('image') ? 'image' : 'document-text'}
-                      size={20}
-                      color={theme.blue}
-                    />
-                  </View>
-                  <View style={styles.fileInfo}>
-                    <Text style={styles.fileName} numberOfLines={1}>{att.name}</Text>
-                    <Text style={styles.fileType}>{att.type.split('/')[1]?.toUpperCase() || 'FILE'}</Text>
-                    <View style={styles.attachmentTypeWrapper}>
-                      <Picker
-                        selectedValue={att.docType}
-                        onValueChange={(value) => updateAttachmentType(index, value)}
-                        style={styles.attachmentTypePicker}
-                      >
-                        {DOCUMENT_TYPE_OPTIONS.map(option => (
-                          <Picker.Item key={option.value} label={option.label} value={option.value} />
-                        ))}
-                      </Picker>
-                    </View>
-                  </View>
-                  <TouchableOpacity onPress={() => removeAttachment(index)} style={styles.removeBtn}>
-                    <Ionicons name="trash-outline" size={18} color={theme.rose} />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          )}
+        </View>
         </View>
 
         <TouchableOpacity style={styles.primaryButton} onPress={handleSubmit} disabled={loading}>
@@ -976,7 +1309,7 @@ export default function App() {
             <ActivityIndicator color={theme.whiteText} />
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={styles.buttonText}>ENVIAR A EVALUACION</Text>
+              <Text style={styles.buttonText}>CREAR PROSPECTO</Text>
               <Ionicons name="send" size={18} color={theme.whiteText} style={{ marginLeft: 10 }} />
             </View>
           )}
@@ -990,12 +1323,45 @@ export default function App() {
     </ScrollView>
   );
 
-  const renderSimulator = () => (
-    <SimulatorView isDark={isDark} token={token || ''} apiUrl={apiUrl} />
-  );
+  const renderSimulator = () => {
+    if (!calculatorSale) {
+      return (
+        <View style={styles.container}>
+          <ScrollView style={styles.mainScroll} showsVerticalScrollIndicator={false}>
+            {renderHeader('Calculadora', 'Selecciona un prospecto de la bandeja para evaluarlo.')}
+            <View style={styles.fullSaleCard}>
+              <View style={{ alignItems: 'center', paddingVertical: 26 }}>
+                <Ionicons name="calculator-outline" size={42} color={theme.blue} />
+                <Text style={[styles.cardName, { textAlign: 'center', marginTop: 12 }]}>
+                  La calculadora se aplica despues de crear el prospecto
+                </Text>
+                <Text style={[styles.emptyText, { marginTop: 8, textAlign: 'center' }]}>
+                  Abre un expediente y usa la accion de evaluacion para guardar el resultado en ese prospecto.
+                </Text>
+                <TouchableOpacity style={[styles.primaryButton, { marginTop: 18 }]} onPress={() => setActiveTab('list')}>
+                  <Text style={styles.buttonText}>IR A BANDEJA</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      );
+    }
+
+    return (
+      <SimulatorView
+        isDark={isDark}
+        token={token || ''}
+        apiUrl={apiUrl}
+        targetSale={calculatorSale}
+        onClose={closeCalculator}
+        onSimulationSaved={fetchData}
+      />
+    );
+  };
 
   const inactiveTabColor = 'rgba(255,255,255,0.56)';
-  const activeTabColor = theme.whiteText;
+  const activeTabColor = theme.orange;
 
   if (!token) {
     return renderLogin();
@@ -1007,10 +1373,8 @@ export default function App() {
       {selectedSaleId ? (
         <ExpedienteDetail
           saleId={selectedSaleId}
-          onClose={() => {
-            setSelectedSaleId(null);
-            fetchData();
-          }}
+          onClose={closeSelectedSale}
+          onOpenCalculator={openCalculatorForSale}
           isDark={isDark}
           theme={theme}
         />
@@ -1021,43 +1385,57 @@ export default function App() {
           {activeTab === 'form' && renderForm()}
           {activeTab === 'simulator' && renderSimulator()}
 
+          {activeTab !== 'simulator' && (
           <View style={[styles.tabBar, isLandscape && { bottom: 10, width: '70%', alignSelf: 'center' }]}>
-            <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('home')}>
-              <Ionicons
-                name={activeTab === 'home' ? 'home' : 'home-outline'}
-                size={22}
-                color={activeTab === 'home' ? activeTabColor : inactiveTabColor}
-              />
-              <Text style={[styles.tabText, activeTab === 'home' && styles.tabActive]}>INICIO</Text>
+            <TouchableOpacity
+              activeOpacity={0.86}
+              style={[styles.tabItem, activeTab === 'home' && styles.tabItemActive]}
+              onPress={() => setActiveTab('home')}
+            >
+              {activeTab === 'home' && <View style={styles.tabActiveIndicator} />}
+              <View style={[styles.tabIconWrap, activeTab === 'home' && styles.tabIconWrapActive]}>
+                <Ionicons
+                  name={activeTab === 'home' ? 'home' : 'home-outline'}
+                  size={21}
+                  color={activeTab === 'home' ? activeTabColor : inactiveTabColor}
+                />
+              </View>
+              <Text numberOfLines={1} style={[styles.tabText, activeTab === 'home' && styles.tabActive]}>INICIO</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('list')}>
-              <Ionicons
-                name={activeTab === 'list' ? 'list' : 'list-outline'}
-                size={22}
-                color={activeTab === 'list' ? activeTabColor : inactiveTabColor}
-              />
-              <Text style={[styles.tabText, activeTab === 'list' && styles.tabActive]}>BANDEJA</Text>
+            <TouchableOpacity
+              activeOpacity={0.86}
+              style={[styles.tabItem, activeTab === 'list' && styles.tabItemActive]}
+              onPress={() => setActiveTab('list')}
+            >
+              {activeTab === 'list' && <View style={styles.tabActiveIndicator} />}
+              <View style={[styles.tabIconWrap, activeTab === 'list' && styles.tabIconWrapActive]}>
+                <Ionicons
+                  name={activeTab === 'list' ? 'list' : 'list-outline'}
+                  size={21}
+                  color={activeTab === 'list' ? activeTabColor : inactiveTabColor}
+                />
+              </View>
+              <Text numberOfLines={1} style={[styles.tabText, activeTab === 'list' && styles.tabActive]}>BANDEJA</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('simulator')}>
-              <Ionicons
-                name={activeTab === 'simulator' ? 'calculator' : 'calculator-outline'}
-                size={22}
-                color={activeTab === 'simulator' ? activeTabColor : inactiveTabColor}
-              />
-              <Text style={[styles.tabText, activeTab === 'simulator' && styles.tabActive]}>CALCULAR</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('form')}>
-              <Ionicons
-                name={activeTab === 'form' ? 'document-text' : 'document-text-outline'}
-                size={22}
-                color={activeTab === 'form' ? activeTabColor : inactiveTabColor}
-              />
-              <Text style={[styles.tabText, activeTab === 'form' && styles.tabActive]}>NUEVO</Text>
+            <TouchableOpacity
+              activeOpacity={0.86}
+              style={[styles.tabItem, activeTab === 'form' && styles.tabItemActive]}
+              onPress={() => setActiveTab('form')}
+            >
+              {activeTab === 'form' && <View style={styles.tabActiveIndicator} />}
+              <View style={[styles.tabIconWrap, activeTab === 'form' && styles.tabIconWrapActive]}>
+                <Ionicons
+                  name={activeTab === 'form' ? 'document-text' : 'document-text-outline'}
+                  size={21}
+                  color={activeTab === 'form' ? activeTabColor : inactiveTabColor}
+                />
+              </View>
+              <Text numberOfLines={1} style={[styles.tabText, activeTab === 'form' && styles.tabActive]}>NUEVO</Text>
             </TouchableOpacity>
           </View>
+          )}
         </View>
       )}
     </SafeAreaView>

@@ -91,7 +91,7 @@ export default function Dashboard() {
     const traces = [
       ...(sale.feedback ? [{
         type: 'note',
-        title: 'Observacion inicial',
+        title: 'Observación inicial',
         text: sale.feedback,
         date: sale.created_at || sale.fecha_ingreso
       }] : []),
@@ -105,7 +105,7 @@ export default function Dashboard() {
         .filter(log => Boolean(log.detalles))
         .map(log => ({
           type: 'state',
-          title: log.estado_nuevo ? `Cambio a ${log.estado_nuevo}` : (log.accion || 'Actualizacion'),
+          title: log.estado_nuevo ? `Cambio a ${log.estado_nuevo}` : (log.accion || 'Actualización'),
           text: log.detalles || '',
           date: log.created_at
         })))
@@ -158,16 +158,16 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="page-shell animate-in fade-in duration-500">
       {/* Header Sección */}
-      <div className="flex justify-between items-center">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold text-text-900 tracking-tight uppercase">
+          <h1 className="page-title">
             Bandeja de <span className="text-[var(--color-bcp-blue)]">Expedientes</span>
           </h1>
-          <p className="text-text-700 text-sm font-medium mt-1">Gestión operativa y seguimiento de colocaciones</p>
+          <p className="page-subtitle">Gestión operativa y seguimiento de colocaciones</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="page-actions">
           {canExport && (
             <button onClick={exportCSV} className="action-button-secondary">
               <FileSpreadsheet size={18} className="text-emerald-600" /> Exportar Data
@@ -187,7 +187,7 @@ export default function Dashboard() {
               <span className="stat-label">MAF Neto Acumulado</span>
               <div className="stat-value text-[var(--color-bcp-blue)]">S/ {totalMaf.toLocaleString()}</div>
             </div>
-            <div className="p-3 bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] rounded-2xl group-hover:scale-110 transition-transform">
+            <div className="p-3 bg-[var(--accent-blue-soft)] text-[var(--accent-blue)] rounded-lg group-hover:scale-110 transition-transform">
               <TrendingUp size={20} />
             </div>
           </div>
@@ -211,7 +211,7 @@ export default function Dashboard() {
               <span className="stat-label">Alertas Vencimiento</span>
               <div className="stat-value text-[var(--color-bcp-orange)]">{expiringCount}</div>
             </div>
-            <div className="p-3 bg-[rgba(255,120,0,0.1)] text-[var(--color-bcp-orange)] rounded-2xl group-hover:scale-110 transition-transform">
+            <div className="p-3 bg-[var(--accent-orange-soft)] text-[var(--color-bcp-orange)] rounded-lg group-hover:scale-110 transition-transform">
               <Clock size={20} />
             </div>
           </div>
@@ -266,14 +266,14 @@ export default function Dashboard() {
                     </td>
                     <td className="px-6 py-4 text-right font-bold text-text-900">S/ {sale.maf_neto?.toLocaleString()}</td>
                     <td className="px-6 py-4 text-center">
-                      <span className="px-3 py-1 bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] rounded-full text-[10px] font-black uppercase tracking-wider">
+                      <span className="px-3 py-1 bg-[var(--accent-blue-soft)] text-[var(--accent-blue)] rounded-full text-[10px] font-black uppercase tracking-wider">
                         {sale.estado}
                       </span>
                     </td>
                     <td className="px-6 py-4 min-w-[260px]">
                       {trace ? (
                         <div className="flex items-start gap-2 max-w-[340px]">
-                          <div className="mt-0.5 w-7 h-7 rounded-lg bg-[rgba(0,42,141,0.08)] text-[var(--color-bcp-blue)] flex items-center justify-center shrink-0">
+                          <div className="mt-0.5 w-7 h-7 rounded-lg bg-[var(--accent-blue-soft)] text-[var(--accent-blue)] flex items-center justify-center shrink-0">
                             <TraceIcon size={14} />
                           </div>
                           <div className="min-w-0">
@@ -308,7 +308,7 @@ export default function Dashboard() {
                       <div className="flex items-center justify-center gap-2">
                         <button 
                           onClick={() => setSelectedSale(sale)}
-                          className="inline-flex items-center gap-2 px-3 py-2 text-[11px] font-black uppercase text-[var(--color-bcp-blue)] bg-[rgba(0,42,141,0.08)] hover:bg-[rgba(0,42,141,0.14)] rounded-lg transition-all"
+                          className="inline-flex items-center gap-2 px-3 py-2 text-[11px] font-black uppercase text-[var(--accent-blue)] bg-[var(--accent-blue-soft)] hover:brightness-95 rounded-lg transition-all"
                           title="Ver detalle"
                         >
                           <Eye size={16} />

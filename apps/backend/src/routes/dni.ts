@@ -7,7 +7,7 @@ const router = Router();
 router.get('/:dni', authMiddleware, async (req, res, next) => {
   try {
     const { dni } = req.params;
-    if (!dni || dni.length !== 8) {
+    if (!dni || !/^\d{8}$/.test(dni)) {
       return res.status(400).json({ error: 'DNI inválido' });
     }
     

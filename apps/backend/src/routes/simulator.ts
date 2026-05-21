@@ -86,7 +86,13 @@ router.post('/calculate', authMiddleware, async (req, res, next) => {
       lineaNoUtilizadaTC: params.lineaNoUtilizadaTC
     });
 
-    res.json(resultado);
+    const validaciones = resultado.validaciones || {};
+    const aprobado = resultado.resumen?.dictamen === 'CONTINUAR' &&
+      validaciones.rci_valido !== false &&
+      validaciones.cem_valido !== false &&
+      validaciones.endeudamiento_valido !== false;
+
+    res.json({ ...resultado, aprobado });
   } catch (error: any) {
     // Si es un error de negocio (ej. "Ingreso insuficiente"), mandar 400
     res.status(400).json({ error: error.message });

@@ -10,6 +10,13 @@ interface KanbanCard {
   convenio: string;
   estado: string;
   dias_en_estado: number;
+  horas_en_estado: number;
+  sla_dias: number | null;
+  sla_nivel: string;
+  sla_responsable: string | null;
+  sla_progreso_pct: number | null;
+  dias_restantes: number | null;
+  siguiente_accion: string | null;
   alerta: boolean;
   asesor: { id: string; username: string };
   updated_at: string;
@@ -33,6 +40,13 @@ interface ApiKanbanCard {
   estado?: string;
   asesor?: { id?: string; nombre?: string; username?: string; avatar_url?: string | null } | null;
   dias_en_estado?: number;
+  horas_en_estado?: number;
+  sla_dias?: number | null;
+  sla_nivel?: string;
+  sla_responsable?: string | null;
+  sla_progreso_pct?: number | null;
+  dias_restantes?: number | null;
+  siguiente_accion?: string | null;
   alerta?: boolean;
   fecha_ingreso?: string | null;
 }
@@ -55,36 +69,29 @@ interface ApiKanbanResponse {
 
 const COLUMN_COLORS: Record<string, { bg: string; border: string; badge: string; dot: string }> = {
   'PROSPECTO_NUEVO': { bg: 'bg-slate-50', border: 'border-slate-200', badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
-  'PENDIENTE_DATOS': { bg: 'bg-amber-50', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
-  'PENDIENTE_DOCUMENTOS': { bg: 'bg-yellow-50', border: 'border-yellow-200', badge: 'bg-yellow-100 text-yellow-700', dot: 'bg-yellow-500' },
-  'LISTO_SCORE': { bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-600', dot: 'bg-blue-400' },
-  'SCORE_APROBADO': { bg: 'bg-emerald-50', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-600', dot: 'bg-emerald-400' },
-  'SIMULACION_ACEPTADA': { bg: 'bg-cyan-50', border: 'border-cyan-200', badge: 'bg-cyan-100 text-cyan-600', dot: 'bg-cyan-400' },
-  'ENVIADO_CONVENIO': { bg: 'bg-indigo-50', border: 'border-indigo-200', badge: 'bg-indigo-100 text-indigo-600', dot: 'bg-indigo-400' },
-  'CONVENIO_APROBADO': { bg: 'bg-teal-50', border: 'border-teal-200', badge: 'bg-teal-100 text-teal-600', dot: 'bg-teal-400' },
-  'PREPARANDO_BCP': { bg: 'bg-violet-50', border: 'border-violet-200', badge: 'bg-violet-100 text-violet-600', dot: 'bg-violet-400' },
-  'ENVIADO_BCP': { bg: 'bg-sky-50', border: 'border-sky-200', badge: 'bg-sky-100 text-sky-600', dot: 'bg-sky-400' },
-  'APROBADO_BCP': { bg: 'bg-emerald-50', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-600', dot: 'bg-emerald-400' },
-  'OBSERVADO': { bg: 'bg-orange-50', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-600', dot: 'bg-orange-400' },
-  // Flujo original
-  'POR INGRESAR': { bg: 'bg-slate-50', border: 'border-slate-200', badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
-  'EN PROCESO': { bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-600', dot: 'bg-blue-400' },
-  'OBSERVADA': { bg: 'bg-amber-50', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-600', dot: 'bg-amber-400' },
-  'SUBSANADA': { bg: 'bg-violet-50', border: 'border-violet-200', badge: 'bg-violet-100 text-violet-600', dot: 'bg-violet-400' },
-  // Flujo BCP extendido
-  'PENDIENTE_DOCUMENTAR': { bg: 'bg-yellow-50', border: 'border-yellow-200', badge: 'bg-yellow-100 text-yellow-700', dot: 'bg-yellow-500' },
-  'PENDIENTE_INSTITUCIONES': { bg: 'bg-purple-50', border: 'border-purple-200', badge: 'bg-purple-100 text-purple-600', dot: 'bg-purple-400' },
-  'PENDIENTE_REMESA': { bg: 'bg-cyan-50', border: 'border-cyan-200', badge: 'bg-cyan-100 text-cyan-600', dot: 'bg-cyan-400' },
-  'PENDIENTE_BACK_OFFICE': { bg: 'bg-indigo-50', border: 'border-indigo-200', badge: 'bg-indigo-100 text-indigo-600', dot: 'bg-indigo-400' },
-  'OBSERVADO_BACK': { bg: 'bg-orange-50', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-600', dot: 'bg-orange-400' },
-  'EN_EVALUACION_BCP': { bg: 'bg-sky-50', border: 'border-sky-200', badge: 'bg-sky-100 text-sky-600', dot: 'bg-sky-400' },
-  // Finales
-  'APROBADA': { bg: 'bg-emerald-50', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-600', dot: 'bg-emerald-400' },
+  'VERIFICACION_SISTEMA': { bg: 'bg-teal-50', border: 'border-teal-200', badge: 'bg-teal-100 text-teal-700', dot: 'bg-teal-500' },
+  'SCORE_BCP': { bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
+  'PENDIENTE_BOLETA': { bg: 'bg-yellow-50', border: 'border-yellow-200', badge: 'bg-yellow-100 text-yellow-700', dot: 'bg-yellow-500' },
+  'EVALUACION_CALCULADORA': { bg: 'bg-violet-50', border: 'border-violet-200', badge: 'bg-violet-100 text-violet-700', dot: 'bg-violet-500' },
+  'COTIZACION_ENVIADA': { bg: 'bg-sky-50', border: 'border-sky-200', badge: 'bg-sky-100 text-sky-700', dot: 'bg-sky-500' },
+  'PENDIENTE_ACEPTACION_CLIENTE': { bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-600', dot: 'bg-blue-400' },
+  'PENDIENTE_DATOS_FILE': { bg: 'bg-yellow-50', border: 'border-yellow-200', badge: 'bg-yellow-100 text-yellow-700', dot: 'bg-yellow-500' },
+  'VALIDACION_BACK_OFFICE': { bg: 'bg-indigo-50', border: 'border-indigo-200', badge: 'bg-indigo-100 text-indigo-600', dot: 'bg-indigo-400' },
+  'OBS_BACK_OFFICE': { bg: 'bg-orange-50', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-600', dot: 'bg-orange-400' },
+  'FILE_VALIDADO': { bg: 'bg-emerald-50', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-600', dot: 'bg-emerald-400' },
+  'ENVIADO_BCP_REMESA': { bg: 'bg-sky-50', border: 'border-sky-200', badge: 'bg-sky-100 text-sky-600', dot: 'bg-sky-400' },
+  'OBS_BCP': { bg: 'bg-red-50', border: 'border-red-200', badge: 'bg-red-100 text-red-600', dot: 'bg-red-500' },
+  'REMESA_APROBADA': { bg: 'bg-cyan-50', border: 'border-cyan-200', badge: 'bg-cyan-100 text-cyan-600', dot: 'bg-cyan-400' },
+  'REMESA_REDUCIDA': { bg: 'bg-amber-50', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
+  'PENDIENTE_ACEPTACION_REMESA': { bg: 'bg-orange-50', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500' },
+  'PENDIENTE_DESEMBOLSO': { bg: 'bg-teal-50', border: 'border-teal-200', badge: 'bg-teal-100 text-teal-700', dot: 'bg-teal-500' },
+  'PENDIENTE_CARTA_PODER': { bg: 'bg-violet-50', border: 'border-violet-200', badge: 'bg-violet-100 text-violet-700', dot: 'bg-violet-500' },
+  'REENVIADO_BCP_COMPRA_DEUDA': { bg: 'bg-indigo-50', border: 'border-indigo-200', badge: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-500' },
+  'PENDIENTE_CARTA_NO_ADEUDO': { bg: 'bg-purple-50', border: 'border-purple-200', badge: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
+  'PENDIENTE_LIBERACION': { bg: 'bg-violet-50', border: 'border-violet-200', badge: 'bg-violet-100 text-violet-600', dot: 'bg-violet-400' },
   'DESEMBOLSADO': { bg: 'bg-green-50', border: 'border-green-200', badge: 'bg-green-100 text-green-600', dot: 'bg-green-400' },
   'RECHAZADO': { bg: 'bg-rose-50', border: 'border-rose-200', badge: 'bg-rose-100 text-rose-600', dot: 'bg-rose-400' },
-  'RECHAZADA_POR_SCORE': { bg: 'bg-red-50', border: 'border-red-200', badge: 'bg-red-100 text-red-600', dot: 'bg-red-500' },
-  'BOLETA_NO_CALIFICA': { bg: 'bg-red-50', border: 'border-red-300', badge: 'bg-red-100 text-red-700', dot: 'bg-red-600' },
-  'CONFORMIDAD': { bg: 'bg-teal-50', border: 'border-teal-200', badge: 'bg-teal-100 text-teal-600', dot: 'bg-teal-400' },
+  'DESISTIDO': { bg: 'bg-gray-50', border: 'border-gray-200', badge: 'bg-gray-100 text-gray-600', dot: 'bg-gray-400' },
   'REASIGNADO': { bg: 'bg-gray-50', border: 'border-gray-300', badge: 'bg-gray-100 text-gray-600', dot: 'bg-gray-400' },
   'PENDIENTE_REASIGNACION': { bg: 'bg-amber-50', border: 'border-amber-300', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
   'REGISTRADO': { bg: 'bg-slate-50', border: 'border-slate-200', badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
@@ -103,6 +110,13 @@ const normalizeKanbanCard = (card: ApiKanbanCard, fallbackEstado: string, index:
   convenio: card.convenio ?? '-',
   estado: card.estado ?? fallbackEstado,
   dias_en_estado: toNumber(card.dias_en_estado),
+  horas_en_estado: toNumber(card.horas_en_estado),
+  sla_dias: card.sla_dias ?? null,
+  sla_nivel: card.sla_nivel ?? 'SIN_SLA',
+  sla_responsable: card.sla_responsable ?? null,
+  sla_progreso_pct: card.sla_progreso_pct ?? null,
+  dias_restantes: card.dias_restantes ?? null,
+  siguiente_accion: card.siguiente_accion ?? null,
   alerta: Boolean(card.alerta),
   asesor: {
     id: card.asesor?.id ?? '',
@@ -126,6 +140,86 @@ const normalizeKanbanColumns = (payload: ApiKanbanResponse): KanbanColumn[] => (
     };
   })
 );
+
+const getSlaTone = (level: string) => {
+  if (level === 'CRITICO' || level === 'VENCIDO') {
+    return {
+      border: 'border-rose-300 ring-1 ring-rose-200',
+      text: 'text-rose-600',
+      badge: 'bg-rose-50 text-rose-600'
+    };
+  }
+  if (level === 'POR_VENCER') {
+    return {
+      border: 'border-amber-300 ring-1 ring-amber-100',
+      text: 'text-amber-600',
+      badge: 'bg-amber-50 text-amber-700'
+    };
+  }
+  return {
+    border: 'border-surface-200',
+    text: 'text-text-700',
+    badge: 'bg-surface-50 text-text-700'
+  };
+};
+
+const getSlaLabel = (level: string) => {
+  if (level === 'CRITICO') return 'Critico';
+  if (level === 'VENCIDO') return 'Fuera de SLA';
+  if (level === 'POR_VENCER') return 'Por vencer';
+  return 'En SLA';
+};
+
+const KanbanCardItem = ({ card, onDragStart }: { card: KanbanCard; onDragStart: () => void }) => {
+  const slaTone = getSlaTone(card.sla_nivel);
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      className={`bg-white rounded-lg p-3 border shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing ${slaTone.border}`}
+    >
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-black text-slate-800 uppercase truncate">{card.nombres_cliente}</div>
+          <div className="text-[10px] font-bold text-text-700 mt-0.5">DNI: {card.dni_cliente}</div>
+        </div>
+        {card.alerta && (
+          <AlertCircle size={14} className={`${slaTone.text} flex-shrink-0 ml-2`} />
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[10px] font-black text-[var(--color-bcp-blue)]">S/ {card.maf_neto.toLocaleString()}</span>
+        <span className="text-[9px] font-bold text-text-700 bg-surface-50 px-1.5 py-0.5 rounded">{card.convenio}</span>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          <User size={10} className="text-text-700" />
+          <span className="text-[9px] font-bold text-text-700 uppercase truncate max-w-[100px]">{card.asesor?.username || 'Sin asignar'}</span>
+        </div>
+        <div className={`flex items-center gap-1 ${slaTone.text}`}>
+          <Clock size={10} />
+          <span className="text-[9px] font-black">{card.dias_en_estado}d</span>
+        </div>
+      </div>
+
+      {card.sla_dias !== null && (
+        <div className={`mt-2 flex items-center justify-between gap-2 rounded-lg px-2 py-1 ${slaTone.badge}`}>
+          <span className="text-[8px] font-black uppercase truncate">{getSlaLabel(card.sla_nivel)}</span>
+          <span className="text-[8px] font-black uppercase shrink-0">SLA {card.sla_dias}d</span>
+        </div>
+      )}
+
+      {card.siguiente_accion && card.alerta && (
+        <div className="mt-1.5 text-[8px] font-bold uppercase leading-snug text-text-700">
+          {card.siguiente_accion}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const KanbanPage = () => {
   const [columns, setColumns] = useState<KanbanColumn[]>([]);
@@ -168,9 +262,18 @@ const KanbanPage = () => {
     }
     try {
       const token = localStorage.getItem('token');
+      const requiresMotivo = ['RECHAZADO', 'DESISTIDO', 'OBS_BACK_OFFICE', 'OBS_BCP'].includes(targetEstado);
+      const motivo = requiresMotivo
+        ? window.prompt(`Motivo para mover a ${targetEstado}`)
+        : '';
+      if (requiresMotivo && !motivo?.trim()) {
+        setDraggedCard(null);
+        return;
+      }
       await axios.put(`/api/sales/${draggedCard.id}/estado`, {
         nuevo_estado: targetEstado,
-        detalles: `Movido a ${targetEstado} desde Kanban`
+        detalles: motivo?.trim() || `Movido a ${targetEstado} desde Kanban`,
+        motivo: motivo?.trim() || undefined
       }, { headers: { Authorization: `Bearer ${token}` } });
       fetchKanban();
     } catch (error: any) {
@@ -217,8 +320,8 @@ const KanbanPage = () => {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1 className="text-2xl font-black uppercase tracking-tight text-slate-800">Pipeline Visual</h1>
-          <p className="text-xs font-bold text-text-700 uppercase tracking-widest mt-1">Vista Kanban de expedientes</p>
+          <h1 className="page-title">Pipeline Visual</h1>
+          <p className="page-subtitle">Vista Kanban de expedientes</p>
         </div>
         <div className="page-actions">
           <button onClick={() => setShowFilters(!showFilters)} className="action-button-secondary">
@@ -291,51 +394,7 @@ const KanbanPage = () => {
               {/* Cards */}
               <div className="space-y-2 max-h-[calc(100vh-380px)] overflow-y-auto">
                 {col.ventas.map((card) => (
-                  <div
-                    key={card.id}
-                    draggable
-                    onDragStart={() => handleDragStart(card)}
-                    className={`bg-white rounded-lg p-3 border shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing ${card.alerta ? 'border-rose-300 ring-1 ring-rose-200' : 'border-surface-200'}`}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-black text-slate-800 uppercase truncate">{card.nombres_cliente}</div>
-                        <div className="text-[10px] font-bold text-text-700 mt-0.5">DNI: {card.dni_cliente}</div>
-                      </div>
-                      {card.alerta && (
-                        <AlertCircle size={14} className="text-rose-500 flex-shrink-0 ml-2" />
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[10px] font-black text-[var(--color-bcp-blue)]">S/ {card.maf_neto.toLocaleString()}</span>
-                      <span className="text-[9px] font-bold text-text-700 bg-surface-50 px-1.5 py-0.5 rounded">{card.convenio}</span>
-                    </div>
-
-                      <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1">
-                        <User size={10} className="text-text-700" />
-                        <span className="text-[9px] font-bold text-text-700 uppercase truncate max-w-[100px]">{card.asesor?.username || 'Sin asignar'}</span>
-                      </div>
-                      <div className={`flex items-center gap-1 ${card.dias_en_estado > 10 ? 'text-rose-500' : card.dias_en_estado > 5 ? 'text-amber-500' : 'text-text-700'}`}>
-                        <Clock size={10} />
-                        <span className="text-[9px] font-black">{card.dias_en_estado}d</span>
-                      </div>
-                    </div>
-                    {/* Priority Badge */}
-                    {card.dias_en_estado > 10 && (
-                      <div className="mt-2 flex items-center gap-1 bg-rose-50 text-rose-600 rounded-lg px-2 py-0.5">
-                        <AlertCircle size={10} />
-                        <span className="text-[8px] font-black uppercase">Prioridad Alta</span>
-                      </div>
-                    )}
-                    {card.dias_en_estado > 5 && card.dias_en_estado <= 10 && (
-                      <div className="mt-2 flex items-center gap-1 bg-amber-50 text-amber-600 rounded-lg px-2 py-0.5">
-                        <Clock size={10} />
-                        <span className="text-[8px] font-black uppercase">Seguimiento</span>
-                      </div>
-                    )}
-                  </div>
+                  <KanbanCardItem key={card.id} card={card} onDragStart={() => handleDragStart(card)} />
                 ))}
                 {col.ventas.length === 0 && (
                   <div className="text-center py-8 text-[10px] font-bold text-text-700 uppercase italic">

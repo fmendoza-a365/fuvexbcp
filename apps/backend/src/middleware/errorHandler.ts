@@ -33,11 +33,13 @@ export const globalErrorHandler = (err: any, req: any, res: any, next: any) => {
 
   // Error genérico
   logger.error('GLOBAL', `Error no manejado en ${req.method} ${req.url}`, {
+    request_id: req.requestId,
     message: err.message,
     stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined
   });
 
   res.status(err.status || 500).json({
+    request_id: req.requestId,
     error: process.env.NODE_ENV === 'production'
       ? 'Error interno del servidor'
       : err.message || 'Error interno del servidor'

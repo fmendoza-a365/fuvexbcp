@@ -197,14 +197,14 @@ export default function ZoneManagement() {
   );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="page-shell animate-in fade-in duration-500">
       {/* Header Sincronizado */}
-      <div className="flex justify-between items-center">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold text-text-900 tracking-tight uppercase">
+          <h1 className="page-title">
             Gestión de <span className="text-[var(--color-bcp-blue)]">Zonas</span>
           </h1>
-          <p className="text-text-700 text-sm font-medium">Administración de regiones y territorios operativos</p>
+          <p className="page-subtitle">Administración de regiones y territorios operativos</p>
         </div>
         <button onClick={() => openModal()} className="action-button-primary">
           <Plus size={18} /> Nueva Zona
@@ -240,7 +240,7 @@ export default function ZoneManagement() {
                 <tr key={z.id} className="data-table-row group/row">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                       <div className="w-10 h-10 rounded-2xl bg-[rgba(255,120,0,0.1)] flex items-center justify-center text-[var(--color-bcp-orange)] group-hover/row:scale-110 transition-transform">
+                       <div className="w-10 h-10 rounded-lg bg-[var(--accent-orange-soft)] flex items-center justify-center text-[var(--color-bcp-orange)] group-hover/row:scale-110 transition-transform">
                           <Map size={20} />
                        </div>
                        <div>
@@ -274,7 +274,7 @@ export default function ZoneManagement() {
                     <div className="flex items-center justify-center gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
                       <button 
                         onClick={() => openModal(z)}
-                        className="p-2 text-text-700 hover:text-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)] rounded-xl transition-all" title="Editar Zona">
+                        className="p-2 text-text-700 hover:text-[var(--accent-blue)] hover:bg-[var(--accent-blue-soft)] rounded-xl transition-all" title="Editar Zona">
                         <Edit2 size={16} />
                       </button>
                     </div>

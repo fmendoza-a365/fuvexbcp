@@ -116,6 +116,13 @@ export default function Layout() {
 
   const isAdmin = ['SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'].includes(user.role);
   const isSuperAdminOrGerente = ['SUPERADMIN', 'GERENTE'].includes(user.role);
+  const sectionLabel = location.pathname === '/app'
+    ? 'Analítica'
+    : location.pathname.startsWith('/app/expedientes') || location.pathname.startsWith('/app/digitalizacion') || location.pathname.startsWith('/app/kanban')
+      ? 'Operaciones'
+      : location.pathname.startsWith('/app/metas')
+        ? 'Planificación'
+        : 'Gestión';
 
   const navItems = [
     { to: '/app', icon: <LayoutDashboard size={20} />, label: 'Analítica Gerencial', show: true },
@@ -123,7 +130,7 @@ export default function Layout() {
     { to: '/app/metas', icon: <Target size={20} />, label: 'Planificación de Metas', show: (isSuperAdminOrGerente || user.role === 'JEFE_ZONAL') },
     { to: '/app/simulador', icon: <Calculator size={20} />, label: 'Simulador BCP', show: true },
     { to: '/app/reniec', icon: <Search size={20} />, label: 'Buscador RENIEC', show: true },
-    { to: '/app/simulador-reglas', icon: <Settings size={20} />, label: 'Reglas Simulador', show: isAdmin },
+    { to: '/app/simulador-reglas', icon: <Settings size={20} />, label: 'Reglas del Simulador', show: isAdmin },
     { to: '/app/kanban', icon: <Columns3 size={20} />, label: 'Pipeline Visual', show: true },
     { to: '/app/digitalizacion', icon: <Building2 size={20} />, label: 'Digitalización', show: isAdmin },
     { to: '/app/usuarios', icon: <Users size={20} />, label: 'Usuarios', show: isAdmin },
@@ -174,7 +181,7 @@ export default function Layout() {
             <LinkAny 
               key={item.to}
               to={item.to} 
-              className={`flex items-center gap-3 py-2.5 rounded-xl transition-all duration-200 group relative ${isCollapsed ? 'justify-center px-0 mx-2' : 'px-3'} ${location.pathname === item.to ? 'bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] font-bold shadow-sm' : 'hover:bg-surface-50 hover:text-text-900 hover:translate-x-1'}`} 
+              className={`flex items-center gap-3 py-2.5 rounded-xl transition-all duration-200 group relative ${isCollapsed ? 'justify-center px-0 mx-2' : 'px-3'} ${location.pathname === item.to ? 'bg-[var(--accent-blue-soft)] text-[var(--accent-blue)] font-bold shadow-sm' : 'hover:bg-surface-50 hover:text-text-900 hover:translate-x-1'}`}
               onClick={() => setIsSidebarOpen(false)}
             >
               <div className="flex-shrink-0 transition-all duration-300 group-hover:scale-110">
@@ -189,13 +196,13 @@ export default function Layout() {
           {/* Settings at bottom of main nav */}
           <LinkAny 
             to="/app/perfil" 
-            className={`flex items-center gap-3 py-2.5 rounded-xl transition-all duration-200 group relative ${isCollapsed ? 'justify-center px-0 mx-2' : 'px-3'} ${location.pathname === '/perfil' ? 'bg-[rgba(255,120,0,0.1)] text-[var(--color-bcp-orange)] font-bold shadow-sm' : 'hover:bg-surface-50 hover:text-text-900 hover:translate-x-1'}`} 
+            className={`flex items-center gap-3 py-2.5 rounded-xl transition-all duration-200 group relative ${isCollapsed ? 'justify-center px-0 mx-2' : 'px-3'} ${location.pathname === '/app/perfil' ? 'bg-[var(--accent-orange-soft)] text-[var(--color-bcp-orange)] font-bold shadow-sm' : 'hover:bg-surface-50 hover:text-text-900 hover:translate-x-1'}`}
             onClick={() => setIsSidebarOpen(false)}
           >
             <div className="flex-shrink-0 transition-all duration-300 group-hover:scale-110">
               <Shield size={20} />
             </div>
-            {!isCollapsed && <span className="truncate text-sm uppercase tracking-tight">Seguridad y Perfil</span>}
+            {!isCollapsed && <span className="truncate text-sm uppercase tracking-tight">Perfil y Seguridad</span>}
           </LinkAny>
         </nav>
         
@@ -211,9 +218,9 @@ export default function Layout() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden w-full relative">
         <div className="flex-1 flex flex-col overflow-y-auto relative bg-surface-50">
-          <header className="sticky top-0 z-50 bg-surface-100/80 backdrop-blur-xl border-b border-surface-200 h-20 px-4 sm:px-8 py-4 flex justify-between items-center shadow-sm shrink-0">
+          <header className="sticky top-0 z-50 bg-surface-100 border-b border-surface-200 h-20 px-4 sm:px-8 py-4 flex justify-between items-center shadow-sm shrink-0">
             <div className="flex items-center gap-4">
-            <button onClick={toggleSidebar} className="md:hidden text-text-700 hover:text-slate-700" aria-label="Abrir menú">
+            <button onClick={toggleSidebar} className="md:hidden text-text-700 hover:text-text-900" aria-label="Abrir menú">
               <Menu size={24} />
             </button>
             
@@ -223,14 +230,9 @@ export default function Layout() {
                   <div className="flex items-center gap-2 text-[10px] font-black text-text-700 uppercase tracking-[0.2em]">
                      <span>Fuvex</span>
                      <ChevronRight size={10} className="text-text-700" />
-                     <span className="text-[var(--color-bcp-blue)]">
-                        {location.pathname === '/' ? 'Analítica' : 
-                         location.pathname === '/expedientes' ? 'Operaciones' :
-                         location.pathname === '/metas' ? 'Planificación' :
-                         'Gestión'}
-                     </span>
+                     <span className="text-[var(--color-bcp-blue)]">{sectionLabel}</span>
                   </div>
-                  <div className="text-xs font-bold text-slate-800 uppercase tracking-tight">Consola Central</div>
+                  <div className="text-xs font-bold text-text-900 uppercase tracking-tight">Consola Central</div>
                </div>
 
                <div className="relative search-container group">
@@ -264,16 +266,16 @@ export default function Layout() {
                                 }}
                                 className="flex items-center gap-3 p-3 hover:bg-surface-50 rounded-lg cursor-pointer transition-all group"
                               >
-                                  <div className="w-8 h-8 rounded-lg bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] flex items-center justify-center font-bold text-[10px] uppercase">
+                                  <div className="w-8 h-8 rounded-lg bg-[var(--accent-blue-soft)] text-[var(--accent-blue)] flex items-center justify-center font-bold text-[10px] uppercase">
                                      {res.estado.substring(0, 2)}
                                   </div>
                                   <div className="flex-1 truncate">
-                                      <div className="text-xs font-bold text-slate-800 uppercase truncate">{res.nombres_cliente}</div>
+                                      <div className="text-xs font-bold text-text-900 uppercase truncate">{res.nombres_cliente}</div>
                                       <div className="text-[9px] font-bold text-text-700 uppercase">DNI: {res.dni_cliente} • S/ {res.maf_neto.toLocaleString()}</div>
                                   </div>
                                   <div className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${
                                     res.estado === 'DESEMBOLSADO' ? 'bg-emerald-50 text-emerald-600' :
-                                    res.estado === 'OBSERVADA' ? 'bg-amber-50 text-amber-600' : 'bg-[rgba(0,42,141,0.1)] text-blue-600'
+                                    ['OBS_BACK_OFFICE', 'OBS_BCP'].includes(res.estado) ? 'bg-amber-50 text-amber-600' : 'bg-[var(--accent-blue-soft)] text-[var(--accent-blue)]'
                                   }`}>
                                     {res.estado}
                                   </div>
@@ -291,30 +293,28 @@ export default function Layout() {
 
           <div className="flex items-center gap-4 sm:gap-6">
              {/* Global Goal KPI Widget */}
-             <div className="hidden lg:flex items-center gap-4 px-6 py-2 border-r border-surface-200">
-                <div className="text-right">
-                   <div className="text-[10px] font-black text-text-700 uppercase tracking-widest">Meta Global</div>
-                   <div className="text-xs font-black text-text-900 tracking-tighter">S/ {(kpiData?.totalDisbursed || 0).toLocaleString()}</div>
+             <div className="hidden lg:block min-w-[230px] px-5 py-1.5 border-r border-surface-200">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                   <div className="text-[10px] font-black text-text-700 uppercase tracking-widest">Avance de Meta</div>
+                   <div className="text-[11px] font-black text-text-900 tracking-tight truncate">
+                     {kpiData?.goalAmount ? `S/ ${(kpiData?.totalDisbursed || 0).toLocaleString()} / S/ ${kpiData.goalAmount.toLocaleString()}` : 'Meta no definida'}
+                   </div>
+                  </div>
+                  <span className="text-[11px] font-black text-[var(--color-bcp-orange)] shrink-0">{Math.round(kpiData?.completionRate || 0)}%</span>
                 </div>
-                <div className="relative w-12 h-12 flex items-center justify-center">
-                    <svg className="w-full h-full -rotate-90">
-                        <circle cx="24" cy="24" r="20" className="fill-none stroke-slate-100 stroke-[4px]" />
-                        <circle 
-                          cx="24" cy="24" r="20" 
-                          className="fill-none stroke-[var(--color-bcp-orange)] stroke-[4px] transition-all duration-1000" 
-                          strokeDasharray="125.6" 
-                          strokeDashoffset={125.6 - (125.6 * Math.min(kpiData?.completionRate || 0, 100)) / 100} 
-                          strokeLinecap="round" 
-                        />
-                    </svg>
-                    <span className="absolute text-[10px] font-black text-[var(--color-bcp-orange)]">{Math.round(kpiData?.completionRate || 0)}%</span>
+                <div className="h-1.5 w-full bg-surface-200 rounded-full overflow-hidden mt-2">
+                  <div
+                    className="h-full bg-[var(--color-bcp-orange)] rounded-full transition-all duration-1000"
+                    style={{ width: `${Math.min(kpiData?.completionRate || 0, 100)}%` }}
+                  />
                 </div>
              </div>
 
              {/* Theme Toggle */}
              <button 
                 onClick={() => setIsDark(!isDark)}
-                className="p-2.5 rounded-xl transition-all text-text-700 hover:text-[var(--color-bcp-orange)] hover:bg-[rgba(255,120,0,0.1)] dark:hover:bg-slate-800"
+                className="p-2.5 rounded-xl transition-all text-text-700 hover:text-[var(--color-bcp-orange)] hover:bg-[var(--accent-orange-soft)]"
                 title={isDark ? "Modo Claro" : "Modo Oscuro"}
              >
                 <div key={isDark ? 'dark' : 'light'} className="theme-icon-enter">
@@ -328,7 +328,7 @@ export default function Layout() {
              <div className="flex items-center gap-2 notifications-container relative">
                 <button 
                   onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                  className={`relative p-2.5 rounded-xl transition-all group ${isNotificationsOpen ? 'bg-[rgba(255,120,0,0.1)] text-[var(--color-bcp-orange)]' : 'text-text-700 hover:text-[var(--color-bcp-orange)] hover:bg-[rgba(255,120,0,0.1)]'}`} 
+                  className={`relative p-2.5 rounded-xl transition-all group ${isNotificationsOpen ? 'bg-[var(--accent-orange-soft)] text-[var(--color-bcp-orange)]' : 'text-text-700 hover:text-[var(--color-bcp-orange)] hover:bg-[var(--accent-orange-soft)]'}`}
                   title="Notificaciones"
                 >
                    <FileText size={20} />
@@ -347,7 +347,7 @@ export default function Layout() {
                           <div key={n.id} className="flex items-start gap-3 p-4 hover:bg-surface-50 rounded-lg transition-all cursor-pointer group">
                               <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${n.estado_nuevo === 'RECHAZADO' ? 'bg-rose-500' : 'bg-[var(--color-bcp-orange)]'}`} />
                               <div>
-                                  <div className="text-xs font-bold text-slate-800 uppercase tracking-tight line-clamp-1">{n.accion}: {n.sale.nombres_cliente}</div>
+                                  <div className="text-xs font-bold text-text-900 uppercase tracking-tight line-clamp-1">{n.accion}: {n.sale.nombres_cliente}</div>
                                   <p className="text-[10px] text-text-700 mt-1 line-clamp-2">{n.detalles}</p>
                                   <span className="text-[9px] font-bold text-text-700 uppercase mt-2 block">{new Date(n.created_at).toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                               </div>
@@ -361,7 +361,7 @@ export default function Layout() {
                 )}
              </div>
 
-             <div className="h-8 w-px bg-slate-100 hidden sm:block"></div>
+             <div className="h-8 w-px bg-surface-200 hidden sm:block"></div>
 
              {/* Profile Dropdown Container */}
              <div className="relative profile-dropdown-container">
@@ -370,7 +370,7 @@ export default function Layout() {
                   className={`flex items-center gap-3 p-1.5 rounded-lg transition-all border ${isProfileOpen ? 'bg-surface-50 border-surface-200' : 'border-transparent hover:bg-surface-50'}`}
                 >
                    <div className="hidden sm:block text-right px-2">
-                      <div className="text-[11px] font-black text-slate-800 uppercase tracking-tight">{user.nombre || 'Admin'}</div>
+                      <div className="text-[11px] font-black text-text-900 uppercase tracking-tight">{user.nombre || 'Admin'}</div>
                       <div className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest flex items-center justify-end gap-1">
                          <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div> En Línea
                       </div>
@@ -379,7 +379,7 @@ export default function Layout() {
                       {user.avatar_url ? (
                         <img src={user.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
                       ) : (
-                        <div className="w-full h-full bg-slate-100 flex items-center justify-center text-text-700">
+                        <div className="w-full h-full bg-surface-50 flex items-center justify-center text-text-700">
                           <User size={20} />
                         </div>
                       )}
@@ -397,11 +397,11 @@ export default function Layout() {
                        <LinkAny 
                          to="/app/perfil" 
                          onClick={() => setIsProfileOpen(false)}
-                         className="flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-text-700 hover:text-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)] rounded-xl transition-all"
+                         className="flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-text-700 hover:text-[var(--accent-blue)] hover:bg-[var(--accent-blue-soft)] rounded-xl transition-all"
                        >
                           <User size={18} /> Mi Perfil
                        </LinkAny>
-                       <button className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-text-700 hover:text-[var(--color-bcp-blue)] hover:bg-[rgba(0,42,141,0.1)] rounded-xl transition-all text-left">
+                       <button className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-text-700 hover:text-[var(--accent-blue)] hover:bg-[var(--accent-blue-soft)] rounded-xl transition-all text-left">
                           <Shield size={18} /> Seguridad
                        </button>
                     </div>
