@@ -132,7 +132,7 @@ async function getMissingRequiredDocuments(saleId: string, convenio?: string | n
       ]
     }
   });
-  const docsObligatorios = Array.from(new Map(docsRequeridos.map(doc => [doc.tipo_doc, doc])).values());
+  const docsObligatorios = Array.from(new Map<string, typeof docsRequeridos[number]>(docsRequeridos.map(doc => [doc.tipo_doc, doc] as [string, typeof docsRequeridos[number]])).values());
   if (docsObligatorios.length === 0) return [];
 
   const docsSubidos = await prisma.document.findMany({
@@ -1488,7 +1488,7 @@ router.get('/:id/documentos/checklist', authMiddleware, async (req: any, res: an
       orderBy: { orden: 'asc' }
     });
 
-    const docsUnicos = Array.from(new Map(docsRequeridos.map(doc => [doc.tipo_doc, doc])).values())
+    const docsUnicos = Array.from(new Map<string, typeof docsRequeridos[number]>(docsRequeridos.map(doc => [doc.tipo_doc, doc] as [string, typeof docsRequeridos[number]])).values())
       .sort((a, b) => a.orden - b.orden);
     const docsSubidos = sale.documents.filter((d: any) => d.tipo_documento !== 'DESTITUIDO');
     const tiposSubidos = new Map<string, number>();

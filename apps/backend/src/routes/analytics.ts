@@ -451,7 +451,7 @@ router.get('/operations', authMiddleware, async (req: any, res: any) => {
       })
     ]);
 
-    const goalByUser = new Map(currentGoals.map(goal => [goal.user_id, Number(goal.amount) || 0]));
+    const goalByUser = new Map<string, number>(currentGoals.map(goal => [goal.user_id, Number(goal.amount) || 0] as [string, number]));
 
     const createBucket = (key: string, name: string, zone?: string) => ({
       key,
@@ -484,7 +484,7 @@ router.get('/operations', authMiddleware, async (req: any, res: any) => {
     };
 
     const finalizeBucket = (bucket: ReturnType<typeof createBucket>) => {
-      const meta = [...bucket.userIds].reduce((acc, userId) => acc + (goalByUser.get(userId) || 0), 0);
+      const meta = [...bucket.userIds].reduce<number>((acc, userId) => acc + (goalByUser.get(userId) || 0), 0);
       return {
         key: bucket.key,
         name: bucket.name,

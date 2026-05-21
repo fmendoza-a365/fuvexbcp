@@ -53,26 +53,29 @@ export default function Login() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f5f7fb] text-slate-950 transition-colors dark:bg-[#080b12] dark:text-white">
-      <div className="grid min-h-screen lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="relative hidden overflow-hidden border-r border-slate-200 bg-white dark:border-white/10 dark:bg-[#0b101b] lg:block">
-          <div className="absolute inset-0 opacity-[0.07] dark:opacity-[0.16]" aria-hidden="true">
-            <div className="h-full w-full bg-[linear-gradient(to_right,#64748b_1px,transparent_1px),linear-gradient(to_bottom,#64748b_1px,transparent_1px)] bg-[size:44px_44px]" />
+    <main className="min-h-screen bg-[#f4f7fb] text-slate-950 transition-colors dark:bg-[#070a12] dark:text-white">
+      <div className="grid min-h-screen lg:grid-cols-[1.08fr_0.92fr]">
+        <section className="relative hidden overflow-hidden bg-[#002A8D] text-white lg:block dark:bg-[#0a1020]">
+          <div className="absolute inset-0 opacity-[0.16] dark:opacity-[0.2]" aria-hidden="true">
+            <div className="h-full w-full bg-[linear-gradient(to_right,#ffffff_1px,transparent_1px),linear-gradient(to_bottom,#ffffff_1px,transparent_1px)] bg-[size:48px_48px]" />
           </div>
+          <div className="absolute inset-x-0 top-0 h-1 bg-[#ff7800]" aria-hidden="true" />
           <div className="relative flex h-full flex-col justify-between p-10 xl:p-14">
-            <button onClick={() => navigate('/')} className="flex w-fit items-center gap-3" aria-label="Volver a inicio">
-              <img src="/logo.png" alt="Fuvex BCP" className="h-11 w-auto" />
-              <span className="text-sm font-black uppercase tracking-[0.24em] text-[#002A8D] dark:text-white">Fuvex BCP</span>
+            <button onClick={() => navigate('/')} className="flex w-fit items-center gap-3" aria-label="Volver al inicio">
+              <span className="rounded-lg bg-white px-3 py-2 shadow-sm dark:bg-white/95">
+                <img src="/logo.png" alt="Fuvex BCP" className="h-9 w-auto" />
+              </span>
+              <span className="text-sm font-black uppercase tracking-[0.2em] text-white">Fuvex BCP</span>
             </button>
 
             <div className="max-w-xl">
-              <div className="mb-5 inline-flex items-center gap-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300">
+              <div className="mb-5 inline-flex items-center gap-2 rounded-lg border border-white/25 bg-white/12 px-3 py-2 text-xs font-black uppercase tracking-[0.15em] text-white">
                 <ShieldCheck size={16} /> Acceso seguro
               </div>
-              <h1 className="text-5xl font-black leading-[1.02] tracking-tight text-[#002A8D] dark:text-white xl:text-6xl">
+              <h1 className="text-5xl font-black leading-[1.03] text-white xl:text-6xl">
                 Operacion comercial centralizada
               </h1>
-              <p className="mt-6 max-w-md text-base font-semibold leading-8 text-slate-600 dark:text-slate-300">
+              <p className="mt-6 max-w-md text-base font-semibold leading-8 text-blue-50 dark:text-slate-300">
                 Panel web para gestionar expedientes, validar informacion y seguir el avance del equipo en tiempo real.
               </p>
             </div>
@@ -85,27 +88,29 @@ export default function Login() {
           </div>
         </section>
 
-        <section className="flex min-h-screen items-center justify-center px-4 py-20 sm:px-6 lg:px-10">
-          <div className="w-full max-w-md">
+        <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-20 sm:px-6 lg:px-10">
+          <div className="absolute inset-0 bg-white dark:bg-[#070a12]" aria-hidden="true" />
+          <div className="absolute inset-x-0 top-0 h-1 bg-[#ff7800] lg:hidden" aria-hidden="true" />
+          <div className="relative w-full max-w-md">
             <div className="mb-8 flex items-center justify-between">
-              <button onClick={() => navigate('/')} className="flex items-center gap-3 lg:hidden" aria-label="Volver a inicio">
+              <button onClick={() => navigate('/')} className="flex items-center gap-3 lg:hidden" aria-label="Volver al inicio">
                 <img src="/logo.png" alt="Fuvex BCP" className="h-10 w-auto" />
-                <span className="text-xs font-black uppercase tracking-[0.2em] text-[#002A8D] dark:text-white">Fuvex</span>
+                <span className="text-xs font-black uppercase tracking-[0.18em] text-[#002A8D] dark:text-white">Fuvex BCP</span>
               </button>
               <button
                 type="button"
                 onClick={toggleTheme}
-                className="ml-auto grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-[#002A8D] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                className="ml-auto grid h-11 w-11 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-[#002A8D] hover:text-[#002A8D] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#ff7800] dark:hover:text-[#ffb071]"
                 aria-label="Cambiar tema"
               >
                 {isDark ? <Sun size={18} /> : <Moon size={18} />}
               </button>
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xl shadow-slate-950/5 dark:border-white/10 dark:bg-[#111827] dark:shadow-black/30 sm:p-8">
+            <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xl shadow-slate-950/10 dark:border-white/10 dark:bg-[#111827] dark:shadow-black/35 sm:p-8">
               <div className="mb-8">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff7800]">Fuvex Manager BCP</p>
-                <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 dark:text-white">Iniciar sesion</h2>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff7800]">Fuvex Manager BCP</p>
+                <h2 className="mt-3 text-3xl font-black text-slate-950 dark:text-white">Iniciar sesion</h2>
                 <p className="mt-2 text-sm font-semibold leading-6 text-slate-600 dark:text-slate-300">
                   Ingresa tus credenciales asignadas para continuar.
                 </p>
@@ -113,8 +118,8 @@ export default function Login() {
 
               <form onSubmit={handleLogin} className="space-y-5">
                 <label className="block">
-                  <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Usuario</span>
-                  <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 transition focus-within:border-[#002A8D] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#002A8D]/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus-within:border-[#ff7800] dark:focus-within:ring-[#ff7800]/10">
+                  <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400">Usuario</span>
+                  <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-[#f8fafc] px-3 transition focus-within:border-[#002A8D] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#002A8D]/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus-within:border-[#ff7800] dark:focus-within:ring-[#ff7800]/10">
                     <UserRound size={18} className="text-slate-400" />
                     <input
                       type="text"
@@ -129,8 +134,8 @@ export default function Login() {
                 </label>
 
                 <label className="block">
-                  <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Contrasena</span>
-                  <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 transition focus-within:border-[#002A8D] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#002A8D]/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus-within:border-[#ff7800] dark:focus-within:ring-[#ff7800]/10">
+                  <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400">Contrasena</span>
+                  <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-[#f8fafc] px-3 transition focus-within:border-[#002A8D] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#002A8D]/10 dark:border-white/10 dark:bg-white/[0.04] dark:focus-within:border-[#ff7800] dark:focus-within:ring-[#ff7800]/10">
                     <LockKeyhole size={18} className="text-slate-400" />
                     <input
                       type={showPassword ? 'text' : 'password'}
@@ -161,18 +166,18 @@ export default function Login() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#002A8D] text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#001f68] disabled:cursor-not-allowed disabled:opacity-70 dark:bg-[#ff7800] dark:text-[#101010] dark:hover:bg-[#e66c00]"
+                  className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#ff7800] text-sm font-black uppercase tracking-[0.1em] text-[#111827] shadow-sm transition hover:bg-[#ff8b24] disabled:cursor-not-allowed disabled:opacity-70 dark:bg-[#ff7800] dark:text-[#111827] dark:hover:bg-[#ff8b24]"
                 >
                   {loading ? 'Validando...' : 'Entrar'}
                   {!loading && <ArrowRight size={18} />}
                 </button>
               </form>
 
-              <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
-                <div className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+              <div className="mt-6 rounded-lg border border-slate-200 bg-[#f8fafc] px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
+                <div className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.13em] text-slate-500 dark:text-slate-400">
                   <ShieldCheck size={16} className="text-emerald-500" /> Servidor protegido
                 </div>
-                <p className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-300">https://bcp.fuvexa365.com</p>
+                <p className="mt-2 break-all text-sm font-semibold text-slate-700 dark:text-slate-300">https://bcp.fuvexa365.com</p>
               </div>
             </div>
 
@@ -188,9 +193,9 @@ export default function Login() {
 
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-      <div className="text-2xl font-black text-[#002A8D] dark:text-[#ff7800]">{value}</div>
-      <div className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{label}</div>
+    <div className="rounded-lg border border-white/20 bg-white/12 p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+      <div className="text-2xl font-black text-[#ffb071]">{value}</div>
+      <div className="mt-1 text-[10px] font-black uppercase tracking-[0.13em] text-blue-50/80 dark:text-slate-400">{label}</div>
     </div>
   );
 }
