@@ -6,6 +6,7 @@ COPY apps/backend/package.json ./apps/backend/
 COPY apps/web/package.json ./apps/web/
 COPY apps/mobile/package.json ./apps/mobile/
 RUN npm ci --legacy-peer-deps
+RUN npm install --no-save --legacy-peer-deps lightningcss-linux-x64-musl @tailwindcss/oxide-linux-x64-musl
 
 FROM base AS builder
 COPY . .
@@ -30,6 +31,7 @@ COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 COPY --from=builder /app/apps/backend/prisma ./apps/backend/prisma
 COPY --from=builder /app/apps/web/dist ./apps/web/dist
 COPY --from=builder /app/Recursos ./Recursos
+COPY --from=builder /app/Recursos ./apps/Recursos
 
 RUN mkdir -p storage/expedientes storage/public backups
 RUN chown -R expressjs:nodejs /app
@@ -40,4 +42,4 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3001/api/ready >/dev/null || exit 1
 
-CMD ["sh", "-c", "cd apps/backend && npx prisma migrate deploy && npx prisma db seed && cd /app && node apps/backend/dist/src/server.js"]
+CMD ["sh", "-c", "cd apps/backend && npx prisma migrate deploy && node dist/prisma/seed.js && cd /app && node apps/backend/dist/src/server.js"]
