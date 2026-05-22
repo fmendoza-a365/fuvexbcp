@@ -21,7 +21,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-RUN apk add --no-cache curl openssl chromium nss freetype harfbuzz ca-certificates ttf-freefont
+RUN apk add --no-cache curl openssl chromium nss freetype harfbuzz ca-certificates ttf-freefont su-exec
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 expressjs
 
@@ -36,11 +36,10 @@ COPY --from=builder /app/Recursos ./apps/Recursos
 
 RUN mkdir -p storage/expedientes storage/public backups
 RUN chown -R expressjs:nodejs /app
-USER expressjs
 
 EXPOSE 3001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3001/api/ready >/dev/null || exit 1
 
-CMD ["sh", "-c", "cd apps/backend && npx prisma migrate deploy && node dist/prisma/seed.js && cd /app && node apps/backend/dist/src/server.js"]
+CMD ["sh", "-c", "mkdir -p /app/storage/expedientes /app/storage/public /app/backups && chown -R expressjs:nodejs /app/storage /app/backups && exec su-exec expressjs sh -c 'cd apps/backend && npx prisma migrate deploy && node dist/prisma/seed.js && cd /app && node apps/backend/dist/src/server.js'"]

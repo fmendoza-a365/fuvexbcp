@@ -15,7 +15,7 @@ import {
   Sun,
 } from 'lucide-react';
 
-const APK_VERSION = '20260521-final';
+const APK_VERSION = '20260522-upload-sync';
 const APK_URL = `/Fvx365.apk?v=${APK_VERSION}`;
 const API_HOST = 'https://bcp.fuvexa365.com';
 

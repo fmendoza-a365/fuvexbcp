@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { Eye, AlertTriangle, Trash2, TrendingUp, LayoutList, Clock, Search, FileSpreadsheet, MessageSquare, GitBranch } from 'lucide-react';
 import DocumentViewer from '../components/DocumentViewer';
@@ -36,6 +37,7 @@ export default function Dashboard() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const fetchSales = async () => {
     try {
@@ -59,6 +61,27 @@ export default function Dashboard() {
     window.addEventListener('refresh-sales', handleRefresh);
     return () => window.removeEventListener('refresh-sales', handleRefresh);
   }, []);
+
+  useEffect(() => {
+    const saleId = searchParams.get('id');
+    if (!saleId) return;
+    const match = sales.find(sale => sale.id === saleId);
+    if (match) setSelectedSale(match);
+  }, [sales, searchParams]);
+
+  const openSale = (sale: Sale) => {
+    setSelectedSale(sale);
+    setSearchParams({ id: sale.id }, { replace: true });
+  };
+
+  const closeSale = () => {
+    setSelectedSale(null);
+    if (searchParams.has('id')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('id');
+      setSearchParams(next, { replace: true });
+    }
+  };
 
   const exportCSV = async () => {
     try {
@@ -307,7 +330,7 @@ export default function Dashboard() {
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-center gap-2">
                         <button 
-                          onClick={() => setSelectedSale(sale)}
+                          onClick={() => openSale(sale)}
                           className="inline-flex items-center gap-2 px-3 py-2 text-[11px] font-black uppercase text-[var(--accent-blue)] bg-[var(--accent-blue-soft)] hover:brightness-95 rounded-lg transition-all"
                           title="Ver detalle"
                         >
@@ -346,7 +369,7 @@ export default function Dashboard() {
       {selectedSale && (
         <DocumentViewer 
           sale={sales.find(s => s.id === selectedSale.id) || selectedSale} 
-          onClose={() => setSelectedSale(null)} 
+          onClose={closeSale} 
           onUpdate={fetchSales} 
         />
       )}

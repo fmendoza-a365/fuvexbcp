@@ -192,6 +192,12 @@ router.get('/', authMiddleware, async (req: any, res: any) => {
       OR: [
         { dni_cliente: { contains: String(q) } },
         { nombres_cliente: { contains: String(q), mode: 'insensitive' as any } },
+        { celular: { contains: String(q) } },
+        { correo: { contains: String(q), mode: 'insensitive' as any } },
+        { estado: { contains: String(q), mode: 'insensitive' as any } },
+        { convenio: { contains: String(q), mode: 'insensitive' as any } },
+        { cargo_laboral: { contains: String(q), mode: 'insensitive' as any } },
+        { entidad_laboral: { contains: String(q), mode: 'insensitive' as any } },
         { id: { contains: String(q) } }
       ]
     } : {};
@@ -940,9 +946,21 @@ router.post('/:id/score-bcp', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONA
 router.post('/:id/boleta', authMiddleware, authorize('VENDEDOR', 'SUPERVISOR', 'JEFE_ZONAL', 'GERENTE', 'SUPERADMIN'), async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    const sale = await prisma.sale.findUnique({ where: { id } });
+    const sale = await prisma.sale.findUnique({
+      where: { id },
+      include: {
+        documents: {
+          where: { tipo_documento: 'BOLETA_PAGO' },
+          take: 1
+        }
+      }
+    });
     if (!(await requireSaleAccess(req, res, sale))) return;
     if (!sale) return;
+
+    if (!sale.documents || sale.documents.length === 0) {
+      return res.status(422).json({ error: 'Primero sube la boleta del cliente como foto o PDF.' });
+    }
 
     const nextEstado = 'EVALUACION_CALCULADORA';
     const validation = validateTransition(sale.estado, nextEstado, req.user.role);

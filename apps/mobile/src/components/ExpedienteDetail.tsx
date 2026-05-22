@@ -358,6 +358,7 @@ export default function ExpedienteDetail({ saleId, onClose, onOpenCalculator, is
   const docsCompletados = visibleChecklist.filter(d => d.subido).length;
   const docsTotal = visibleChecklist.length;
   const docsProgress = docsTotal > 0 ? docsCompletados / docsTotal : 0;
+  const boletaUploaded = sale.estado !== 'PENDIENTE_BOLETA' || visibleChecklist.some(d => d.subido && (d.tipo === 'BOLETA_PAGO' || d.nombre.toUpperCase().includes('BOLETA')));
   const isFinalState = ['DESEMBOLSADO', 'RECHAZADO', 'DESISTIDO'].includes(sale.estado);
   const hasSimulation = Boolean(sale.simulacion_id || sale.simulacion_dictamen || sale.calculadora_estado);
   const canUseCalculator = !isFinalState && CALCULATOR_STATES.has(sale.estado);
@@ -386,7 +387,9 @@ export default function ExpedienteDetail({ saleId, onClose, onOpenCalculator, is
       label: 'REGISTRAR BOLETA RECIBIDA',
       icon: 'document-text-outline',
       variant: 'primary',
-      onPress: registerBoleta
+      onPress: registerBoleta,
+      disabled: !boletaUploaded,
+      hint: 'Sube la boleta en foto o PDF antes de registrar.'
     }] : []),
     ...(sale.estado === 'EVALUACION_CALCULADORA' ? [{
       key: 'calculadora',
@@ -527,8 +530,8 @@ export default function ExpedienteDetail({ saleId, onClose, onOpenCalculator, is
                   <TouchableOpacity
                     key={action.key}
                     onPress={action.onPress}
-                    disabled={Boolean(actionLoading)}
-                    style={[s.actionButton, { backgroundColor: bg, borderColor: color }, Boolean(actionLoading) && { opacity: 0.65 }]}
+                    disabled={Boolean(actionLoading) || action.disabled}
+                    style={[s.actionButton, { backgroundColor: bg, borderColor: color }, (Boolean(actionLoading) || action.disabled) && { opacity: 0.65 }]}
                   >
                     {isLoadingAction ? (
                       <ActivityIndicator size="small" color={color} />
@@ -536,6 +539,7 @@ export default function ExpedienteDetail({ saleId, onClose, onOpenCalculator, is
                       <Ionicons name={action.icon as any} size={16} color={color} />
                     )}
                     <Text style={[s.actionButtonText, { color }]}>{action.label}</Text>
+                    {action.disabled && action.hint ? <Text style={[s.actionHint, { color: theme.subtext }]}>{action.hint}</Text> : null}
                   </TouchableOpacity>
                 );
               })}
@@ -1057,6 +1061,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 12
   },
   actionButtonText: { fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
+  actionHint: { fontSize: 9, fontWeight: '700', marginTop: 2, textAlign: 'center' },
   dataGrid: { gap: 10 },
   dataTile: {
     borderWidth: 1,

@@ -36,7 +36,7 @@ export default function Layout() {
 
   useEffect(() => {
     fetchHeaderData();
-    const interval = setInterval(fetchHeaderData, 60000); // Sync every minute
+    const interval = setInterval(fetchHeaderData, 15000); // Sync operativo
     return () => clearInterval(interval);
   }, []);
 
@@ -59,7 +59,8 @@ export default function Layout() {
       ]);
       
       setKpiData(kpiRes.data);
-      setNotifications(notifRes.data);
+      setNotifications(Array.isArray(notifRes.data) ? notifRes.data : []);
+      window.dispatchEvent(new Event('refresh-sales'));
     } catch (error) {
       console.error('Error fetching header data:', error);
     }
@@ -70,7 +71,7 @@ export default function Layout() {
     try {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
-      const res = await axios.get(`/api/sales?q=${searchQuery}`, { headers });
+      const res = await axios.get('/api/sales', { headers, params: { q: searchQuery.trim(), limit: 10 } });
       const results = Array.isArray(res.data.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
       setSearchResults(results.slice(0, 5)); // Show top 5
     } catch (error) {
@@ -332,7 +333,9 @@ export default function Layout() {
                   title="Notificaciones"
                 >
                    <FileText size={20} />
-                   <span className="absolute top-2 right-2 w-4 h-4 bg-[var(--color-bcp-orange)] text-white text-[9px] font-black flex items-center justify-center rounded-full border-2 border-white shadow-sm">3</span>
+                   {notifications.length > 0 && (
+                     <span className="absolute top-2 right-2 min-w-4 h-4 px-1 bg-[var(--color-bcp-orange)] text-white text-[9px] font-black flex items-center justify-center rounded-full border-2 border-white shadow-sm">{notifications.length > 9 ? '9+' : notifications.length}</span>
+                   )}
                 </button>
 
                 {/* Notifications Dropdown */}
@@ -340,11 +343,11 @@ export default function Layout() {
                   <div className="absolute top-full right-0 mt-3 w-80 bg-surface-100 rounded-lg shadow-xl border border-surface-200 py-4 z-50 animate-in fade-in slide-in-from-top-2 duration-300">
                     <div className="px-6 pb-4 border-b border-surface-200 flex justify-between items-center">
                         <div className="text-xs font-black text-text-900 uppercase tracking-tight">Alertas Fuvex</div>
-                        <span className="text-[9px] font-bold text-[var(--color-bcp-blue)] cursor-pointer hover:underline">Limpiar</span>
+                        <button type="button" onClick={fetchHeaderData} className="text-[9px] font-bold text-[var(--color-bcp-blue)] cursor-pointer hover:underline">Actualizar</button>
                     </div>
                     <div className="p-2 space-y-1 max-h-[320px] overflow-y-auto">
                         {notifications.map((n) => (
-                          <div key={n.id} className="flex items-start gap-3 p-4 hover:bg-surface-50 rounded-lg transition-all cursor-pointer group">
+                          <div key={n.id} onClick={() => { if (n.sale_id) navigate(`/app/expedientes?id=${n.sale_id}`); setIsNotificationsOpen(false); }} className="flex items-start gap-3 p-4 hover:bg-surface-50 rounded-lg transition-all cursor-pointer group">
                               <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${n.estado_nuevo === 'RECHAZADO' ? 'bg-rose-500' : 'bg-[var(--color-bcp-orange)]'}`} />
                               <div>
                                   <div className="text-xs font-bold text-text-900 uppercase tracking-tight line-clamp-1">{n.accion}: {n.sale.nombres_cliente}</div>

@@ -23,10 +23,14 @@ const storage = multer.diskStorage({
     const dni = String(rawDni).replace(/[^0-9a-zA-Z\-]/g, '');
     
     const dir = path.join(expedientesPath, dni);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      cb(null, dir);
+    } catch (error) {
+      cb(error as Error, dir);
     }
-    cb(null, dir);
   },
   filename: (req, file, cb) => {
     // Formato: DNI_FECHA_TIPO.ext

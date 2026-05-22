@@ -250,8 +250,8 @@ const DigitalizacionPage = () => {
     ));
   }, [sales, search]);
 
-  const fetchSales = async () => {
-    setLoading(true);
+  const fetchSales = async (silent = false) => {
+    if (!silent) setLoading(true);
     setError('');
     try {
       const res = await axios.get('/api/sales?limit=200', { headers: authHeaders() });
@@ -265,7 +265,7 @@ const DigitalizacionPage = () => {
       console.error('Error fetching sales for digitalizacion:', err);
       setError(err.response?.data?.error || 'No se pudieron cargar expedientes');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -299,7 +299,13 @@ const DigitalizacionPage = () => {
 
   useEffect(() => {
     fetchSales();
-  }, []);
+    const handleRefresh = () => {
+      fetchSales(true);
+      if (selectedSale) fetchSaleDigitalization(selectedSale);
+    };
+    window.addEventListener('refresh-sales', handleRefresh);
+    return () => window.removeEventListener('refresh-sales', handleRefresh);
+  }, [selectedSale?.id]);
 
   useEffect(() => {
     fetchSaleDigitalization(selectedSale);
@@ -400,7 +406,7 @@ const DigitalizacionPage = () => {
           <button onClick={() => setShowGuide(true)} className="action-button-secondary">
             <BookOpen size={16} /> Guía interactiva
           </button>
-          <button onClick={fetchSales} className="action-button-primary">
+          <button onClick={() => fetchSales()} className="action-button-primary">
             <RefreshCw size={16} /> Actualizar
           </button>
         </div>

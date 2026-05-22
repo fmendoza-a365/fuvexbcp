@@ -136,11 +136,14 @@ const Analytics = () => {
     }
     
     fetchData();
+    const handleRefresh = () => fetchData(true);
+    window.addEventListener('refresh-sales', handleRefresh);
+    return () => window.removeEventListener('refresh-sales', handleRefresh);
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = async (silent = false) => {
     // Only show loader if we don't have cached data
-    if (!localStorage.getItem('analytics_cache')) {
+    if (!silent && !localStorage.getItem('analytics_cache')) {
       setLoading(true);
     }
     
@@ -177,7 +180,7 @@ const Analytics = () => {
     } catch (error) {
       console.error('Error fetching analytics data:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -275,7 +278,7 @@ const Analytics = () => {
               <div className="w-2 h-2 rounded-full bg-[var(--accent-emerald)] animate-pulse"></div>
               <span className="text-[10px] font-black text-text-700 uppercase tracking-widest">Datos operativos</span>
            </div>
-           <button onClick={fetchData} className="action-button-primary p-3">
+           <button onClick={() => fetchData()} className="action-button-primary p-3">
              <Activity size={18} />
            </button>
         </div>

@@ -228,8 +228,8 @@ const KanbanPage = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [draggedCard, setDraggedCard] = useState<KanbanCard | null>(null);
 
-  const fetchKanban = async () => {
-    setLoading(true);
+  const fetchKanban = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const token = localStorage.getItem('token');
       const params = new URLSearchParams();
@@ -245,11 +245,16 @@ const KanbanPage = () => {
     } catch (error) {
       console.error('Error fetching kanban:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
-  useEffect(() => { fetchKanban(); }, []);
+  useEffect(() => {
+    fetchKanban();
+    const handleRefresh = () => fetchKanban(true);
+    window.addEventListener('refresh-sales', handleRefresh);
+    return () => window.removeEventListener('refresh-sales', handleRefresh);
+  }, [filters.convenio, filters.asesor_id, filters.fecha_inicio, filters.fecha_fin]);
 
   const handleDragStart = (card: KanbanCard) => setDraggedCard(card);
 
@@ -330,7 +335,7 @@ const KanbanPage = () => {
           <button onClick={exportExcel} className="action-button-secondary text-emerald-700">
             <Download size={16} /> Excel
           </button>
-          <button onClick={fetchKanban} className="action-button-primary">
+          <button onClick={() => fetchKanban()} className="action-button-primary">
             <RefreshCw size={16} /> Actualizar
           </button>
         </div>
@@ -356,7 +361,7 @@ const KanbanPage = () => {
             <input type="date" value={filters.fecha_fin} onChange={e => setFilters({ ...filters, fecha_fin: e.target.value })} className="field-input" />
           </div>
           <div className="sm:col-span-4 flex justify-end">
-            <button onClick={fetchKanban} className="action-button-primary">
+            <button onClick={() => fetchKanban()} className="action-button-primary">
               Aplicar Filtros
             </button>
           </div>
