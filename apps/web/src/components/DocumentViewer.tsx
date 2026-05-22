@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Check, XCircle, FileText, Download, ExternalLink, Eye, AlertCircle, RefreshCw, Loader2, Search, CheckCircle, AlertOctagon, HelpCircle, ShieldCheck, History, MessageSquare, GitBranch, Mail, Send } from 'lucide-react';
+import { X, Check, XCircle, FileText, Download, ExternalLink, Eye, AlertCircle, RefreshCw, Loader2, Search, CheckCircle, AlertOctagon, HelpCircle, ShieldCheck, History, MessageSquare, GitBranch, Mail, Send, Save, PencilLine } from 'lucide-react';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -57,6 +57,42 @@ const TIMELINE_FILTERS = [
   { key: 'system', label: 'Sistema' }
 ];
 
+const CONTRACT_FIELDS = [
+  { key: 'dni_cliente', label: 'DNI cliente', section: 'Cliente', type: 'text' },
+  { key: 'nombres_cliente', label: 'Nombres cliente', section: 'Cliente', type: 'text' },
+  { key: 'celular', label: 'Celular', section: 'Cliente', type: 'text' },
+  { key: 'correo', label: 'Correo', section: 'Cliente', type: 'email' },
+  { key: 'estado_civil_cliente', label: 'Estado civil', section: 'Cliente', type: 'text' },
+  { key: 'direccion', label: 'Direccion', section: 'Ubicacion', type: 'text' },
+  { key: 'departamento', label: 'Departamento', section: 'Ubicacion', type: 'text' },
+  { key: 'provincia', label: 'Provincia', section: 'Ubicacion', type: 'text' },
+  { key: 'distrito', label: 'Distrito', section: 'Ubicacion', type: 'text' },
+  { key: 'convenio', label: 'Convenio', section: 'Laboral', type: 'text' },
+  { key: 'entidad_laboral', label: 'Entidad laboral', section: 'Laboral', type: 'text' },
+  { key: 'cargo_laboral', label: 'Cargo laboral', section: 'Laboral', type: 'text' },
+  { key: 'monto_solicitado', label: 'Monto solicitado', section: 'Credito', type: 'number' },
+  { key: 'plazo_deseado', label: 'Plazo deseado', section: 'Credito', type: 'number' },
+  { key: 'cotizacion_monto', label: 'Monto cotizado', section: 'Credito', type: 'number' },
+  { key: 'cotizacion_plazo', label: 'Plazo cotizado', section: 'Credito', type: 'number' },
+  { key: 'cotizacion_cuota', label: 'Cuota cotizada', section: 'Credito', type: 'number' },
+  { key: 'conyuge_dni', label: 'DNI conyuge', section: 'Conyuge', type: 'text' },
+  { key: 'conyuge_nombres', label: 'Nombres conyuge', section: 'Conyuge', type: 'text' }
+];
+
+const CONTRACT_NUMERIC_FIELDS = new Set([
+  'monto_solicitado',
+  'plazo_deseado',
+  'cotizacion_monto',
+  'cotizacion_plazo',
+  'cotizacion_cuota'
+]);
+
+const buildContractForm = (source: any = {}) => CONTRACT_FIELDS.reduce((acc, field) => {
+  const rawValue = source?.[field.key];
+  acc[field.key] = rawValue === null || rawValue === undefined ? '' : String(rawValue);
+  return acc;
+}, {} as Record<string, string>);
+
 const getTimelineIcon = (type: string) => {
   if (type === 'state') return GitBranch;
   if (type === 'note') return MessageSquare;
@@ -86,6 +122,9 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   const [timelinePage, setTimelinePage] = useState(1);
   const [timelinePages, setTimelinePages] = useState(1);
   const [timelineTotal, setTimelineTotal] = useState(0);
+  const [contractForm, setContractForm] = useState<Record<string, string>>(() => buildContractForm(sale));
+  const [contractSaving, setContractSaving] = useState(false);
+  const [contractSaved, setContractSaved] = useState(false);
   const [timelineCounts, setTimelineCounts] = useState<Record<string, number>>({});
 
   const traceSource = detailSale || sale;
@@ -93,16 +132,19 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   const rccData = traceSource.rcc_raw_data ? JSON.parse(traceSource.rcc_raw_data) : null;
   const conyugeRccData = traceSource.conyuge_rcc_raw_data ? JSON.parse(traceSource.conyuge_rcc_raw_data) : null;
   const isMarried = /CASAD/i.test(traceSource.estado_civil_cliente || sale.estado_civil_cliente || '');
-  const cliente = sale.nombres_cliente || 'Cliente sin nombre';
-  const asesor = sale.asesor?.nombre || sale.asesor?.username || 'Desconocido';
-  const convenio = sale.convenio || 'Sin convenio';
-  const plaza = [sale.distrito, sale.provincia, sale.departamento].filter(Boolean).join(', ') || sale.plaza || 'General';
-  const cargoLaboral = sale.cargo_laboral || 'Sin cargo';
-  const entidadLaboral = sale.entidad_laboral || 'Sin entidad';
-  const celular = sale.celular || 'Sin celular';
-  const correo = sale.correo || 'Sin correo';
-  const montoSolicitado = Number(sale.monto_solicitado ?? sale.maf_neto ?? 0);
+  const cliente = traceSource.nombres_cliente || sale.nombres_cliente || 'Cliente sin nombre';
+  const asesor = traceSource.asesor?.nombre || traceSource.asesor?.username || sale.asesor?.nombre || sale.asesor?.username || 'Desconocido';
+  const convenio = traceSource.convenio || sale.convenio || 'Sin convenio';
+  const plaza = [traceSource.distrito, traceSource.provincia, traceSource.departamento].filter(Boolean).join(', ') || traceSource.plaza || sale.plaza || 'General';
+  const cargoLaboral = traceSource.cargo_laboral || sale.cargo_laboral || 'Sin cargo';
+  const entidadLaboral = traceSource.entidad_laboral || sale.entidad_laboral || 'Sin entidad';
+  const celular = traceSource.celular || sale.celular || 'Sin celular';
+  const correo = traceSource.correo || sale.correo || 'Sin correo';
+  const montoSolicitado = Number(traceSource.monto_solicitado ?? traceSource.maf_neto ?? sale.monto_solicitado ?? sale.maf_neto ?? 0);
   const docsLabel = `${docs.length} ${docs.length === 1 ? 'archivo' : 'archivos'}`;
+  const contractBaseline = buildContractForm(traceSource);
+  const contractDirty = CONTRACT_FIELDS.some((field) => (contractForm[field.key] || '').trim() !== (contractBaseline[field.key] || '').trim());
+  const contractSections = Array.from(new Set(CONTRACT_FIELDS.map((field) => field.section)));
 
   const traceItems: TraceItem[] = [
     ...(traceSource.feedback ? [{
@@ -194,6 +236,11 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   }, [sale]);
 
   useEffect(() => {
+    setContractForm(buildContractForm(traceSource));
+    setContractSaved(false);
+  }, [traceSource.id, traceSource.updated_at, traceSource.version]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const fetchAvailableTransitions = async () => {
@@ -267,20 +314,113 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
     }
   };
 
+  const handleContractFieldChange = (key: string, value: string) => {
+    setContractForm((current) => ({ ...current, [key]: value }));
+    setContractSaved(false);
+  };
+
+  const handleSaveContractData = async () => {
+    setContractSaving(true);
+    setError(null);
+    setContractSaved(false);
+    try {
+      const baseline = buildContractForm(traceSource);
+      const payload: Record<string, any> = {};
+
+      for (const field of CONTRACT_FIELDS) {
+        const nextValue = (contractForm[field.key] || '').trim();
+        const previousValue = (baseline[field.key] || '').trim();
+        if (nextValue === previousValue) continue;
+
+        if (['dni_cliente', 'nombres_cliente', 'celular'].includes(field.key) && !nextValue) {
+          setError(`${field.label} no puede quedar vacio.`);
+          return;
+        }
+
+        if (CONTRACT_NUMERIC_FIELDS.has(field.key)) {
+          if (nextValue === '') {
+            payload[field.key] = null;
+            continue;
+          }
+          const parsed = Number(nextValue);
+          if (Number.isNaN(parsed)) {
+            setError(`${field.label} debe ser numerico.`);
+            return;
+          }
+          payload[field.key] = parsed;
+          continue;
+        }
+
+        payload[field.key] = nextValue || null;
+      }
+
+      if (Object.keys(payload).length === 0) return;
+      if (traceSource.version) payload.expected_version = traceSource.version;
+
+      const token = localStorage.getItem('token');
+      const res = await axios.put(`/api/sales/${sale.id}`, payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setDetailSale(res.data);
+      setContractForm(buildContractForm(res.data));
+      setContractSaved(true);
+      await onUpdate();
+    } catch (err: any) {
+      console.error('Error saving contract data', err);
+      setError(err?.response?.data?.error || 'No se pudieron guardar los datos del contrato');
+    } finally {
+      setContractSaving(false);
+    }
+  };
+
   const [pdfLoading, setPdfLoading] = useState(false);
+
+  const fetchPdfBlob = async (download = false) => {
+    const token = localStorage.getItem('token');
+    const response = await axios.get(`/api/sales/${sale.id}/pdf${download ? '?download=1' : ''}`, {
+      responseType: 'blob',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const contentType = response.headers['content-type'];
+    return new Blob([response.data], {
+      type: typeof contentType === 'string' ? contentType : 'application/pdf'
+    });
+  };
+
+  const openPdfPreview = (blob: Blob) => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    const objectUrl = URL.createObjectURL(blob);
+    setPreviewDoc({
+      tipo_documento: 'SOLICITUD_CONVENIO',
+      file_path: `SOLICITUD_CONVENIO_${traceSource.dni_cliente || sale.dni_cliente || 'documento'}.pdf`,
+      mimeType: 'application/pdf'
+    });
+    setPreviewUrl(objectUrl);
+  };
+
+  const handlePreviewPdf = async () => {
+    try {
+      setPdfLoading(true);
+      setError(null);
+      const blob = await fetchPdfBlob(false);
+      openPdfPreview(blob);
+    } catch (err) {
+      console.error('Error previewing PDF', err);
+      setError('No se pudo ver el PDF de convenio');
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   const handleDownloadPdf = async () => {
     try {
       setPdfLoading(true);
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`/api/sales/${sale.id}/pdf?download=1`, {
-        responseType: 'blob',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const objectUrl = URL.createObjectURL(response.data);
+      setError(null);
+      const blob = await fetchPdfBlob(true);
+      const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = objectUrl;
-      link.download = `SOLICITUD_CONVENIO_${sale.dni_cliente || 'documento'}.pdf`;
+      link.download = `SOLICITUD_CONVENIO_${traceSource.dni_cliente || sale.dni_cliente || 'documento'}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -296,13 +436,18 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   const handleRegeneratePdf = async () => {
     try {
       setPdfLoading(true);
+      setError(null);
       const token = localStorage.getItem('token');
       await axios.post(`/api/sales/${sale.id}/pdf/regenerar`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      // Download the newly generated PDF
-      await handleDownloadPdf();
-      onUpdate();
+      const refreshed = await axios.get(`/api/sales/${sale.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setDetailSale(refreshed.data);
+      await onUpdate();
+      const blob = await fetchPdfBlob(false);
+      openPdfPreview(blob);
     } catch (err: any) {
       console.error('Error regenerating PDF', err);
       setError(err?.response?.data?.error || 'No se pudo regenerar el PDF de convenio');
@@ -311,7 +456,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
     }
   };
 
-  // ── Email sending state ──
+  // Email sending state
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailTo, setEmailTo] = useState('');
   const [emailResult, setEmailResult] = useState<{ messageId?: string; previewUrl?: string } | null>(null);
@@ -523,7 +668,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 id="modal-title" className="text-xl font-bold text-slate-800 truncate">
-                      Expediente {sale.dni_cliente}
+                      Expediente {traceSource.dni_cliente || sale.dni_cliente}
                     </h2>
                     <span className={`px-2.5 py-0.5 rounded text-xs font-semibold border ${getStatusColor(sale.estado)}`}>
                       {sale.estado}
@@ -639,8 +784,77 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                 </div>
               </section>
 
+              <section className="bg-surface-100 border border-surface-200 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-4 py-3 border-b border-surface-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-100">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                      <PencilLine size={18} className="text-[var(--color-bcp-blue)]" />
+                      Datos del contrato y prospecto
+                    </h3>
+                    <p className="text-xs text-text-700 mt-0.5">
+                      Corrige los datos fuente del expediente antes de regenerar la solicitud PDF.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {contractSaved && (
+                      <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-black uppercase text-emerald-700">
+                        <CheckCircle size={13} />
+                        Guardado
+                      </span>
+                    )}
+                    {contractDirty && !contractSaved && (
+                      <span className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-black uppercase text-amber-700">
+                        Pendiente
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="px-4 py-4 space-y-5">
+                  {contractSections.map((section) => (
+                    <div key={section} className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-px flex-1 bg-surface-200" />
+                        <p className="text-[10px] font-black uppercase tracking-widest text-text-700">{section}</p>
+                        <div className="h-px flex-1 bg-surface-200" />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                        {CONTRACT_FIELDS.filter((field) => field.section === section).map((field) => (
+                          <label key={field.key} className="block">
+                            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-text-700">
+                              {field.label}
+                            </span>
+                            <input
+                              type={field.type === 'number' ? 'number' : field.type === 'email' ? 'email' : 'text'}
+                              step={field.type === 'number' ? (field.key.includes('plazo') ? '1' : '0.01') : undefined}
+                              value={contractForm[field.key] || ''}
+                              onChange={(e) => handleContractFieldChange(field.key, e.target.value)}
+                              className="w-full rounded-lg border border-surface-200 bg-surface-50 px-3 py-2 text-sm font-semibold text-slate-800 outline-none transition focus:border-[var(--color-bcp-blue)] focus:ring-2 focus:ring-[rgba(0,42,141,0.12)]"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-surface-200 pt-4">
+                    <p className="text-xs font-semibold text-text-700">
+                      El PDF toma estos datos. Si corriges un campo, guarda y luego usa Regenerar PDF.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleSaveContractData}
+                      disabled={contractSaving || !contractDirty}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--color-bcp-blue)] px-4 py-2 text-xs font-black uppercase tracking-wider text-white shadow-sm transition hover:bg-[var(--color-bcp-blue-dark,#001a6e)] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {contractSaving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                      Guardar datos
+                    </button>
+                  </div>
+                </div>
+              </section>
               {/* ── Solicitud de Convenio BCP (PDF Autollenado) ── */}
-              {sale.convenio && (
+              {traceSource.convenio && (
                 <section className="bg-gradient-to-br from-[rgba(0,42,141,0.03)] to-[rgba(0,42,141,0.08)] border border-[rgba(0,42,141,0.15)] rounded-xl overflow-hidden shadow-sm">
                   <div className="px-4 py-3 border-b border-[rgba(0,42,141,0.12)] flex items-center justify-between gap-3">
                     <div>
@@ -653,7 +867,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                       </p>
                     </div>
                     <span className="bg-[rgba(0,42,141,0.1)] text-[var(--color-bcp-blue)] px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-wider">
-                      {sale.convenio}
+                      {traceSource.convenio}
                     </span>
                   </div>
                   <div className="px-4 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
@@ -662,8 +876,18 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                         Este documento se genera automáticamente al aceptar la cotización. Contiene los datos del cliente, monto, plazo y cuota prellenados en la plantilla del convenio.
                       </p>
                     </div>
-                    <div className="flex gap-2 shrink-0">
+                    <div className="flex flex-wrap gap-2 shrink-0">
                       <button
+                        type="button"
+                        onClick={handlePreviewPdf}
+                        disabled={pdfLoading}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-[var(--color-bcp-blue)] bg-white border border-[rgba(0,42,141,0.2)] hover:bg-[rgba(0,42,141,0.06)] rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {pdfLoading ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+                        Ver PDF
+                      </button>
+                      <button
+                        type="button"
                         onClick={handleDownloadPdf}
                         disabled={pdfLoading}
                         className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-[var(--color-bcp-blue)] hover:bg-[var(--color-bcp-blue-dark,#001a6e)] rounded-lg transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
@@ -672,6 +896,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                         Descargar PDF
                       </button>
                       <button
+                        type="button"
                         onClick={handleRegeneratePdf}
                         disabled={pdfLoading}
                         className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-[var(--color-bcp-blue)] bg-white border border-[rgba(0,42,141,0.2)] hover:bg-[rgba(0,42,141,0.06)] rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
