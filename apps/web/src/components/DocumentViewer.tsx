@@ -337,6 +337,15 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
           return;
         }
 
+        if (['dni_cliente', 'conyuge_dni'].includes(field.key) && nextValue && !/^\d{8}$/.test(nextValue)) {
+          setError(`${field.label} debe tener 8 digitos.`);
+          return;
+        }
+        if (field.key === 'correo' && nextValue && !/^\S+@\S+\.\S+$/.test(nextValue)) {
+          setError('Correo debe tener un formato valido.');
+          return;
+        }
+
         if (CONTRACT_NUMERIC_FIELDS.has(field.key)) {
           if (nextValue === '') {
             payload[field.key] = null;
