@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, Link, useLocation } from 'react-router-dom';
 const OutletAny = Outlet as any;
 const LinkAny = Link as any;
-import { LogOut, FileText, Menu, X, Users, MapPin, ChevronLeft, ChevronRight, User, LayoutDashboard, Target, Search, Shield, AlertCircle, Moon, Sun, Calculator, Settings, Columns3, Building2, FileCog } from 'lucide-react';
+import { LogOut, FileText, Menu, X, Users, MapPin, ChevronLeft, ChevronRight, User, LayoutDashboard, Target, Search, Shield, Moon, Sun, Calculator, Settings, Columns3, FileCog } from 'lucide-react';
 
 import axios from 'axios';
 
@@ -118,23 +118,22 @@ export default function Layout() {
   const isAdmin = ['SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'].includes(user.role);
   const isSuperAdminOrGerente = ['SUPERADMIN', 'GERENTE'].includes(user.role);
   const canManagePdfTemplates = ['SUPERADMIN', 'GERENTE', 'BACK_OFFICE'].includes(user.role);
-  const sectionLabel = location.pathname === '/app'
+  const sectionLabel = location.pathname === '/app' || location.pathname.startsWith('/app/dashboard')
     ? 'Analítica'
-    : location.pathname.startsWith('/app/expedientes') || location.pathname.startsWith('/app/digitalizacion') || location.pathname.startsWith('/app/kanban')
+    : location.pathname.startsWith('/app/expedientes') || location.pathname.startsWith('/app/kanban')
       ? 'Operaciones'
       : location.pathname.startsWith('/app/metas')
         ? 'Planificación'
         : 'Gestión';
 
   const navItems = [
-    { to: '/app', icon: <LayoutDashboard size={20} />, label: 'Analítica Gerencial', show: true },
+    { to: '/app/dashboard', icon: <LayoutDashboard size={20} />, label: 'Analítica Gerencial', show: true },
     { to: '/app/expedientes', icon: <FileText size={20} />, label: 'Bandeja de Expedientes', show: true },
-    { to: '/app/metas', icon: <Target size={20} />, label: 'Planificación de Metas', show: (isSuperAdminOrGerente || user.role === 'JEFE_ZONAL') },
-    { to: '/app/simulador', icon: <Calculator size={20} />, label: 'Simulador BCP', show: true },
-    { to: '/app/reniec', icon: <Search size={20} />, label: 'Buscador RENIEC', show: true },
-    { to: '/app/simulador-reglas', icon: <Settings size={20} />, label: 'Reglas del Simulador', show: isAdmin },
     { to: '/app/kanban', icon: <Columns3 size={20} />, label: 'Pipeline Visual', show: true },
-    { to: '/app/digitalizacion', icon: <Building2 size={20} />, label: 'Digitalización', show: isAdmin },
+    { to: '/app/simulador', icon: <Calculator size={20} />, label: 'Simulador BCP', show: true },
+    { to: '/app/metas', icon: <Target size={20} />, label: 'Planificación de Metas', show: (isSuperAdminOrGerente || user.role === 'JEFE_ZONAL') },
+    { to: '/app/reniec', icon: <Search size={20} />, label: 'RENIEC Emergencia', show: true },
+    { to: '/app/simulador-reglas', icon: <Settings size={20} />, label: 'Reglas del Simulador', show: isAdmin },
     { to: '/app/plantillas-pdf', icon: <FileCog size={20} />, label: 'Plantillas PDF', show: canManagePdfTemplates },
     { to: '/app/usuarios', icon: <Users size={20} />, label: 'Usuarios', show: isAdmin },
     { to: '/app/zonas', icon: <MapPin size={20} />, label: 'Zonas', show: isSuperAdminOrGerente },
@@ -208,14 +207,6 @@ export default function Layout() {
             {!isCollapsed && <span className="truncate text-sm uppercase tracking-tight">Perfil y Seguridad</span>}
           </LinkAny>
         </nav>
-        
-        {/* Help Link */}
-        <div className={`p-4 border-t border-surface-200 bg-surface-50/20 ${isCollapsed ? 'flex justify-center' : ''}`}>
-           <button className={`flex items-center gap-3 text-text-700 hover:text-[var(--color-bcp-blue)] transition-all ${isCollapsed ? 'p-2' : 'px-3 py-2 w-full text-xs font-bold uppercase tracking-widest'}`}>
-              <AlertCircle size={isCollapsed ? 20 : 16} />
-              {!isCollapsed && <span>Soporte Fuvex</span>}
-           </button>
-        </div>
       </aside>
 
       {/* Main Content Area */}
@@ -406,9 +397,6 @@ export default function Layout() {
                        >
                           <User size={18} /> Mi Perfil
                        </LinkAny>
-                       <button className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-text-700 hover:text-[var(--accent-blue)] hover:bg-[var(--accent-blue-soft)] rounded-xl transition-all text-left">
-                          <Shield size={18} /> Seguridad
-                       </button>
                     </div>
                     <div className="mt-2 pt-2 border-t border-surface-200 p-2">
                        <button 

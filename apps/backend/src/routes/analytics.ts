@@ -1,28 +1,125 @@
 import { Router } from 'express';
 import { prisma } from '../db';
 import { authMiddleware } from '../middleware/auth';
-import { getSalesFilter, getSubordinateIds } from '../services/hierarchy';
+import { GLOBAL_ROLES, getSalesFilter, getSubordinateIds } from '../services/hierarchy';
 import { startOfMonth, endOfMonth, format, startOfDay, endOfDay, subDays, eachDayOfInterval } from 'date-fns';
 import ExcelJS from 'exceljs';
 import { ACTIVE_ESTADOS, KANBAN_COLUMNS } from '../middleware/validate';
 import { buildSlaSnapshot, getSlaInfo } from '../services/sla';
 
 const router = Router();
+const GOAL_ROLES = ['VENDEDOR', 'SUPERVISOR', 'JEFE_ZONAL'];
+const DAY_MS = 1000 * 60 * 60 * 24;
+
+const parseDateQuery = (value: unknown, fallback: Date, end = false) => {
+  if (typeof value !== 'string' || !value.trim()) return fallback;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return fallback;
+  return end ? endOfDay(parsed) : startOfDay(parsed);
+};
+
+const getDateRange = (req: any) => {
+  const now = new Date();
+  const defaultStart = startOfMonth(now);
+  const defaultEnd = endOfMonth(now);
+  const requestedStart = parseDateQuery(req.query.fecha_inicio, defaultStart);
+  const requestedEnd = parseDateQuery(req.query.fecha_fin, defaultEnd, true);
+
+  if (requestedEnd < requestedStart) {
+    return { startDate: requestedEnd, endDate: requestedStart };
+  }
+
+  return { startDate: requestedStart, endDate: requestedEnd };
+};
+
+const getPreviousRange = (startDate: Date, endDate: Date) => {
+  const rangeDays = Math.max(Math.ceil((endDate.getTime() - startDate.getTime()) / DAY_MS), 1);
+  const previousEnd = endOfDay(subDays(startDate, 1));
+  const previousStart = startOfDay(subDays(previousEnd, rangeDays - 1));
+  return { previousStart, previousEnd };
+};
+
+const getGoalPeriods = (startDate: Date, endDate: Date) => {
+  const periods: Array<{ month: number; year: number; start: Date; end: Date; weight: number }> = [];
+  let cursor = startOfMonth(startDate);
+  const finalMonth = startOfMonth(endDate);
+
+  while (cursor <= finalMonth) {
+    const monthStart = startOfMonth(cursor);
+    const monthEnd = endOfMonth(cursor);
+    const overlapStart = new Date(Math.max(monthStart.getTime(), startDate.getTime()));
+    const overlapEnd = new Date(Math.min(monthEnd.getTime(), endDate.getTime()));
+    const monthDays = Math.max(Math.floor((startOfDay(monthEnd).getTime() - startOfDay(monthStart).getTime()) / DAY_MS) + 1, 1);
+    const overlapDays = Math.max(Math.floor((startOfDay(overlapEnd).getTime() - startOfDay(overlapStart).getTime()) / DAY_MS) + 1, 0);
+
+    periods.push({
+      month: monthStart.getMonth() + 1,
+      year: monthStart.getFullYear(),
+      start: monthStart,
+      end: monthEnd,
+      weight: Math.min(Math.max(overlapDays / monthDays, 0), 1)
+    });
+
+    cursor = startOfMonth(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1));
+  }
+
+  return periods;
+};
+
+const getVisibleGoalUserIds = async (user: any) => {
+  if (GLOBAL_ROLES.includes(user.role)) {
+    const users = await prisma.user.findMany({
+      where: { role: { in: GOAL_ROLES }, activo: true },
+      select: { id: true }
+    });
+    return users.map((item) => item.id);
+  }
+
+  if (user.role === 'SUPERVISOR' || user.role === 'JEFE_ZONAL') {
+    const subIds = await getSubordinateIds(user.id);
+    return [user.id, ...subIds];
+  }
+
+  return [user.id];
+};
+
+const getGoalAmountByUser = async (userIds: string[], startDate: Date, endDate: Date) => {
+  const periods = getGoalPeriods(startDate, endDate);
+  if (userIds.length === 0 || periods.length === 0) return new Map<string, number>();
+
+  const goals = await prisma.goal.findMany({
+    where: {
+      user_id: { in: userIds },
+      OR: periods.map((period) => ({ month: period.month, year: period.year }))
+    },
+    select: { user_id: true, month: true, year: true, amount: true }
+  });
+
+  const periodWeight = new Map(periods.map((period) => [`${period.month}-${period.year}`, period.weight]));
+  const byUser = new Map<string, number>();
+
+  for (const goal of goals) {
+    const weight = periodWeight.get(`${goal.month}-${goal.year}`) ?? 1;
+    byUser.set(goal.user_id, (byUser.get(goal.user_id) || 0) + ((Number(goal.amount) || 0) * weight));
+  }
+
+  return byUser;
+};
 
 // GET Dashboard Summary KPIs
 router.get('/dashboard', authMiddleware, async (req: any, res: any) => {
   try {
     const filter = await getSalesFilter(req.user);
+    const { startDate, endDate } = getDateRange(req);
+    const dateFilter = { fecha_ingreso: { gte: startDate, lte: endDate } };
     const now = new Date();
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
 
     // 1. Total Disbursed (Goal Metric)
     const disbursedData = await prisma.sale.aggregate({
       where: {
         ...filter,
         estado: 'DESEMBOLSADO',
-        fecha_ingreso: { gte: monthStart, lte: monthEnd }
+        ...dateFilter
       },
       _sum: { maf_neto: true },
       _count: true
@@ -33,49 +130,44 @@ router.get('/dashboard', authMiddleware, async (req: any, res: any) => {
       where: {
         ...filter,
         estado: { in: ACTIVE_ESTADOS },
-        fecha_ingreso: { gte: monthStart, lte: monthEnd }
+        ...dateFilter
       },
       _sum: { maf_neto: true },
       _count: true
     });
 
-    // 3. User Goal
-    const userGoal = await prisma.goal.findUnique({
-      where: {
-        user_id_month_year: {
-          user_id: req.user.id,
-          month: now.getMonth() + 1,
-          year: now.getFullYear()
-        }
-      }
-    });
+    // 3. Visible Goal. Managers see the visible team goal, sellers see their own goal.
+    const goalUserIds = await getVisibleGoalUserIds(req.user);
+    const goalByUser = await getGoalAmountByUser(goalUserIds, startDate, endDate);
+    const goalAmount = [...goalByUser.values()].reduce((acc, amount) => acc + amount, 0);
 
-    // 4. Previous Month Data (MoM)
-    const prevMonthStart = startOfMonth(subDays(monthStart, 5));
-    const prevMonthEnd = endOfMonth(subDays(monthStart, 5));
+    // 4. Previous comparable period data
+    const { previousStart, previousEnd } = getPreviousRange(startDate, endDate);
     const prevMonthDisbursed = await prisma.sale.aggregate({
-      where: { ...filter, estado: 'DESEMBOLSADO', fecha_ingreso: { gte: prevMonthStart, lte: prevMonthEnd } },
+      where: { ...filter, estado: 'DESEMBOLSADO', fecha_ingreso: { gte: previousStart, lte: previousEnd } },
       _sum: { maf_neto: true }
     });
 
     // 5. Calculate Metrics
-    const daysInMonth = monthEnd.getDate();
-    const currentDay = now.getDate();
+    const periodDays = Math.max(Math.floor((startOfDay(endDate).getTime() - startOfDay(startDate).getTime()) / DAY_MS) + 1, 1);
+    const elapsedDays = now >= startDate && now <= endDate
+      ? Math.max(Math.floor((startOfDay(now).getTime() - startOfDay(startDate).getTime()) / DAY_MS) + 1, 1)
+      : periodDays;
     const totalDisbursed = disbursedData._sum.maf_neto || 0;
-    const dailyAverage = currentDay > 0 ? totalDisbursed / currentDay : 0;
-    const forecasting = dailyAverage * daysInMonth;
+    const dailyAverage = elapsedDays > 0 ? totalDisbursed / elapsedDays : 0;
+    const forecasting = dailyAverage * periodDays;
 
-    const totalEntered = await prisma.sale.count({ where: { ...filter, fecha_ingreso: { gte: monthStart, lte: monthEnd } } });
-    const approvedCount = await prisma.sale.count({ where: { ...filter, estado: 'DESEMBOLSADO', fecha_ingreso: { gte: monthStart, lte: monthEnd } } });
+    const totalEntered = await prisma.sale.count({ where: { ...filter, ...dateFilter } });
+    const approvedCount = await prisma.sale.count({ where: { ...filter, estado: 'DESEMBOLSADO', ...dateFilter } });
     
     const conversionRate = totalEntered > 0 ? (approvedCount / totalEntered) * 100 : 0;
     const momGrowth = prevMonthDisbursed._sum.maf_neto ? ((totalDisbursed - prevMonthDisbursed._sum.maf_neto) / prevMonthDisbursed._sum.maf_neto) * 100 : 0;
 
-    const activeSellers = await prisma.sale.groupBy({ by: ['asesor_id'], where: { ...filter, fecha_ingreso: { gte: monthStart, lte: monthEnd } } });
+    const activeSellers = await prisma.sale.groupBy({ by: ['asesor_id'], where: { ...filter, ...dateFilter } });
     const productivity = activeSellers.length > 0 ? totalEntered / activeSellers.length : 0;
 
     const pendingValue = await prisma.sale.aggregate({
-      where: { ...filter, estado: { in: ['FILE_VALIDADO', 'ENVIADO_BCP_REMESA', 'REMESA_APROBADA', 'REMESA_REDUCIDA', 'PENDIENTE_DESEMBOLSO', 'PENDIENTE_LIBERACION'] } },
+      where: { ...filter, estado: { in: ['FILE_VALIDADO', 'ENVIADO_BCP_REMESA', 'REMESA_APROBADA', 'REMESA_REDUCIDA', 'PENDIENTE_DESEMBOLSO', 'PENDIENTE_LIBERACION'] }, ...dateFilter },
       _sum: { maf_neto: true }
     });
 
@@ -84,13 +176,17 @@ router.get('/dashboard', authMiddleware, async (req: any, res: any) => {
       disbursedCount: disbursedData._count,
       pipelineValue: pipelineData._sum.maf_neto || 0,
       pipelineCount: pipelineData._count,
-      goalAmount: userGoal?.amount || 0,
+      goalAmount,
       forecasting,
-      completionRate: userGoal?.amount ? (totalDisbursed / userGoal.amount) * 100 : 0,
+      completionRate: goalAmount ? (totalDisbursed / goalAmount) * 100 : 0,
       conversionRate,
       momGrowth,
       productivity,
-      pendingValue: pendingValue._sum.maf_neto || 0
+      pendingValue: pendingValue._sum.maf_neto || 0,
+      period: {
+        fecha_inicio: format(startDate, 'yyyy-MM-dd'),
+        fecha_fin: format(endDate, 'yyyy-MM-dd')
+      }
     });
   } catch (error) {
     console.error(error);
@@ -102,9 +198,7 @@ router.get('/dashboard', authMiddleware, async (req: any, res: any) => {
 router.get('/timeseries', authMiddleware, async (req: any, res: any) => {
   try {
     const filter = await getSalesFilter(req.user);
-    const now = new Date();
-    const startDate = startOfMonth(now);
-    const endDate = endOfMonth(now);
+    const { startDate, endDate } = getDateRange(req);
 
     const sales = await prisma.sale.findMany({
       where: {
@@ -143,13 +237,15 @@ router.get('/timeseries', authMiddleware, async (req: any, res: any) => {
 router.get('/geography', authMiddleware, async (req: any, res: any) => {
   try {
     const filter = await getSalesFilter(req.user);
+    const { startDate, endDate } = getDateRange(req);
     
     const geoData = await prisma.sale.groupBy({
       by: ['departamento'],
       where: {
         ...filter,
         estado: 'DESEMBOLSADO',
-        departamento: { not: null }
+        departamento: { not: null },
+        fecha_ingreso: { gte: startDate, lte: endDate }
       },
       _sum: { maf_neto: true },
       _count: true
@@ -169,9 +265,7 @@ router.get('/geography', authMiddleware, async (req: any, res: any) => {
 // GET Rankings (Hall of Fame)
 router.get('/rankings', authMiddleware, async (req: any, res: any) => {
   try {
-    const now = new Date();
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
+    const { startDate, endDate } = getDateRange(req);
 
     // Only allow hierarchical roles to see rankings? 
     // Usually everyone can see them for competition.
@@ -181,7 +275,7 @@ router.get('/rankings', authMiddleware, async (req: any, res: any) => {
       by: ['asesor_id'],
       where: {
         estado: 'DESEMBOLSADO',
-        fecha_ingreso: { gte: monthStart, lte: monthEnd }
+        fecha_ingreso: { gte: startDate, lte: endDate }
       },
       _sum: { maf_neto: true },
       orderBy: { _sum: { maf_neto: 'desc' } },
@@ -201,7 +295,7 @@ router.get('/rankings', authMiddleware, async (req: any, res: any) => {
         where: {
           asesor_id: { in: [s.id, ...subIds] },
           estado: 'DESEMBOLSADO',
-          fecha_ingreso: { gte: monthStart, lte: monthEnd }
+          fecha_ingreso: { gte: startDate, lte: endDate }
         },
         _sum: { maf_neto: true }
       });
@@ -215,7 +309,7 @@ router.get('/rankings', authMiddleware, async (req: any, res: any) => {
         where: {
           asesor: { zone_id: z.id },
           estado: 'DESEMBOLSADO',
-          fecha_ingreso: { gte: monthStart, lte: monthEnd }
+          fecha_ingreso: { gte: startDate, lte: endDate }
         },
         _sum: { maf_neto: true }
       });
@@ -238,32 +332,35 @@ router.get('/operations', authMiddleware, async (req: any, res: any) => {
   try {
     const filter = await getSalesFilter(req.user);
     const now = new Date();
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
+    const { startDate, endDate } = getDateRange(req);
+    const periodFilter = {
+      ...filter,
+      fecha_ingreso: { gte: startDate, lte: endDate }
+    };
     
     // 1. Funnel
     const funnel = await prisma.sale.groupBy({
       by: ['estado'],
-      where: filter,
+      where: periodFilter,
       _count: true
     });
 
     // 2. Risk Mix (Infoburo)
     const risk = await prisma.sale.groupBy({
       by: ['rcc_semaforo'],
-      where: { ...filter, rcc_semaforo: { not: null } },
+      where: { ...periodFilter, rcc_semaforo: { not: null } },
       _count: true
     });
 
     // 3. Motivos de Observación (calculado desde FeedbackNotes reales)
     const feedbackNotes = await prisma.feedbackNote.findMany({
-      where: { sale: filter },
+      where: { sale: periodFilter },
       select: { nota: true }
     });
 
     const auditNotes = await prisma.auditLog.findMany({
       where: {
-        sale: filter,
+        sale: periodFilter,
         detalles: { not: null }
       },
       select: { detalles: true }
@@ -307,7 +404,7 @@ router.get('/operations', authMiddleware, async (req: any, res: any) => {
     // 4. Agreement Mix (Convenios)
     const agreements = await prisma.sale.groupBy({
       by: ['convenio'],
-      where: filter,
+      where: periodFilter,
       _sum: { maf_neto: true },
       _count: true
     });
@@ -315,7 +412,7 @@ router.get('/operations', authMiddleware, async (req: any, res: any) => {
     // 5. Tiempos de Respuesta (calculado desde AuditLog real)
     const stateChanges = await prisma.auditLog.findMany({
       where: {
-        sale: filter,
+        sale: periodFilter,
         accion: 'Cambio de Estado'
       },
       select: {
@@ -328,7 +425,7 @@ router.get('/operations', authMiddleware, async (req: any, res: any) => {
     });
 
     const salesForTiming = await prisma.sale.findMany({
-      where: filter,
+      where: periodFilter,
       select: { id: true, created_at: true, fecha_ingreso: true }
     });
 
@@ -397,13 +494,13 @@ router.get('/operations', authMiddleware, async (req: any, res: any) => {
         : 99;
 
       const stats = await prisma.sale.aggregate({
-        where: { asesor_id: s.id },
+        where: { asesor_id: s.id, fecha_ingreso: { gte: startDate, lte: endDate } },
         _count: { id: true },
         _sum: { maf_neto: true }
       });
 
       const approvedCount = await prisma.sale.count({
-        where: { asesor_id: s.id, estado: 'DESEMBOLSADO' }
+        where: { asesor_id: s.id, estado: 'DESEMBOLSADO', fecha_ingreso: { gte: startDate, lte: endDate } }
       });
 
       return {
@@ -415,12 +512,10 @@ router.get('/operations', authMiddleware, async (req: any, res: any) => {
     }));
 
     // 8. Tablas de gestión para decisiones comerciales del mes
-    const summaryWhere = {
-      ...filter,
-      fecha_ingreso: { gte: monthStart, lte: monthEnd }
-    };
+    const summaryWhere = periodFilter;
+    const goalUserIds = await getVisibleGoalUserIds(req.user);
 
-    const [summarySales, currentGoals] = await Promise.all([
+    const [summarySales, goalByUser] = await Promise.all([
       prisma.sale.findMany({
         where: summaryWhere,
         select: {
@@ -442,16 +537,8 @@ router.get('/operations', authMiddleware, async (req: any, res: any) => {
           }
         }
       }),
-      prisma.goal.findMany({
-        where: {
-          month: now.getMonth() + 1,
-          year: now.getFullYear()
-        },
-        select: { user_id: true, amount: true }
-      })
+      getGoalAmountByUser(goalUserIds, startDate, endDate)
     ]);
-
-    const goalByUser = new Map<string, number>(currentGoals.map(goal => [goal.user_id, Number(goal.amount) || 0] as [string, number]));
 
     const createBucket = (key: string, name: string, zone?: string) => ({
       key,
@@ -708,8 +795,8 @@ router.get('/funnel', authMiddleware, async (req: any, res: any) => {
 
     if (fecha_inicio || fecha_fin) {
       whereClause.fecha_ingreso = {};
-      if (fecha_inicio) whereClause.fecha_ingreso.gte = new Date(fecha_inicio as string);
-      if (fecha_fin) whereClause.fecha_ingreso.lte = new Date(fecha_fin as string);
+      if (fecha_inicio) whereClause.fecha_ingreso.gte = parseDateQuery(fecha_inicio, startOfDay(new Date()));
+      if (fecha_fin) whereClause.fecha_ingreso.lte = parseDateQuery(fecha_fin, endOfDay(new Date()), true);
     }
     if (convenio) whereClause.convenio = convenio;
 
@@ -800,8 +887,8 @@ router.get('/tiempos', authMiddleware, async (req: any, res: any) => {
 
     if (fecha_inicio || fecha_fin) {
       whereClause.created_at = {};
-      if (fecha_inicio) whereClause.created_at.gte = new Date(fecha_inicio as string);
-      if (fecha_fin) whereClause.created_at.lte = new Date(fecha_fin as string);
+      if (fecha_inicio) whereClause.created_at.gte = parseDateQuery(fecha_inicio, startOfDay(new Date()));
+      if (fecha_fin) whereClause.created_at.lte = parseDateQuery(fecha_fin, endOfDay(new Date()), true);
     }
 
     const stateChanges = await prisma.auditLog.findMany({
@@ -937,8 +1024,8 @@ router.get('/kanban', authMiddleware, async (req: any, res: any) => {
     if (asesor_id) whereClause.asesor_id = asesor_id;
     if (fecha_inicio || fecha_fin) {
       whereClause.fecha_ingreso = {};
-      if (fecha_inicio) whereClause.fecha_ingreso.gte = new Date(fecha_inicio as string);
-      if (fecha_fin) whereClause.fecha_ingreso.lte = new Date(fecha_fin as string);
+      if (fecha_inicio) whereClause.fecha_ingreso.gte = parseDateQuery(fecha_inicio, startOfDay(new Date()));
+      if (fecha_fin) whereClause.fecha_ingreso.lte = parseDateQuery(fecha_fin, endOfDay(new Date()), true);
     }
 
     const sales = await prisma.sale.findMany({
@@ -1018,8 +1105,8 @@ router.get('/export/excel', authMiddleware, async (req: any, res: any) => {
     const whereClause: any = { ...filter };
     if (fecha_inicio || fecha_fin) {
       whereClause.fecha_ingreso = {};
-      if (fecha_inicio) whereClause.fecha_ingreso.gte = new Date(fecha_inicio as string);
-      if (fecha_fin) whereClause.fecha_ingreso.lte = new Date(fecha_fin as string);
+      if (fecha_inicio) whereClause.fecha_ingreso.gte = parseDateQuery(fecha_inicio, startOfDay(new Date()));
+      if (fecha_fin) whereClause.fecha_ingreso.lte = parseDateQuery(fecha_fin, endOfDay(new Date()), true);
     }
     if (convenio) whereClause.convenio = convenio;
     if (estado) whereClause.estado = estado;

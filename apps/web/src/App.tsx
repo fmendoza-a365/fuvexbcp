@@ -15,7 +15,6 @@ const DniSearch = lazy(() => import('./pages/DniSearch'));
 const Simulator = lazy(() => import('./pages/Simulator'));
 const SimulatorRules = lazy(() => import('./pages/SimulatorRules'));
 const Kanban = lazy(() => import('./pages/Kanban'));
-const Digitalizacion = lazy(() => import('./pages/Digitalizacion'));
 const PdfTemplates = lazy(() => import('./pages/PdfTemplates'));
 
 // Componente de carga
@@ -52,7 +51,7 @@ function App() {
             <Route path="simulador-reglas" element={<SimulatorRules />} />
             <Route path="kanban" element={<Kanban />} />
             <Route path="funnel" element={<Navigate to="/app/dashboard" replace />} />
-            <Route path="digitalizacion" element={<Digitalizacion />} />
+            <Route path="digitalizacion" element={<Navigate to="/app/expedientes" replace />} />
             <Route path="plantillas-pdf" element={<PdfTemplates />} />
             <Route path="reniec" element={<DniSearch />} />
             <Route path="usuarios" element={<UserManagement />} />

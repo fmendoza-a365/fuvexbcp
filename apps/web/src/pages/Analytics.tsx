@@ -5,7 +5,6 @@ import {
   Map as MapIcon, 
   Clock,
   Trophy,
-  Activity,
   ShieldAlert,
   BarChart3,
   Wallet,
@@ -76,6 +75,21 @@ interface ApiFunnelResponse {
 
 const FUNNEL_COLORS = ['#002A8D', '#3159B8', '#64748B', '#FF7800', '#10B981', '#0EA5E9', '#6366F1', '#0F172A'];
 
+const toDateInput = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getDefaultDateFilters = () => {
+  const now = new Date();
+  return {
+    fecha_inicio: toDateInput(new Date(now.getFullYear(), now.getMonth(), 1)),
+    fecha_fin: toDateInput(now)
+  };
+};
+
 const toNumber = (value: unknown) => {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : 0;
@@ -116,14 +130,16 @@ const Analytics = () => {
   const [activeTab, setActiveTab] = useState('asesores');
   const [funnelData, setFunnelData] = useState<FunnelData | null>(null);
   const [funnelLoading, setFunnelLoading] = useState(false);
-  const [funnelFilters, setFunnelFilters] = useState({ fecha_inicio: '', fecha_fin: '', convenio: '' });
+  const [dateFilters, setDateFilters] = useState(getDefaultDateFilters);
+  const [funnelFilters, setFunnelFilters] = useState({ ...getDefaultDateFilters(), convenio: '' });
   const [showFunnelFilters, setShowFunnelFilters] = useState(false);
   const [hoveredRegion, setHoveredRegion] = useState<any | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<any | null>(null);
 
   useEffect(() => {
     // Try to load from cache first for instant UI
-    const cached = localStorage.getItem('analytics_cache');
+    const cacheKey = `analytics_cache_${dateFilters.fecha_inicio}_${dateFilters.fecha_fin}`;
+    const cached = localStorage.getItem(cacheKey);
     if (cached) {
       const data = JSON.parse(cached);
       setDashboardData(data.dash);
@@ -139,25 +155,40 @@ const Analytics = () => {
     const handleRefresh = () => fetchData(true);
     window.addEventListener('refresh-sales', handleRefresh);
     return () => window.removeEventListener('refresh-sales', handleRefresh);
-  }, []);
+  }, [dateFilters.fecha_inicio, dateFilters.fecha_fin]);
+
+  useEffect(() => {
+    setFunnelFilters(prev => ({
+      ...prev,
+      fecha_inicio: dateFilters.fecha_inicio,
+      fecha_fin: dateFilters.fecha_fin
+    }));
+  }, [dateFilters.fecha_inicio, dateFilters.fecha_fin]);
+
+  const buildDashboardParams = () => ({
+    fecha_inicio: dateFilters.fecha_inicio,
+    fecha_fin: dateFilters.fecha_fin
+  });
 
   const fetchData = async (silent = false) => {
     // Only show loader if we don't have cached data
-    if (!silent && !localStorage.getItem('analytics_cache')) {
+    const cacheKey = `analytics_cache_${dateFilters.fecha_inicio}_${dateFilters.fecha_fin}`;
+    if (!silent && !localStorage.getItem(cacheKey)) {
       setLoading(true);
     }
     
     try {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
+      const params = buildDashboardParams();
 
       const [dash, ts, geo, rank, ops, funnel] = await Promise.all([
-        axios.get('/api/analytics/dashboard', { headers }),
-        axios.get('/api/analytics/timeseries', { headers }),
-        axios.get('/api/analytics/geography', { headers }),
-        axios.get('/api/analytics/rankings', { headers }),
-        axios.get('/api/analytics/operations', { headers }),
-        axios.get('/api/analytics/funnel', { headers })
+        axios.get('/api/analytics/dashboard', { headers, params }),
+        axios.get('/api/analytics/timeseries', { headers, params }),
+        axios.get('/api/analytics/geography', { headers, params }),
+        axios.get('/api/analytics/rankings', { headers, params }),
+        axios.get('/api/analytics/operations', { headers, params }),
+        axios.get('/api/analytics/funnel', { headers, params })
       ]);
 
       setDashboardData(dash.data);
@@ -168,7 +199,7 @@ const Analytics = () => {
       setFunnelData(normalizeFunnelData(funnel.data));
       
       // Save to cache
-      localStorage.setItem('analytics_cache', JSON.stringify({
+      localStorage.setItem(cacheKey, JSON.stringify({
         dash: dash.data,
         ts: ts.data,
         geo: geo.data,
@@ -274,12 +305,39 @@ const Analytics = () => {
           <p className="page-subtitle">Control comercial, riesgo y operación para decidir dónde empujar hoy.</p>
         </div>
         <div className="page-actions">
+           <div className="bg-surface-100 border border-surface-200 p-2 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-end gap-2">
+             <div>
+               <label className="field-label !mb-1">Desde</label>
+               <input
+                 type="date"
+                 value={dateFilters.fecha_inicio}
+                 onChange={(event) => setDateFilters(prev => ({ ...prev, fecha_inicio: event.target.value }))}
+                 className="field-input !py-2 !text-[11px]"
+               />
+             </div>
+             <div>
+               <label className="field-label !mb-1">Hasta</label>
+               <input
+                 type="date"
+                 value={dateFilters.fecha_fin}
+                 onChange={(event) => setDateFilters(prev => ({ ...prev, fecha_fin: event.target.value }))}
+                 className="field-input !py-2 !text-[11px]"
+               />
+             </div>
+             <button
+               type="button"
+               onClick={() => setDateFilters(getDefaultDateFilters())}
+               className="action-button-secondary h-10 whitespace-nowrap"
+             >
+               Mes actual
+             </button>
+           </div>
            <div className="bg-surface-100 border border-surface-200 px-4 py-2 rounded-xl shadow-sm flex items-center gap-3">
               <div className="w-2 h-2 rounded-full bg-[var(--accent-emerald)] animate-pulse"></div>
               <span className="text-[10px] font-black text-text-700 uppercase tracking-widest">Datos operativos</span>
            </div>
-           <button onClick={() => fetchData()} className="action-button-primary p-3">
-             <Activity size={18} />
+           <button onClick={() => fetchData()} className="action-button-primary p-3" title="Actualizar dashboard">
+             <RefreshCw size={18} />
            </button>
         </div>
       </div>
@@ -941,7 +999,7 @@ const ManagementTablesSection = ({ summaries, formatCurrency }: { summaries: any
           <h3 className="chart-title">
             <BarChart3 size={16} className="text-[var(--accent-blue)]" /> Tablas de Gestión
           </h3>
-          <p className="text-xs font-semibold text-text-700 mt-2">Resumen operativo del mes actual para decidir metas, seguimiento y prioridades de back office.</p>
+          <p className="text-xs font-semibold text-text-700 mt-2">Resumen operativo del periodo seleccionado para decidir metas, seguimiento y prioridades de back office.</p>
         </div>
         <button onClick={exportCsv} disabled={rows.length === 0} className="action-button-secondary text-[var(--color-bcp-blue)] disabled:opacity-50">
           <Download size={15} /> Exportar
