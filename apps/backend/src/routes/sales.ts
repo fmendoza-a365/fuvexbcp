@@ -1187,8 +1187,8 @@ router.post('/:id/simulacion/calcular', authMiddleware, authorize('VENDEDOR', 'S
   }
 });
 
-// Update basic sale info (SUPERVISOR, JEFE_ZONAL, BACK_OFFICE, SUPERADMIN, GERENTE)
-router.put('/:id', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 'BACK_OFFICE', 'SUPERADMIN', 'GERENTE'), filterProtectedFields, async (req: any, res: any) => {
+// Update basic sale info. Any user with access to the expediente can correct source data used by the PDF.
+router.put('/:id', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 'BACK_OFFICE', 'SUPERADMIN', 'GERENTE', 'VENDEDOR', 'ANALISTA'), filterProtectedFields, async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const expectedVersion = parseExpectedVersion(req);
@@ -1408,7 +1408,7 @@ router.get('/:id/pdf', authMiddleware, async (req: any, res: any) => {
 // POST /api/sales/:id/pdf/regenerar
 // Forzar la regeneración del PDF de convenio (por ejemplo, tras actualizar datos)
 // ═══════════════════════════════════════════════════
-router.post('/:id/pdf/regenerar', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 'BACK_OFFICE', 'SUPERADMIN', 'GERENTE'), async (req: any, res: any) => {
+router.post('/:id/pdf/regenerar', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 'BACK_OFFICE', 'SUPERADMIN', 'GERENTE', 'VENDEDOR', 'ANALISTA'), async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const sale = await prisma.sale.findUnique({ where: { id } });

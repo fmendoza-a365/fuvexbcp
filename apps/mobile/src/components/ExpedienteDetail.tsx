@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, StyleSheet, RefreshControl, Linking, Modal
+  ActivityIndicator, Alert, StyleSheet, RefreshControl, Linking, Modal, TextInput
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -100,6 +100,36 @@ const TIMELINE_FILTERS = [
   { key: 'system', label: 'Sistema' }
 ];
 
+const PDF_CORRECTION_FIELDS = [
+  { key: 'dni_cliente', label: 'DNI cliente', type: 'text' },
+  { key: 'nombres_cliente', label: 'Nombres cliente', type: 'text' },
+  { key: 'celular', label: 'Celular', type: 'text' },
+  { key: 'correo', label: 'Correo', type: 'email' },
+  { key: 'estado_civil_cliente', label: 'Estado civil', type: 'text' },
+  { key: 'direccion', label: 'Direccion', type: 'text' },
+  { key: 'departamento', label: 'Departamento', type: 'text' },
+  { key: 'provincia', label: 'Provincia', type: 'text' },
+  { key: 'distrito', label: 'Distrito', type: 'text' },
+  { key: 'convenio', label: 'Convenio', type: 'text' },
+  { key: 'entidad_laboral', label: 'Entidad laboral', type: 'text' },
+  { key: 'cargo_laboral', label: 'Cargo laboral', type: 'text' },
+  { key: 'monto_solicitado', label: 'Monto solicitado', type: 'number' },
+  { key: 'plazo_deseado', label: 'Plazo deseado', type: 'number' },
+  { key: 'cotizacion_monto', label: 'Monto cotizado', type: 'number' },
+  { key: 'cotizacion_plazo', label: 'Plazo cotizado', type: 'number' },
+  { key: 'cotizacion_cuota', label: 'Cuota cotizada', type: 'number' },
+  { key: 'conyuge_dni', label: 'DNI conyuge', type: 'text' },
+  { key: 'conyuge_nombres', label: 'Nombres conyuge', type: 'text' },
+] as const;
+
+const PDF_NUMERIC_FIELDS = new Set(['monto_solicitado', 'plazo_deseado', 'cotizacion_monto', 'cotizacion_plazo', 'cotizacion_cuota']);
+
+const buildPdfCorrectionForm = (source: any = {}) => PDF_CORRECTION_FIELDS.reduce((acc, field) => {
+  const rawValue = source?.[field.key];
+  acc[field.key] = rawValue === null || rawValue === undefined ? '' : String(rawValue);
+  return acc;
+}, {} as Record<string, string>);
+
 const getTimelineIconName = (type: string) => {
   if (type === 'state') return 'git-branch-outline';
   if (type === 'note') return 'chatbox-ellipses-outline';
@@ -125,6 +155,10 @@ export default function ExpedienteDetail({ saleId, onClose, onOpenCalculator, is
   const [timelinePage, setTimelinePage] = useState(1);
   const [timelinePages, setTimelinePages] = useState(1);
   const [timelineTotal, setTimelineTotal] = useState(0);
+  const [showPdfEditor, setShowPdfEditor] = useState(false);
+  const [pdfForm, setPdfForm] = useState<Record<string, string>>({});
+  const [pdfSaving, setPdfSaving] = useState(false);
+  const [pdfSaved, setPdfSaved] = useState(false);
 
   const fetchDetail = useCallback(async (showLoader = false) => {
     if (showLoader) setLoading(true);
@@ -180,6 +214,20 @@ export default function ExpedienteDetail({ saleId, onClose, onOpenCalculator, is
     if (!showTimeline) return;
     fetchTimeline(1, false);
   }, [showTimeline, timelineFilter, fetchTimeline]);
+
+  useEffect(() => {
+    if (!sale) return;
+    setPdfForm(buildPdfCorrectionForm(sale));
+    setPdfSaved(false);
+  }, [sale?.id, sale?.updated_at, sale?.version]);
+
+  const pdfBaseline = buildPdfCorrectionForm(sale || {});
+  const pdfDirty = PDF_CORRECTION_FIELDS.some((field) => (pdfForm[field.key] || '').trim() !== (pdfBaseline[field.key] || '').trim());
+
+  const handlePdfFieldChange = (key: string, value: string) => {
+    setPdfForm(current => ({ ...current, [key]: value }));
+    setPdfSaved(false);
+  };
 
   const handleUploadChecklistDocument = useCallback(async (item: ChecklistItem) => {
     try {
@@ -276,6 +324,70 @@ export default function ExpedienteDetail({ saleId, onClose, onOpenCalculator, is
       setPdfLoading(false);
     }
   }, [sale, saleId]);
+
+  const savePdfCorrection = useCallback(async () => {
+    if (!sale) return;
+    setPdfSaving(true);
+    try {
+      const baseline = buildPdfCorrectionForm(sale);
+      const payload: Record<string, any> = {};
+
+      for (const field of PDF_CORRECTION_FIELDS) {
+        const nextValue = (pdfForm[field.key] || '').trim();
+        const previousValue = (baseline[field.key] || '').trim();
+        if (nextValue === previousValue) continue;
+
+        if (['dni_cliente', 'nombres_cliente', 'celular'].includes(field.key) && !nextValue) {
+          Alert.alert('Dato obligatorio', `${field.label} no puede quedar vacio.`);
+          return;
+        }
+
+        if (['dni_cliente', 'conyuge_dni'].includes(field.key) && nextValue && !/^\d{8}$/.test(nextValue)) {
+          Alert.alert('Dato invalido', `${field.label} debe tener 8 digitos.`);
+          return;
+        }
+
+        if (field.key === 'correo' && nextValue && !/^\S+@\S+\.\S+$/.test(nextValue)) {
+          Alert.alert('Correo invalido', 'El correo debe tener un formato valido.');
+          return;
+        }
+
+        if (PDF_NUMERIC_FIELDS.has(field.key)) {
+          if (nextValue === '') {
+            payload[field.key] = null;
+            continue;
+          }
+          const parsed = Number(nextValue);
+          if (Number.isNaN(parsed)) {
+            Alert.alert('Dato invalido', `${field.label} debe ser numerico.`);
+            return;
+          }
+          payload[field.key] = parsed;
+          continue;
+        }
+
+        payload[field.key] = nextValue || null;
+      }
+
+      if (Object.keys(payload).length === 0) {
+        setPdfSaved(true);
+        return;
+      }
+
+      if (sale.version) payload.expected_version = sale.version;
+
+      await api.put(`/sales/${saleId}`, payload);
+      await api.post(`/sales/${saleId}/pdf/regenerar`);
+      await fetchDetail(false);
+      setPdfSaved(true);
+      Alert.alert('PDF actualizado', 'Los datos fueron guardados y el PDF fue regenerado.');
+    } catch (error: any) {
+      const message = error.response?.data?.error || 'No se pudo actualizar los datos del PDF.';
+      Alert.alert('Error', message);
+    } finally {
+      setPdfSaving(false);
+    }
+  }, [fetchDetail, pdfForm, sale, saleId]);
 
   const registerBoleta = useCallback(async () => {
     setActionLoading('boleta');
@@ -821,6 +933,63 @@ export default function ExpedienteDetail({ saleId, onClose, onOpenCalculator, is
                 </>
               )}
             </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setShowPdfEditor(current => !current)}
+              style={[s.pdfEditToggle, { backgroundColor: theme.blueSoft, borderColor: theme.border }]}
+            >
+              <Ionicons name={showPdfEditor ? 'chevron-up-outline' : 'create-outline'} size={15} color={theme.blue} />
+              <Text style={[s.pdfEditToggleText, { color: theme.blue }]}>
+                {showPdfEditor ? 'Ocultar correccion de datos' : 'Corregir datos del PDF'}
+              </Text>
+            </TouchableOpacity>
+
+            {showPdfEditor && (
+              <View style={[s.pdfEditor, { backgroundColor: theme.input, borderColor: theme.border }]}>
+                <Text style={[s.pdfEditorIntro, { color: theme.subtext }]}>
+                  Edita los datos fuente si detectas un error en el contrato. Al guardar se regenera el PDF.
+                </Text>
+                {PDF_CORRECTION_FIELDS.map((field) => (
+                  <View key={field.key} style={s.pdfFieldWrap}>
+                    <Text style={[s.pdfFieldLabel, { color: theme.subtext }]}>{field.label}</Text>
+                    <TextInput
+                      value={pdfForm[field.key] || ''}
+                      onChangeText={(value) => handlePdfFieldChange(field.key, value)}
+                      keyboardType={field.type === 'number' ? 'decimal-pad' : field.type === 'email' ? 'email-address' : 'default'}
+                      autoCapitalize={field.type === 'email' ? 'none' : 'characters'}
+                      placeholder={field.label}
+                      placeholderTextColor={theme.muted}
+                      style={[s.pdfInput, { color: theme.text, backgroundColor: theme.white, borderColor: theme.border }]}
+                    />
+                  </View>
+                ))}
+
+                {pdfSaved && !pdfDirty ? (
+                  <View style={[s.pdfSavedBadge, { backgroundColor: theme.emeraldSoft }]}>
+                    <Ionicons name="checkmark-circle-outline" size={15} color={theme.emerald} />
+                    <Text style={[s.pdfSavedText, { color: theme.emerald }]}>Datos sincronizados</Text>
+                  </View>
+                ) : null}
+
+                <TouchableOpacity
+                  onPress={savePdfCorrection}
+                  disabled={pdfSaving || !pdfDirty}
+                  style={[
+                    s.pdfSaveBtn,
+                    { backgroundColor: theme.blue },
+                    (pdfSaving || !pdfDirty) && { opacity: 0.55 }
+                  ]}
+                >
+                  {pdfSaving ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="save-outline" size={15} color="#FFF" />
+                      <Text style={s.pdfSaveText}>Guardar y regenerar PDF</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         )}
 
@@ -1058,10 +1227,12 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingHorizontal: 12
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexWrap: 'wrap'
   },
-  actionButtonText: { fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
-  actionHint: { fontSize: 9, fontWeight: '700', marginTop: 2, textAlign: 'center' },
+  actionButtonText: { fontSize: 11, fontWeight: '900', letterSpacing: 0.5, flexShrink: 1, textAlign: 'center', lineHeight: 15 },
+  actionHint: { width: '100%', fontSize: 10, fontWeight: '700', marginTop: 2, textAlign: 'center', lineHeight: 14 },
   dataGrid: { gap: 10 },
   dataTile: {
     borderWidth: 1,
@@ -1097,8 +1268,8 @@ const s = StyleSheet.create({
   stepUrgent: { marginHorizontal: -8, paddingHorizontal: 8, borderRadius: 8 },
   stepNumber: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   stepNumText: { fontSize: 14, fontWeight: '900' },
-  stepAction: { fontSize: 13, fontWeight: '800' },
-  stepDesc: { fontSize: 11, marginTop: 2 },
+  stepAction: { fontSize: 13, fontWeight: '800', flexShrink: 1, lineHeight: 17 },
+  stepDesc: { fontSize: 11, marginTop: 2, lineHeight: 16, flexShrink: 1 },
   observationItem: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   observationHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   observationTitle: { flex: 1, fontSize: 12, fontWeight: '900' },
@@ -1217,5 +1388,87 @@ const s = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 0.5,
+  },
+  pdfEditToggle: {
+    minHeight: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: 14,
+    marginBottom: 14,
+  },
+  pdfEditToggleText: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    flexShrink: 1,
+    textAlign: 'center',
+  },
+  pdfEditor: {
+    marginHorizontal: 14,
+    marginBottom: 14,
+    borderRadius: DESIGN.radius.md,
+    borderWidth: 1,
+    padding: 12,
+  },
+  pdfEditorIntro: {
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  pdfFieldWrap: {
+    marginBottom: 10,
+  },
+  pdfFieldLabel: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 5,
+  },
+  pdfInput: {
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  pdfSaveBtn: {
+    minHeight: 44,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 2,
+  },
+  pdfSaveText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    flexShrink: 1,
+    textAlign: 'center',
+  },
+  pdfSavedBadge: {
+    minHeight: 34,
+    borderRadius: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  pdfSavedText: {
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
   },
 });

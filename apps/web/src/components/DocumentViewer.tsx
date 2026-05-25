@@ -126,6 +126,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   const [contractSaving, setContractSaving] = useState(false);
   const [contractSaved, setContractSaved] = useState(false);
   const [timelineCounts, setTimelineCounts] = useState<Record<string, number>>({});
+  const [activeDetailPanel, setActiveDetailPanel] = useState<'documentos' | 'contrato' | 'seguimiento'>('documentos');
 
   const traceSource = detailSale || sale;
   const docs = traceSource.documents || sale.documents || [];
@@ -145,6 +146,11 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
   const contractBaseline = buildContractForm(traceSource);
   const contractDirty = CONTRACT_FIELDS.some((field) => (contractForm[field.key] || '').trim() !== (contractBaseline[field.key] || '').trim());
   const contractSections = Array.from(new Set(CONTRACT_FIELDS.map((field) => field.section)));
+  const detailPanels = [
+    { key: 'documentos' as const, label: 'Documentos', icon: FileText },
+    { key: 'contrato' as const, label: 'Contrato y PDF', icon: PencilLine },
+    { key: 'seguimiento' as const, label: 'Trazabilidad', icon: History }
+  ];
 
   const traceItems: TraceItem[] = [
     ...(traceSource.feedback ? [{
@@ -240,37 +246,25 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
     setContractSaved(false);
   }, [traceSource.id, traceSource.updated_at, traceSource.version]);
 
+  const fetchAvailableTransitions = async () => {
+    setTransitionsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`/api/sales/${sale.id}/next-steps`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAvailableTransitions(res.data?.transiciones_disponibles || []);
+    } catch (err) {
+      console.error('Error fetching transitions', err);
+      setAvailableTransitions([]);
+    } finally {
+      setTransitionsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    let cancelled = false;
-
-    const fetchAvailableTransitions = async () => {
-      setTransitionsLoading(true);
-      try {
-        const token = localStorage.getItem('token');
-        const res = await axios.get(`/api/sales/${sale.id}/next-steps`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (!cancelled) {
-          setAvailableTransitions(res.data?.transiciones_disponibles || []);
-        }
-      } catch (err) {
-        console.error('Error fetching transitions', err);
-        if (!cancelled) {
-          setAvailableTransitions([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setTransitionsLoading(false);
-        }
-      }
-    };
-
     fetchAvailableTransitions();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [sale.id]);
+  }, [sale.id, detailSale?.estado]);
 
   const fetchDocumentBlob = async (doc: any, download = false) => {
     const token = localStorage.getItem('token');
@@ -454,6 +448,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
         headers: { Authorization: `Bearer ${token}` }
       });
       setDetailSale(refreshed.data);
+      await fetchAvailableTransitions();
       await onUpdate();
       const blob = await fetchPdfBlob(false);
       openPdfPreview(blob);
@@ -659,6 +654,61 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
     }
   };
 
+  const renderActionsPanel = () => (
+    <section className="space-y-3">
+      <h3 className="text-xs font-semibold text-text-700 uppercase tracking-wider">Acciones disponibles</h3>
+
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-700">
+          <div className="flex items-start gap-2">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+            <p className="text-xs font-semibold leading-relaxed">{error}</p>
+          </div>
+          {missingDocs.length > 0 && (
+            <ul className="mt-2 space-y-1 pl-6 text-xs font-medium list-disc">
+              {missingDocs.map((doc, index) => (
+                <li key={`${doc.tipo || doc.nombre || 'doc'}-${index}`}>
+                  {formatMissingDoc(doc)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {transitionsLoading ? (
+        <div className="flex items-center justify-center gap-2 py-3 text-xs font-bold text-text-700 uppercase">
+          <Loader2 size={16} className="animate-spin" /> Cargando acciones
+        </div>
+      ) : availableTransitions.length > 0 ? (
+        <div className="space-y-2">
+          {availableTransitions.map((transition) => (
+            <button
+              key={transition.destino}
+              onClick={() => handleTransitionClick(transition)}
+              disabled={loading}
+              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${getTransitionButtonClass(transition.destino)}`}
+              title={transition.descripcion}
+            >
+              {loading ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+              ) : (
+                <>
+                  {getTransitionIcon(transition.destino)}
+                  {transition.destino_label || formatEstadoLabel(transition.destino)}
+                </>
+              )}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-center text-text-700 font-medium">
+          No hay transiciones disponibles para tu rol desde este estado.
+        </p>
+      )}
+    </section>
+  );
+
   return (
     <>
       <div 
@@ -679,8 +729,8 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                     <h2 id="modal-title" className="text-xl font-bold text-slate-800 truncate">
                       Expediente {traceSource.dni_cliente || sale.dni_cliente}
                     </h2>
-                    <span className={`px-2.5 py-0.5 rounded text-xs font-semibold border ${getStatusColor(sale.estado)}`}>
-                      {sale.estado}
+                    <span className={`px-2.5 py-0.5 rounded text-xs font-semibold border ${getStatusColor(traceSource.estado || sale.estado)}`}>
+                      {traceSource.estado || sale.estado}
                     </span>
                   </div>
                   <p className="text-sm text-text-700 mt-1 truncate">
@@ -724,12 +774,39 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
             </div>
             <div className="rounded-lg border border-surface-200 bg-surface-100 p-3">
               <p className="text-[10px] font-black uppercase tracking-wider text-text-700">Riesgo</p>
-              <p className="mt-1 text-lg font-black text-slate-800">{sale.rcc_semaforo ? calificacion[sale.rcc_semaforo]?.label : 'Pendiente'}</p>
+              <p className="mt-1 text-lg font-black text-slate-800">{traceSource.rcc_semaforo ? calificacion[traceSource.rcc_semaforo]?.label : 'Pendiente'}</p>
             </div>
           </div>
 
           <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_420px] bg-surface-50/60">
             <main className="min-h-0 overflow-y-auto p-5 sm:p-7 space-y-6">
+              <div className="sticky top-0 z-10 -mx-1 rounded-xl border border-surface-200 bg-surface-100/95 p-1 shadow-sm backdrop-blur">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1">
+                  {detailPanels.map((panel) => {
+                    const PanelIcon = panel.icon;
+                    const active = activeDetailPanel === panel.key;
+
+                    return (
+                      <button
+                        key={panel.key}
+                        type="button"
+                        onClick={() => setActiveDetailPanel(panel.key)}
+                        className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-black uppercase tracking-wider transition-colors ${
+                          active
+                            ? 'bg-[var(--color-bcp-blue)] text-white shadow-sm'
+                            : 'text-text-700 hover:bg-surface-50 hover:text-[var(--color-bcp-blue)]'
+                        }`}
+                      >
+                        <PanelIcon size={15} />
+                        {panel.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {activeDetailPanel === 'documentos' && (
+              <div className="space-y-6">
               <section className="bg-surface-100 border border-surface-200 rounded-xl overflow-hidden shadow-sm">
                 <div className="px-4 py-3 border-b border-surface-200 flex items-center justify-between gap-3 bg-surface-100">
                   <div>
@@ -792,7 +869,11 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                   )}
                 </div>
               </section>
+              </div>
+              )}
 
+              {activeDetailPanel === 'contrato' && (
+              <div className="space-y-6">
               <section className="bg-surface-100 border border-surface-200 rounded-xl overflow-hidden shadow-sm">
                 <div className="px-4 py-3 border-b border-surface-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-100">
                   <div>
@@ -971,7 +1052,11 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                   </p>
                 </div>
               </section>
+              </div>
+              )}
 
+              {activeDetailPanel === 'seguimiento' && (
+              <div className="space-y-6">
               <section className="bg-surface-100 border border-surface-200 rounded-xl overflow-hidden shadow-sm">
                 <div className="px-4 py-3 border-b border-surface-200 flex items-center justify-between gap-3 bg-surface-100">
                   <div>
@@ -1031,9 +1116,15 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                   </div>
                 )}
               </section>
+              </div>
+              )}
             </main>
 
             <aside className="min-h-0 overflow-y-auto bg-surface-100 border-t lg:border-t-0 lg:border-l border-surface-200 p-6 space-y-6">
+              <div className="rounded-xl border border-[rgba(0,42,141,0.16)] bg-[rgba(0,42,141,0.04)] p-4">
+                {renderActionsPanel()}
+              </div>
+
               <section className="space-y-3">
                 <h3 className="text-xs font-semibold text-text-700 uppercase tracking-wider">Credito</h3>
                 <div className="rounded-xl border border-surface-200 bg-surface-50 overflow-hidden">
@@ -1048,7 +1139,7 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                     </div>
                     <div className="p-3">
                       <p className="text-[10px] font-black uppercase text-text-700">Plazo</p>
-                      <p className="text-sm font-bold text-slate-700">{sale.plazo_deseado ? `${sale.plazo_deseado} meses` : '-'}</p>
+                      <p className="text-sm font-bold text-slate-700">{traceSource.plazo_deseado ? `${traceSource.plazo_deseado} meses` : '-'}</p>
                     </div>
                   </div>
                   <div className="p-3 border-t border-surface-200">
@@ -1233,59 +1324,6 @@ export default function DocumentViewer({ sale, onClose, onUpdate }: DocumentView
                       </div>
                     )}
                   </div>
-                )}
-              </section>
-
-              <section className="space-y-3 pt-4 border-t border-surface-200">
-                <h3 className="text-xs font-semibold text-text-700 uppercase tracking-wider">Acciones disponibles</h3>
-
-                {error && (
-                  <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-700">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                      <p className="text-xs font-semibold leading-relaxed">{error}</p>
-                    </div>
-                    {missingDocs.length > 0 && (
-                      <ul className="mt-2 space-y-1 pl-6 text-xs font-medium list-disc">
-                        {missingDocs.map((doc, index) => (
-                          <li key={`${doc.tipo || doc.nombre || 'doc'}-${index}`}>
-                            {formatMissingDoc(doc)}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-
-                {transitionsLoading ? (
-                  <div className="flex items-center justify-center gap-2 py-3 text-xs font-bold text-text-700 uppercase">
-                    <Loader2 size={16} className="animate-spin" /> Cargando acciones
-                  </div>
-                ) : availableTransitions.length > 0 ? (
-                  <div className="space-y-2">
-                    {availableTransitions.map((transition) => (
-                      <button
-                        key={transition.destino}
-                        onClick={() => handleTransitionClick(transition)}
-                        disabled={loading}
-                        className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${getTransitionButtonClass(transition.destino)}`}
-                        title={transition.descripcion}
-                      >
-                        {loading ? (
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-                        ) : (
-                          <>
-                            {getTransitionIcon(transition.destino)}
-                            {transition.destino_label || formatEstadoLabel(transition.destino)}
-                          </>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-center text-text-700 font-medium">
-                    No hay transiciones disponibles para tu rol desde este estado.
-                  </p>
                 )}
               </section>
             </aside>

@@ -569,6 +569,7 @@ export default function App() {
     const totalDisbursed = kpi?.totalDisbursed || 0;
     return calculateCommission(totalDisbursed);
   }, [kpi]);
+  const canViewLeadershipDashboard = ['SUPERADMIN', 'GERENTE', 'JEFE_ZONAL', 'SUPERVISOR'].includes(user?.role);
 
   const handleSubmit = async () => {
     const evaluaConyuge = requiresSpouseEvaluation(estadoCivil);
@@ -772,6 +773,61 @@ export default function App() {
           <Text style={styles.commissionNote}>Basado en volumen total del mes</Text>
         </View>
       </View>
+
+      {canViewLeadershipDashboard && (
+        <View style={styles.fullSaleCard}>
+          <View style={styles.sectionHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+              <View style={{ backgroundColor: theme.blueSoft, padding: 9, borderRadius: 10, marginRight: 10 }}>
+                <Ionicons name="analytics-outline" size={18} color={theme.blue} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>DASHBOARD EJECUTIVO</Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: theme.subtext, marginTop: 2 }}>
+                  Evolucion comercial segun tu jerarquia
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.saleMetricGrid}>
+            <View style={styles.saleMetricBox}>
+              <Text style={styles.saleMetricLabel}>PIPELINE</Text>
+              <Text style={styles.saleMetricValue}>S/ {Math.round(kpi?.pipelineValue || 0).toLocaleString()}</Text>
+            </View>
+            <View style={styles.saleMetricBox}>
+              <Text style={styles.saleMetricLabel}>ACTIVOS</Text>
+              <Text style={styles.saleMetricValue}>{kpi?.pipelineCount || 0} exp.</Text>
+            </View>
+          </View>
+
+          <View style={[styles.saleMetricGrid, { marginTop: 10 }]}>
+            <View style={styles.saleMetricBox}>
+              <Text style={styles.saleMetricLabel}>CONVERSION</Text>
+              <Text style={styles.saleMetricValue}>{Number(kpi?.conversionRate || 0).toFixed(1)}%</Text>
+            </View>
+            <View style={styles.saleMetricBox}>
+              <Text style={styles.saleMetricLabel}>PROYECCION</Text>
+              <Text style={styles.saleMetricValue}>S/ {Math.round(kpi?.forecasting || 0).toLocaleString()}</Text>
+            </View>
+          </View>
+
+          <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: theme.divider }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Text style={styles.metaLabel}>Pendiente de cierre</Text>
+              <Text style={[styles.metaLabel, { color: theme.blue, fontWeight: '900' }]}>
+                S/ {Math.round(kpi?.pendingValue || 0).toLocaleString()}
+              </Text>
+            </View>
+            <View style={[styles.progressBarBg, { backgroundColor: theme.track }]}>
+              <View style={[styles.progressBarFill, { width: `${Math.min(kpi?.conversionRate || 0, 100)}%`, backgroundColor: theme.blue }]} />
+            </View>
+            <Text style={styles.metaLabel}>
+              Productividad: {Number(kpi?.productivity || 0).toFixed(1)} expedientes por asesor activo
+            </Text>
+          </View>
+        </View>
+      )}
 
       <TouchableOpacity
         style={[
