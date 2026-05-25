@@ -25,18 +25,18 @@ RUN apk add --no-cache curl openssl chromium nss freetype harfbuzz ca-certificat
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 expressjs
 
-COPY --from=builder /app/package.json ./package.json
+COPY --from=builder --chown=expressjs:nodejs /app/package.json ./package.json
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/backend/package.json ./apps/backend/package.json
-COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
-COPY --from=builder /app/apps/backend/prisma ./apps/backend/prisma
-COPY --from=builder /app/apps/backend/templates ./apps/backend/templates
-COPY --from=builder /app/apps/web/dist ./apps/web/dist
-COPY --from=builder /app/Recursos ./Recursos
-COPY --from=builder /app/Recursos ./apps/Recursos
+COPY --from=builder --chown=expressjs:nodejs /app/apps/backend/package.json ./apps/backend/package.json
+COPY --from=builder --chown=expressjs:nodejs /app/apps/backend/dist ./apps/backend/dist
+COPY --from=builder --chown=expressjs:nodejs /app/apps/backend/prisma ./apps/backend/prisma
+COPY --from=builder --chown=expressjs:nodejs /app/apps/backend/templates ./apps/backend/templates
+COPY --from=builder --chown=expressjs:nodejs /app/apps/web/dist ./apps/web/dist
+COPY --from=builder --chown=expressjs:nodejs /app/Recursos ./Recursos
+COPY --from=builder --chown=expressjs:nodejs /app/Recursos ./apps/Recursos
 
-RUN mkdir -p storage/expedientes storage/public backups
-RUN chown -R expressjs:nodejs /app
+RUN mkdir -p storage/expedientes storage/public backups \
+  && chown -R expressjs:nodejs storage backups
 
 EXPOSE 3001
 
