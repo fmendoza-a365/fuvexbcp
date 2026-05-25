@@ -113,23 +113,103 @@ app.use((req: any, res, next) => {
   next();
 });
 
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: { error: 'Demasiados intentos de login. Intenta de nuevo en 15 minutos.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+
+const LOGIN_MAX_FAILED_ATTEMPTS = 5;
+const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const SUPERADMIN_LOGIN_LOCK_MS = 5 * 60 * 1000;
+const STANDARD_LOGIN_LOCK_MS = 10 * 60 * 1000;
+
+type LoginAttemptRecord = {
+  failures: number;
+  firstFailureAt: number;
+  lastFailureAt: number;
+  lockedUntil: number;
+};
+
+const loginAttempts = new Map<string, LoginAttemptRecord>();
+
+function normalizeLoginUsername(username: unknown) {
+  return String(username || '').trim().toLowerCase();
+}
+
+function getLoginClientIp(req: express.Request) {
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return forwarded || req.ip || req.socket.remoteAddress || 'unknown';
+}
+
+function getLoginAttemptKey(username: string, ip: string) {
+  return `${username || 'unknown'}:${ip}`;
+}
+
+function getLoginLockMs(role?: string | null) {
+  return role === 'SUPERADMIN' ? SUPERADMIN_LOGIN_LOCK_MS : STANDARD_LOGIN_LOCK_MS;
+}
+
+function getActiveLoginAttempt(key: string) {
+  const now = Date.now();
+  const record = loginAttempts.get(key);
+  if (!record) return null;
+
+  const windowExpired = now - record.firstFailureAt > LOGIN_FAILURE_WINDOW_MS;
+  const lockExpired = record.lockedUntil > 0 && now >= record.lockedUntil;
+  if ((windowExpired && record.lockedUntil === 0) || lockExpired) {
+    loginAttempts.delete(key);
+    return null;
+  }
+
+  return record;
+}
+
+function getRetryAfterSeconds(record: LoginAttemptRecord) {
+  return Math.max(1, Math.ceil((record.lockedUntil - Date.now()) / 1000));
+}
+
+function registerLoginFailure(req: express.Request, username: string, role?: string | null, reason = 'invalid_credentials') {
+  const now = Date.now();
+  const ip = getLoginClientIp(req);
+  const key = getLoginAttemptKey(username, ip);
+  const existing = getActiveLoginAttempt(key);
+  const record: LoginAttemptRecord = existing || {
+    failures: 0,
+    firstFailureAt: now,
+    lastFailureAt: now,
+    lockedUntil: 0
+  };
+
+  record.failures += 1;
+  record.lastFailureAt = now;
+
+  if (record.failures >= LOGIN_MAX_FAILED_ATTEMPTS) {
+    record.lockedUntil = now + getLoginLockMs(role);
+  }
+
+  loginAttempts.set(key, record);
+
+  logger.warn('AUTH', 'Intento de login fallido', {
+    username,
+    role: role || 'UNKNOWN',
+    ip,
+    reason,
+    failures: record.failures,
+    locked_until: record.lockedUntil ? new Date(record.lockedUntil).toISOString() : null,
+    user_agent: req.header('User-Agent') || null
+  });
+
+  return record;
+}
+
+function clearLoginFailures(req: express.Request, username: string) {
+  loginAttempts.delete(getLoginAttemptKey(username, getLoginClientIp(req)));
+}
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
-  message: { error: 'Demasiadas peticiones desde esta IP. Intenta de nuevo en 15 minutos.' },
+  max: 1500,
+  message: { error: 'Demasiadas peticiones desde esta IP. Intenta de nuevo en unos minutos.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-app.use('/api/auth/login', loginLimiter);
 app.use('/api/', apiLimiter);
 
 app.get('/api/health', (_req, res) => {
@@ -163,19 +243,54 @@ app.use((req, _res, next) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
+    const loginUsername = String(username || '').trim();
+    const normalizedUsername = normalizeLoginUsername(loginUsername);
+
+    if (!normalizedUsername || !password) {
+      return res.status(400).json({ error: 'Usuario y contrasena son obligatorios' });
+    }
+
     const user = await prisma.user.findUnique({
-      where: { username },
+      where: { username: loginUsername },
       include: { zone: true }
     });
 
+    const attemptKey = getLoginAttemptKey(normalizedUsername, getLoginClientIp(req));
+    const activeAttempt = getActiveLoginAttempt(attemptKey);
+    if (activeAttempt?.lockedUntil && activeAttempt.lockedUntil > Date.now()) {
+      const retryAfterSeconds = getRetryAfterSeconds(activeAttempt);
+      return res.status(429).json({
+        error: `Demasiados intentos de login. Intenta de nuevo en ${Math.ceil(retryAfterSeconds / 60)} minutos.`,
+        retry_after_seconds: retryAfterSeconds
+      });
+    }
+
     if (!user || !user.activo) {
+      const failedAttempt = registerLoginFailure(req, normalizedUsername, user?.role, user ? 'inactive_user' : 'unknown_user');
+      if (failedAttempt.lockedUntil) {
+        const retryAfterSeconds = getRetryAfterSeconds(failedAttempt);
+        return res.status(429).json({
+          error: `Demasiados intentos de login. Intenta de nuevo en ${Math.ceil(retryAfterSeconds / 60)} minutos.`,
+          retry_after_seconds: retryAfterSeconds
+        });
+      }
       return res.status(401).json({ error: 'Credenciales invalidas o usuario inactivo' });
     }
 
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
+      const failedAttempt = registerLoginFailure(req, normalizedUsername, user.role);
+      if (failedAttempt.lockedUntil) {
+        const retryAfterSeconds = getRetryAfterSeconds(failedAttempt);
+        return res.status(429).json({
+          error: `Demasiados intentos de login. Intenta de nuevo en ${Math.ceil(retryAfterSeconds / 60)} minutos.`,
+          retry_after_seconds: retryAfterSeconds
+        });
+      }
       return res.status(401).json({ error: 'Credenciales invalidas' });
     }
+
+    clearLoginFailures(req, normalizedUsername);
 
     const token = jwt.sign(
       { id: user.id, role: user.role, username: user.username, zone_id: user.zone_id },
