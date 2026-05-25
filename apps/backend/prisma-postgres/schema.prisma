@@ -45,6 +45,30 @@ model User {
   simulaciones      Simulacion[]
   institucionEnvios ExpedienteInstitucion[]
   expediente_bcp    ExpedienteBCP[]
+  pdfTemplates      PdfTemplate[]
+}
+
+model PdfTemplate {
+  id               String   @id @default(uuid())
+  nombre           String
+  convenio         String
+  version          Int      @default(1)
+  original_name    String
+  file_path        String
+  storage_provider String   @default("local")
+  storage_key      String?
+  fields_json      String   @default("[]")
+  mappings_json    String   @default("{}")
+  activo           Boolean  @default(true)
+  created_by       String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+  creator          User?    @relation(fields: [created_by], references: [id])
+
+  @@unique([convenio, version])
+  @@index([convenio])
+  @@index([activo])
+  @@index([created_by])
 }
 
 model Goal {

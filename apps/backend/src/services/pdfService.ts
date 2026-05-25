@@ -4,6 +4,15 @@ import path from 'path';
 import { prisma } from '../db';
 import { storeDocumentFromBuffer } from './storage';
 import { logger } from './logger';
+import {
+  applyPdfTemplateMapping,
+  buildDefaultPdfMapping,
+  buildPdfFieldValueMap,
+  extractPdfTemplateFields,
+  findActivePdfTemplate,
+  parsePdfTemplateJson,
+  resolvePdfTemplateFilePath
+} from './pdfTemplates';
 
 function normalizeTemplateKey(value: string): string {
   return String(value || '')
@@ -24,6 +33,7 @@ function resolveTemplatePath(templateName: string): string | null {
 
   return candidates.find(candidate => fs.existsSync(candidate)) || null;
 }
+
 export function getTemplateFilename(convenio: string): string | null {
   const conv = normalizeTemplateKey(convenio);
   if (!conv) return null;
@@ -44,114 +54,66 @@ export function getTemplateFilename(convenio: string): string | null {
 
 export async function generateAndStoreFilledAgreement(saleId: string, userId: string): Promise<any> {
   try {
-    const sale = await prisma.sale.findUnique({ where: { id: saleId } });
+    const sale = await prisma.sale.findUnique({
+      where: { id: saleId },
+      include: { asesor: { select: { id: true, username: true, nombre: true } } }
+    });
+
     if (!sale) {
       logger.error('pdfService', `Sale with ID ${saleId} not found for PDF generation`);
       return null;
     }
 
-    const templateName = getTemplateFilename(sale.convenio || '');
-    if (!templateName) {
-      logger.warn('pdfService', `No PDF template found for convenio: ${sale.convenio}`);
-      return null;
-    }
-    const templatePath = resolveTemplatePath(templateName);
-    if (!templatePath) {
-      logger.error('pdfService', `PDF Template file not found for ${templateName}. cwd=${process.cwd()}`);
-      return null;
-    }
+    const managedTemplate = await findActivePdfTemplate(sale.convenio || '');
+    let templateName = '';
+    let pdfBytes: Buffer;
+    let mappings: Record<string, string>;
 
-    const pdfBytes = await fs.promises.readFile(templatePath);
-    const pdfDoc = await PDFDocument.load(pdfBytes);
-    const form = pdfDoc.getForm();
-    const fields = form.getFields();
-
-    const now = new Date();
-    const day = String(now.getDate());
-    const month = String(now.getMonth() + 1);
-    const year = String(now.getFullYear());
-    const formattedDate = `${day}/${month}/${year}`;
-
-    const clientName = sale.nombres_cliente || '';
-    const clientDni = sale.dni_cliente || '';
-    const phone = sale.celular || '';
-    const email = sale.correo || '';
-    const address = sale.direccion || '';
-    const dist = sale.distrito || '';
-    const prov = sale.provincia || '';
-    const dept = sale.departamento || '';
-    const convName = sale.convenio || '';
-    const job = sale.cargo_laboral || '';
-    const amount = String(sale.cotizacion_monto || sale.monto_solicitado || sale.maf_neto || '');
-    const term = String(sale.cotizacion_plazo || sale.plazo_deseado || '');
-    const cuota = String(sale.cotizacion_cuota || '');
-    const spouseDni = sale.conyuge_dni || '';
-    const spouseName = sale.conyuge_nombres || '';
-
-    // Fill fields
-    for (const field of fields) {
-      if (field.constructor.name === 'PDFTextField') {
-        const txtField = form.getTextField(field.getName());
-        const name = field.getName().toUpperCase();
-
-        try {
-          if (name === 'N DNI' || name === 'DNI' || name === 'DOCUMENTO') {
-            txtField.setText(clientDni);
-          } else if (name === 'NOMBRE CLIENTE' || name === 'NOMBRES' || name === 'NOMBRES CLIENTE') {
-            txtField.setText(clientName);
-          } else if (name === 'CELULAR') {
-            txtField.setText(phone);
-          } else if (name === 'CORREO') {
-            txtField.setText(email);
-          } else if (name === 'DIRECCION/DOMICILIO' || name === 'DIRECCION') {
-            txtField.setText(address);
-          } else if (name === 'DISTRITO') {
-            txtField.setText(dist);
-          } else if (name === 'PROVINCIA') {
-            txtField.setText(prov);
-          } else if (name === 'DEPARTAMENTO') {
-            txtField.setText(dept);
-          } else if (name === 'CONVENIO') {
-            txtField.setText(convName);
-          } else if (name === 'OCUPACION/GRADO' || name === 'CARGO') {
-            txtField.setText(job);
-          } else if (name === 'PLAZO') {
-            txtField.setText(term);
-          } else if (name === 'IMPORTE' || name === 'N CREDITO' || name === 'MONTO') {
-            txtField.setText(amount);
-          } else if (name === 'CUOTA' || name === 'I FIJO') {
-            txtField.setText(cuota);
-          } else if (name === 'DNI CONYUGE') {
-            txtField.setText(spouseDni);
-          } else if (name === 'NOMBRES CONYUGE') {
-            txtField.setText(spouseName);
-          } else if (name === 'FECHA') {
-            txtField.setText(formattedDate);
-          } else if (name === 'DIA') {
-            txtField.setText(day);
-          } else if (name === 'MES') {
-            txtField.setText(month);
-          } else if (name === 'AÑO') {
-            txtField.setText(year);
-          }
-        } catch (err: any) {
-          logger.error('pdfService', `Error setting field ${field.getName()}: ${err?.message || err}`);
-        }
+    if (managedTemplate) {
+      const templatePath = resolvePdfTemplateFilePath(managedTemplate);
+      if (!templatePath) {
+        logger.error('pdfService', `Managed PDF template file not found for ${managedTemplate.nombre}. cwd=${process.cwd()}`);
+        return null;
       }
+
+      templateName = `${managedTemplate.nombre} v${managedTemplate.version}`;
+      pdfBytes = await fs.promises.readFile(templatePath);
+      const fields = parsePdfTemplateJson<any[]>(managedTemplate.fields_json, []);
+      const parsedMappings = parsePdfTemplateJson<Record<string, string>>(managedTemplate.mappings_json, {});
+      mappings = Object.keys(parsedMappings).length ? parsedMappings : buildDefaultPdfMapping(fields);
+    } else {
+      const staticTemplateName = getTemplateFilename(sale.convenio || '');
+      if (!staticTemplateName) {
+        logger.warn('pdfService', `No PDF template found for convenio: ${sale.convenio}`);
+        return null;
+      }
+
+      const templatePath = resolveTemplatePath(staticTemplateName);
+      if (!templatePath) {
+        logger.error('pdfService', `PDF Template file not found for ${staticTemplateName}. cwd=${process.cwd()}`);
+        return null;
+      }
+
+      templateName = staticTemplateName;
+      pdfBytes = await fs.promises.readFile(templatePath);
+      mappings = buildDefaultPdfMapping(await extractPdfTemplateFields(Buffer.from(pdfBytes)));
     }
+
+    const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    const form = pdfDoc.getForm();
+    const values = buildPdfFieldValueMap(sale);
+    applyPdfTemplateMapping(form, mappings, values);
 
     const modifiedPdfBytes = await pdfDoc.save();
-    const filename = `SOLICITUD_CONVENIO_${clientDni}_${Date.now()}.pdf`;
+    const filename = `SOLICITUD_CONVENIO_${values.dni_cliente || 'sin-dni'}_${Date.now()}.pdf`;
 
-    // Store file in local storage or S3
     const storedDoc = await storeDocumentFromBuffer(
       Buffer.from(modifiedPdfBytes),
       filename,
-      clientDni,
+      values.dni_cliente || 'sin-dni',
       'application/pdf'
     );
 
-    // Register document in DB
     const document = await prisma.document.create({
       data: {
         sale_id: saleId,
@@ -171,7 +133,7 @@ export async function generateAndStoreFilledAgreement(saleId: string, userId: st
       data: {
         sale_id: saleId,
         user_id: userId,
-        accion: "Generación de Documento",
+        accion: 'Generacion de Documento',
         detalles: `PDF de convenio ${templateName} autollenado y registrado como SOLICITUD_CONVENIO`
       }
     });

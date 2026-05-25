@@ -25,6 +25,7 @@ import dniRouter from './routes/dni';
 import checklistRouter from './routes/checklist';
 import digitalizacionRouter from './routes/digitalizacion';
 import mailRouter from './routes/mail';
+import pdfTemplatesRouter from './routes/pdfTemplates';
 import { consultarRCC } from './services/infoburo';
 import { authMiddleware } from './middleware/auth';
 import { logger } from './services/logger';
@@ -322,6 +323,7 @@ app.use('/api/dni', dniRouter);
 app.use('/api/sales', checklistRouter);
 app.use('/api/sales', digitalizacionRouter);
 app.use('/api/mail', mailRouter);
+app.use('/api/pdf-templates', pdfTemplatesRouter);
 
 app.get('/api/infoburo/:dni', authMiddleware, async (req: any, res: any) => {
   try {

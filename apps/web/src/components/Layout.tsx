@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, Link, useLocation } from 'react-router-dom';
 const OutletAny = Outlet as any;
 const LinkAny = Link as any;
-import { LogOut, FileText, Menu, X, Users, MapPin, ChevronLeft, ChevronRight, User, LayoutDashboard, Target, Search, Shield, AlertCircle, Moon, Sun, Calculator, Settings, Columns3, Building2 } from 'lucide-react';
+import { LogOut, FileText, Menu, X, Users, MapPin, ChevronLeft, ChevronRight, User, LayoutDashboard, Target, Search, Shield, AlertCircle, Moon, Sun, Calculator, Settings, Columns3, Building2, FileCog } from 'lucide-react';
 
 import axios from 'axios';
 
@@ -117,6 +117,7 @@ export default function Layout() {
 
   const isAdmin = ['SUPERADMIN', 'GERENTE', 'JEFE_ZONAL'].includes(user.role);
   const isSuperAdminOrGerente = ['SUPERADMIN', 'GERENTE'].includes(user.role);
+  const canManagePdfTemplates = ['SUPERADMIN', 'GERENTE', 'BACK_OFFICE'].includes(user.role);
   const sectionLabel = location.pathname === '/app'
     ? 'Analítica'
     : location.pathname.startsWith('/app/expedientes') || location.pathname.startsWith('/app/digitalizacion') || location.pathname.startsWith('/app/kanban')
@@ -134,6 +135,7 @@ export default function Layout() {
     { to: '/app/simulador-reglas', icon: <Settings size={20} />, label: 'Reglas del Simulador', show: isAdmin },
     { to: '/app/kanban', icon: <Columns3 size={20} />, label: 'Pipeline Visual', show: true },
     { to: '/app/digitalizacion', icon: <Building2 size={20} />, label: 'Digitalización', show: isAdmin },
+    { to: '/app/plantillas-pdf', icon: <FileCog size={20} />, label: 'Plantillas PDF', show: canManagePdfTemplates },
     { to: '/app/usuarios', icon: <Users size={20} />, label: 'Usuarios', show: isAdmin },
     { to: '/app/zonas', icon: <MapPin size={20} />, label: 'Zonas', show: isSuperAdminOrGerente },
   ];
