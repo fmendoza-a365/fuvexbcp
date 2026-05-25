@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import axios from 'axios';
-import { CheckCircle2, FileText, Power, RefreshCw, Save, UploadCloud, XCircle } from 'lucide-react';
+import { CheckCircle2, FileText, Link2, Power, RefreshCw, Save, UploadCloud, XCircle } from 'lucide-react';
 
 type FieldOption = {
   value: string;
@@ -32,6 +32,13 @@ type PdfTemplate = {
   } | null;
 };
 
+type SimulatorConvenio = {
+  id: string;
+  nombre: string;
+  sector?: string | null;
+  activo?: boolean;
+};
+
 const authHeaders = () => ({
   Authorization: `Bearer ${localStorage.getItem('token')}`
 });
@@ -47,6 +54,7 @@ const formatDate = (value: string) => new Date(value).toLocaleString('es-PE', {
 export default function PdfTemplates() {
   const [templates, setTemplates] = useState<PdfTemplate[]>([]);
   const [fieldOptions, setFieldOptions] = useState<FieldOption[]>([]);
+  const [convenioOptions, setConvenioOptions] = useState<SimulatorConvenio[]>([]);
   const [selected, setSelected] = useState<PdfTemplate | null>(null);
   const [nombre, setNombre] = useState('');
   const [convenio, setConvenio] = useState('');
@@ -71,6 +79,19 @@ export default function PdfTemplates() {
 
   const mappedCount = selectedTextFields.filter(field => selected?.mappings[field.name]).length;
 
+  const convenioChoices = useMemo(() => {
+    const byName = new Map<string, SimulatorConvenio>();
+    convenioOptions.forEach(item => {
+      const name = String(item.nombre || '').trim();
+      if (name) byName.set(name, item);
+    });
+    templates.forEach(template => {
+      const name = String(template.convenio || '').trim();
+      if (name && !byName.has(name)) byName.set(name, { id: name, nombre: name, sector: 'Registrado' });
+    });
+    return Array.from(byName.values()).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  }, [convenioOptions, templates]);
+
   const fetchData = async () => {
     setLoading(true);
     setError('');
@@ -79,9 +100,11 @@ export default function PdfTemplates() {
         axios.get('/api/pdf-templates', { headers: authHeaders() }),
         axios.get('/api/pdf-templates/field-options', { headers: authHeaders() })
       ]);
+      const simulatorRes = await axios.get('/api/simulator/config', { headers: authHeaders() }).catch(() => ({ data: { convenios: [] } }));
       const nextTemplates = Array.isArray(templatesRes.data) ? templatesRes.data : [];
       setTemplates(nextTemplates);
       setFieldOptions(Array.isArray(optionsRes.data) ? optionsRes.data : []);
+      setConvenioOptions(Array.isArray(simulatorRes.data?.convenios) ? simulatorRes.data.convenios : []);
       setSelected(current => {
         if (!current) return nextTemplates[0] || null;
         return nextTemplates.find((item: PdfTemplate) => item.id === current.id) || nextTemplates[0] || null;
@@ -247,12 +270,30 @@ export default function PdfTemplates() {
 
               <label className="block">
                 <span className="field-label">Convenio</span>
-                <input
-                  value={convenio}
-                  onChange={event => setConvenio(event.target.value)}
-                  className="field-input"
-                  placeholder="PNP"
-                />
+                {convenioChoices.length > 0 ? (
+                  <select
+                    value={convenio}
+                    onChange={event => setConvenio(event.target.value)}
+                    className="field-input"
+                  >
+                    <option value="">Selecciona convenio...</option>
+                    {convenioChoices.map(option => (
+                      <option key={option.id || option.nombre} value={option.nombre}>
+                        {option.nombre}{option.sector ? ` - ${option.sector}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={convenio}
+                    onChange={event => setConvenio(event.target.value)}
+                    className="field-input"
+                    placeholder="PNP"
+                  />
+                )}
+                <p className="mt-2 text-[11px] font-bold leading-5 text-text-700">
+                  Usa el mismo nombre del convenio del simulador para que el PDF se encuentre automaticamente.
+                </p>
               </label>
 
               <label className="block">
@@ -327,7 +368,9 @@ export default function PdfTemplates() {
                       <span className={`inline-flex items-center gap-2 rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${selected.activo ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200' : 'border-surface-200 bg-surface-50 text-text-700'}`}>
                         {selected.activo ? 'Activa' : 'Inactiva'}
                       </span>
-                      <span className="rounded-lg border border-surface-200 bg-surface-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-text-700">{selected.convenio} - v{selected.version}</span>
+                      <span className="inline-flex items-center gap-1.5 rounded-lg border border-surface-200 bg-surface-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-text-700">
+                        <Link2 size={12} /> {selected.convenio} - v{selected.version}
+                      </span>
                     </div>
                     <h2 className="mt-3 truncate text-xl font-black text-text-900">{selected.nombre}</h2>
                     <p className="mt-1 text-sm font-semibold text-text-700">

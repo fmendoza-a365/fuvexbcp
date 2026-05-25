@@ -86,6 +86,28 @@ export async function generateQuoteImage(sale: any) {
     throw new Error('Plantilla de cotizacion no encontrada.');
   }
 
+  const data = buildQuoteImageData(sale);
+  const dir = path.join(publicDownloadsPath, 'cotizaciones');
+  await fs.promises.mkdir(dir, { recursive: true });
+
+  const fingerprint = crypto
+    .createHash('sha1')
+    .update(JSON.stringify(data.values))
+    .digest('hex')
+    .slice(0, 14);
+  const safeDni = String(sale.dni_cliente || 'cliente').replace(/\D/g, '') || 'cliente';
+  const filename = `cotizacion-${safeDni}-${fingerprint}.png`;
+  const filePath = path.join(dir, filename);
+
+  if (fs.existsSync(filePath)) {
+    return {
+      filename,
+      filePath,
+      cached: true,
+      ...data
+    };
+  }
+
   const html = await fs.promises.readFile(resolvedTemplatePath, 'utf8');
   const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
   const browser = await puppeteer.launch({
@@ -106,7 +128,6 @@ export async function generateQuoteImage(sale: any) {
       `
     });
 
-    const data = buildQuoteImageData(sale);
     await page.$$eval('.field', (fields: any[], values: string[]) => {
       fields.forEach((field, index) => {
         field.value = String(values[index] || '');
@@ -131,17 +152,12 @@ export async function generateQuoteImage(sale: any) {
     if (!element) throw new Error('No se pudo renderizar la cotizacion.');
 
     const image = await element.screenshot({ type: 'png' });
-    const dir = path.join(publicDownloadsPath, 'cotizaciones');
-    await fs.promises.mkdir(dir, { recursive: true });
-
-    const randomId = crypto.randomBytes(8).toString('hex');
-    const filename = `cotizacion-${sale.dni_cliente || 'cliente'}-${randomId}.png`;
-    const filePath = path.join(dir, filename);
     await fs.promises.writeFile(filePath, Buffer.from(image));
 
     return {
       filename,
       filePath,
+      cached: false,
       ...data
     };
   } finally {
@@ -152,11 +168,21 @@ export async function generateQuoteImage(sale: any) {
 export function buildQuoteWhatsAppMessage(sale: any, imageUrl: string) {
   const data = buildQuoteImageData(sale);
   const firstName = String(data.cliente || 'cliente').split(' ')[0];
+  const convenio = String(sale.convenio || 'Convenio BCP').replace(/_/g, ' ');
   return [
-    `Hola ${firstName}, te comparto tu cotizacion BCP.`,
-    `Monto: ${formatMoney(data.monto)}`,
+    '*FUVEX MANAGER BCP*',
+    'Cotizacion referencial de credito por convenio',
+    '',
+    `Hola ${firstName}, te comparto la propuesta generada para tu evaluacion.`,
+    `Cliente: ${String(data.cliente || '').toUpperCase()}`,
+    `Convenio: ${convenio}`,
+    `Monto solicitado: ${formatMoney(data.monto)}`,
     data.cuota ? `Cuota estimada: ${formatMoney(data.cuota)}` : '',
     data.plazo ? `Plazo: ${Math.round(data.plazo)} meses` : '',
-    `Imagen de la cotizacion: ${imageUrl}`
+    '',
+    'Imagen oficial de la cotizacion:',
+    imageUrl,
+    '',
+    'La aprobacion final esta sujeta a validacion documental, evaluacion BCP y condiciones vigentes al momento del tramite.'
   ].filter(Boolean).join('\n');
 }

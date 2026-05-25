@@ -16,6 +16,7 @@ export type PdfTemplateMapping = Record<string, string>;
 export const PDF_TEMPLATE_FIELD_OPTIONS = [
   { value: 'dni_cliente', label: 'DNI cliente', group: 'Cliente' },
   { value: 'nombres_cliente', label: 'Nombre completo cliente', group: 'Cliente' },
+  { value: 'nombres_solo_cliente', label: 'Nombres cliente sin apellidos', group: 'Cliente' },
   { value: 'apellido_paterno_cliente', label: 'Apellido paterno cliente', group: 'Cliente' },
   { value: 'apellido_materno_cliente', label: 'Apellido materno cliente', group: 'Cliente' },
   { value: 'fecha_nacimiento_cliente', label: 'Fecha nacimiento cliente', group: 'Cliente' },
@@ -43,7 +44,8 @@ export const PDF_TEMPLATE_FIELD_OPTIONS = [
   { value: 'periodo_gracia', label: 'Periodo de gracia', group: 'Credito' },
   { value: 'ruc_cliente', label: 'RUC cliente', group: 'Cliente' },
   { value: 'dni_conyuge', label: 'DNI conyuge', group: 'Conyuge' },
-  { value: 'nombres_conyuge', label: 'Nombres conyuge', group: 'Conyuge' },
+  { value: 'nombres_conyuge', label: 'Nombre completo conyuge', group: 'Conyuge' },
+  { value: 'nombres_solo_conyuge', label: 'Nombres conyuge sin apellidos', group: 'Conyuge' },
   { value: 'apellido_paterno_conyuge', label: 'Apellido paterno conyuge', group: 'Conyuge' },
   { value: 'apellido_materno_conyuge', label: 'Apellido materno conyuge', group: 'Conyuge' },
   { value: 'asesor_nombre', label: 'Nombre asesor', group: 'Venta' },
@@ -108,20 +110,68 @@ function firstValue(...values: unknown[]) {
   return '';
 }
 
+function hasAny(value: string, fragments: string[]) {
+  return fragments.some(fragment => value.includes(fragment));
+}
+
+function splitPersonName(value?: string | null) {
+  const clean = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return { nombres: '', paterno: '', materno: '' };
+
+  const commaParts = clean.split(',').map(part => part.trim()).filter(Boolean);
+  if (commaParts.length >= 2) {
+    const surnameParts = commaParts[0].split(' ').filter(Boolean);
+    return {
+      nombres: commaParts.slice(1).join(' '),
+      paterno: surnameParts[0] || '',
+      materno: surnameParts.slice(1).join(' ')
+    };
+  }
+
+  const parts = clean.split(' ').filter(Boolean);
+  if (parts.length >= 3) {
+    return {
+      nombres: parts.slice(0, -2).join(' '),
+      paterno: parts[parts.length - 2] || '',
+      materno: parts[parts.length - 1] || ''
+    };
+  }
+
+  if (parts.length === 2) {
+    return {
+      nombres: parts[0] || '',
+      paterno: parts[1] || '',
+      materno: ''
+    };
+  }
+
+  return { nombres: clean, paterno: '', materno: '' };
+}
+
 function suggestSourceKey(fieldName: string, fieldType: string): string | null {
   if (fieldType !== 'PDFTextField') return null;
 
   const name = normalizePdfTemplateKey(fieldName);
+  const isSpouse = hasAny(name, ['CONYUGE', 'CONYUGUE', 'ESPOSA', 'ESPOSO']);
+  const isPaternal = hasAny(name, ['PATERNO', 'APELLIDO P', 'AP P', 'AP PAT']);
+  const isMaternal = hasAny(name, ['MATERNO', 'APELLIDO M', 'AP M', 'AP MAT']);
+  const isDocument = hasAny(name, ['DNI', 'DOCUMENTO', 'DOC IDENTIDAD', 'NUM DOC', 'NRO DOC']);
+  const isFullName = hasAny(name, ['NOMBRE COMPLETO', 'NOMBRES Y APELLIDOS', 'APELLIDOS Y NOMBRES', 'APELLIDO Y NOMBRE'])
+    || name === 'CLIENTE'
+    || name === 'TITULAR';
+  const isGivenName = hasAny(name, ['NOMBRE', 'NOMBRES']);
 
-  if (name.includes('CONYUGE') && name.includes('DNI')) return 'dni_conyuge';
-  if (name.includes('CONYUGE') && name.includes('PATERNO')) return 'apellido_paterno_conyuge';
-  if (name.includes('CONYUGE') && name.includes('MATERNO')) return 'apellido_materno_conyuge';
-  if (name.includes('CONYUGE') && (name.includes('NOMBRE') || name.includes('NOMBRES'))) return 'nombres_conyuge';
-  if (name === 'N DNI' || name === 'DNI' || name.includes('DOCUMENTO')) return 'dni_cliente';
-  if (name === 'NOMBRE CLIENTE' || name === 'NOMBRES CLIENTE' || name === 'NOMBRES') return 'nombres_cliente';
-  if (name === 'APELLIDO P') return 'apellido_paterno_cliente';
-  if (name === 'APELLIDO M') return 'apellido_materno_cliente';
-  if (name.includes('NACIM')) return 'fecha_nacimiento_cliente';
+  if (isSpouse && isDocument) return 'dni_conyuge';
+  if (isSpouse && isPaternal) return 'apellido_paterno_conyuge';
+  if (isSpouse && isMaternal) return 'apellido_materno_conyuge';
+  if (isSpouse && isFullName) return 'nombres_conyuge';
+  if (isSpouse && isGivenName) return 'nombres_solo_conyuge';
+  if (isDocument) return 'dni_cliente';
+  if (isPaternal) return 'apellido_paterno_cliente';
+  if (isMaternal) return 'apellido_materno_cliente';
+  if (isFullName) return 'nombres_cliente';
+  if (name === 'NOMBRE CLIENTE' || name === 'NOMBRES CLIENTE' || name === 'NOMBRES' || name === 'NOMBRE') return 'nombres_solo_cliente';
+  if (name.includes('NACIM') || name.includes('NACI')) return 'fecha_nacimiento_cliente';
   if (name === 'CELULAR') return 'celular';
   if (name === 'CORREO') return 'correo';
   if (name.includes('DIRECCION') && name.includes('LABORAL')) return 'direccion_laboral';
@@ -131,8 +181,9 @@ function suggestSourceKey(fieldName: string, fieldType: string): string | null {
   if (name === 'DEPARTAMENTO') return 'departamento';
   if (name === 'REFERENCIA') return 'referencia';
   if (name === 'CONVENIO') return 'convenio';
-  if (name.includes('OCUPACION') || name === 'CARGO' || name === 'PROFESION') return 'cargo_laboral';
-  if (name.includes('INGRESO') && !name.includes('LABORAL')) return 'fecha_ingreso_laboral';
+  if (name.includes('OCUPACION') || name === 'CARGO' || name === 'PROFESION' || name.includes('PUESTO')) return 'cargo_laboral';
+  if ((name.includes('FECHA') || name.startsWith('F ')) && name.includes('INGRESO')) return 'fecha_ingreso_laboral';
+  if ((name.includes('INGRESO') || name.includes('REMUNERACION') || name.includes('SUELDO')) && !name.includes('FECHA')) return 'ingreso_bruto';
   if (name === 'I BRUTO') return 'ingreso_bruto';
   if (name === 'PLAZO') return 'plazo';
   if (name === 'CUOTA' || name === 'I FIJO') return 'cuota';
@@ -153,7 +204,7 @@ function suggestSourceKey(fieldName: string, fieldType: string): string | null {
   if (name === 'SEDE') return 'sede';
   if (name === 'CUENTA') return 'cuenta';
   if (name.startsWith('BANCO ')) return `banco_${name.replace('BANCO ', '')}`;
-  if (name.startsWith('COMPRA ')) return 'compra_deuda_monto';
+  if (name.startsWith('COMPRA ') || name === 'TOTAL CD') return 'compra_deuda_monto';
 
   return null;
 }
@@ -244,12 +295,15 @@ export function buildPdfFieldValueMap(sale: any): Record<string, string> {
   const amount = firstValue(sale.cotizacion_monto, sale.monto_solicitado, sale.maf_neto);
   const term = firstValue(sale.cotizacion_plazo, sale.plazo_deseado);
   const cuota = firstValue(sale.cotizacion_cuota, sale.simulacion_cuota);
+  const clienteName = splitPersonName(sale.nombres_cliente);
+  const conyugeName = splitPersonName(sale.conyuge_nombres);
 
   return {
     dni_cliente: firstValue(sale.dni_cliente),
     nombres_cliente: firstValue(sale.nombres_cliente),
-    apellido_paterno_cliente: firstValue(sale.apellido_paterno_cliente),
-    apellido_materno_cliente: firstValue(sale.apellido_materno_cliente),
+    nombres_solo_cliente: firstValue(sale.nombres_solo_cliente, clienteName.nombres, sale.nombres_cliente),
+    apellido_paterno_cliente: firstValue(sale.apellido_paterno_cliente, clienteName.paterno),
+    apellido_materno_cliente: firstValue(sale.apellido_materno_cliente, clienteName.materno),
     fecha_nacimiento_cliente: firstValue(sale.fecha_nacimiento_cliente),
     estado_civil_cliente: firstValue(sale.estado_civil_cliente),
     celular: firstValue(sale.celular),
@@ -276,8 +330,9 @@ export function buildPdfFieldValueMap(sale: any): Record<string, string> {
     ruc_cliente: firstValue(sale.ruc_cliente),
     dni_conyuge: firstValue(sale.conyuge_dni),
     nombres_conyuge: firstValue(sale.conyuge_nombres),
-    apellido_paterno_conyuge: firstValue(sale.conyuge_apellido_paterno),
-    apellido_materno_conyuge: firstValue(sale.conyuge_apellido_materno),
+    nombres_solo_conyuge: firstValue(sale.conyuge_nombres_solo, conyugeName.nombres, sale.conyuge_nombres),
+    apellido_paterno_conyuge: firstValue(sale.conyuge_apellido_paterno, conyugeName.paterno),
+    apellido_materno_conyuge: firstValue(sale.conyuge_apellido_materno, conyugeName.materno),
     asesor_nombre: firstValue(sale.asesor?.nombre, sale.asesor_nombre),
     asesor_username: firstValue(sale.asesor?.username),
     dni_vendedor: firstValue(sale.dni_vendedor),
