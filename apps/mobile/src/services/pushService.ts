@@ -6,6 +6,7 @@
  */
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import type { Notification, NotificationResponse } from 'expo-notifications';
 import api from '../api/client';
 
@@ -64,6 +65,16 @@ export async function registerForPushNotifications(): Promise<string | null> {
   }
 
   // Verificar permisos existentes
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Alertas Fuvex',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF7800',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+  }
+
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 

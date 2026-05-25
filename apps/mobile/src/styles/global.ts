@@ -614,6 +614,90 @@ export const createStyles = (isDark: boolean) => {
       fontWeight: '900',
       color: theme.text
     },
+    executiveTabs: {
+      flexDirection: 'row',
+      gap: 8
+    },
+    executiveTab: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderRadius: DESIGN.radius.md,
+      borderWidth: 1,
+      borderColor: theme.border,
+      backgroundColor: theme.surfaceAlt
+    },
+    executiveTabText: {
+      fontSize: 10,
+      fontWeight: '900',
+      color: theme.blue,
+      letterSpacing: 0.4,
+      textTransform: 'uppercase'
+    },
+    executiveInsight: {
+      marginTop: 12,
+      padding: 13,
+      borderRadius: DESIGN.radius.md,
+      backgroundColor: theme.orangeSoft,
+      borderWidth: 1,
+      borderColor: theme.border,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10
+    },
+    executiveBlockTitle: {
+      fontSize: 10,
+      fontWeight: '900',
+      color: theme.subtext,
+      letterSpacing: 0.8,
+      marginBottom: 9,
+      textTransform: 'uppercase'
+    },
+    executiveRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 11,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.divider,
+      gap: 10
+    },
+    executiveRank: {
+      width: 30,
+      height: 30,
+      borderRadius: 9,
+      alignItems: 'center',
+      justifyContent: 'center'
+    },
+    executiveRankText: {
+      fontSize: 12,
+      fontWeight: '900'
+    },
+    executiveRowTitle: {
+      fontSize: 13,
+      fontWeight: '900',
+      color: theme.text
+    },
+    executiveRowMeta: {
+      fontSize: 10,
+      fontWeight: '700',
+      color: theme.subtext,
+      marginTop: 2
+    },
+    executiveMoney: {
+      fontSize: 13,
+      fontWeight: '900',
+      color: theme.orange
+    },
+    funnelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.divider
+    },
     tracePreview: {
       marginTop: 13,
       padding: 11,

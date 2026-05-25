@@ -342,6 +342,12 @@ app.get('/api/infoburo/:dni', authMiddleware, async (req: any, res: any) => {
   }
 });
 
+const publicQuoteImagesPath = path.join(publicDownloadsPath, 'cotizaciones');
+fs.mkdirSync(publicQuoteImagesPath, { recursive: true });
+app.use('/public/cotizaciones', express.static(publicQuoteImagesPath, {
+  maxAge: '7d',
+  immutable: true
+}));
 app.use('/download', authMiddleware, express.static(publicDownloadsPath));
 
 app.get('/api/users/me', authMiddleware, async (req: any, res: any) => {

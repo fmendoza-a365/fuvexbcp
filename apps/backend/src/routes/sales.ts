@@ -3,15 +3,16 @@ import { prisma } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { authorize } from '../middleware/authorize';
 import { requireAction } from '../middleware/permissions';
-import { canAccessSale, getSalesFilter } from '../services/hierarchy';
+import { canAccessSale, getHierarchyChain, getSalesFilter } from '../services/hierarchy';
 import { upload } from '../middleware/upload';
 import { getDniInfo } from '../services/dni';
-import { sendPushNotification } from '../services/push';
+import { sendPushNotification, sendPushNotifications } from '../services/push';
 import { validateCreateSale, validateEstadoChange, filterProtectedFields, validateTransition, getValidTransitions, VALID_ESTADOS, CATALOGO_MOTIVOS, getEstadoLabel, ACTIVE_ESTADOS, DOCUMENT_REQUIRED_STATES, REJECTION_REASONS } from '../middleware/validate';
 import { sendStoredDocument, storeUploadedDocument } from '../services/storage';
 import { calcularSimulacion } from '../services/simulator';
 import { getSlaInfo } from '../services/sla';
 import { generateAndStoreFilledAgreement } from '../services/pdfService';
+import { buildQuoteWhatsAppMessage, generateQuoteImage } from '../services/quoteImage';
 
 const router = Router();
 
@@ -19,6 +20,17 @@ const triggerPdfGeneration = (saleId: string, userId: string) => {
   generateAndStoreFilledAgreement(saleId, userId).catch(err => {
     console.error(`Error in background PDF auto-filling for sale ${saleId}:`, err);
   });
+};
+
+const getPublicBaseUrl = (req: any) => (
+  process.env.PUBLIC_BASE_URL ||
+  `${req.protocol}://${req.get('host')}`
+);
+
+const notifyHierarchy = async (asesorId: string, actorId: string, title: string, body: string, data: any = {}) => {
+  const hierarchyIds = await getHierarchyChain(asesorId);
+  const targets = [asesorId, ...hierarchyIds].filter((id) => id !== actorId);
+  await sendPushNotifications(targets, title, body, data);
 };
 
 const isMarried = (estadoCivil?: string | null) => (
@@ -583,6 +595,18 @@ router.post('/', authMiddleware, authorize('VENDEDOR', 'SUPERVISOR', 'JEFE_ZONAL
       }
     });
 
+    try {
+      await notifyHierarchy(
+        sale.asesor_id,
+        req.user.id,
+        'Nuevo prospecto registrado',
+        `${sale.nombres_cliente} ingreso al pipeline ${sale.convenio ? `(${sale.convenio})` : ''}.`,
+        { saleId: sale.id, type: 'SALE_CREATED' }
+      );
+    } catch (e) {
+      console.error('Failed to send sale creation notification:', e);
+    }
+
     res.status(201).json(sale);
   } catch (error) {
     console.error(error);
@@ -834,8 +858,9 @@ router.put('/:id/estado', authMiddleware, authorize('SUPERVISOR', 'JEFE_ZONAL', 
 
     // Notify Asesor about state change
     try {
-      await sendPushNotification(
+      await notifyHierarchy(
         sale.asesor_id,
+        req.user.id,
         'Actualización de Expediente',
         `El expediente de ${sale.nombres_cliente} ha cambiado a: ${nuevo_estado}`,
         { saleId: id, type: 'STATE_CHANGE' }
@@ -1054,6 +1079,50 @@ router.post('/:id/cotizacion/aceptacion', authMiddleware, authorize('VENDEDOR', 
   } catch (error: any) {
     console.error(error);
     res.status(500).json({ error: 'No se pudo registrar la aceptacion de cotizacion' });
+  }
+});
+
+// POST /api/sales/:id/cotizacion/imagen
+// Genera una imagen de cotizacion lista para compartir por WhatsApp.
+router.post('/:id/cotizacion/imagen', authMiddleware, authorize('VENDEDOR', 'SUPERVISOR', 'JEFE_ZONAL', 'GERENTE', 'SUPERADMIN'), async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const sale = await prisma.sale.findUnique({ where: { id } });
+    if (!(await requireSaleAccess(req, res, sale))) return;
+    if (!sale) return;
+
+    if (!sale.cotizacion_monto && !sale.simulacion_monto && !sale.monto_solicitado && !sale.maf_neto) {
+      return res.status(422).json({ error: 'El expediente aun no tiene datos de cotizacion para generar la imagen.' });
+    }
+
+    const generated = await generateQuoteImage(sale);
+    const baseUrl = getPublicBaseUrl(req);
+    const imageUrl = `${baseUrl}/public/cotizaciones/${encodeURIComponent(generated.filename)}`;
+    const message = buildQuoteWhatsAppMessage(sale, imageUrl);
+    const whatsappUrl = generated.phone
+      ? `https://wa.me/${generated.phone}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+
+    await prisma.auditLog.create({
+      data: {
+        sale_id: id,
+        user_id: req.user.id,
+        accion: 'Cotizacion WhatsApp generada',
+        estado_anterior: sale.estado,
+        estado_nuevo: sale.estado,
+        detalles: 'Se genero una imagen de cotizacion para enviar por WhatsApp.'
+      }
+    });
+
+    res.json({
+      image_url: imageUrl,
+      whatsapp_url: whatsappUrl,
+      phone: generated.phone,
+      message
+    });
+  } catch (error: any) {
+    console.error(error);
+    res.status(500).json({ error: error.message || 'No se pudo generar la imagen de cotizacion' });
   }
 });
 

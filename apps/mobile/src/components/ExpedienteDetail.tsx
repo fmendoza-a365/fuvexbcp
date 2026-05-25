@@ -325,6 +325,36 @@ export default function ExpedienteDetail({ saleId, onClose, onOpenCalculator, is
     }
   }, [sale, saleId]);
 
+  const sendCotizacionWhatsApp = useCallback(async () => {
+    if (!sale) return;
+    setActionLoading('cotizacion-whatsapp');
+    try {
+      const res = await api.post(`/sales/${saleId}/cotizacion/imagen`);
+      const whatsappUrl = res.data?.whatsapp_url;
+      const imageUrl = res.data?.image_url;
+      if (!whatsappUrl) {
+        throw new Error('No se recibio el enlace de WhatsApp.');
+      }
+
+      const phone = res.data?.phone;
+      const message = encodeURIComponent(res.data?.message || '');
+      const nativeUrl = phone
+        ? `whatsapp://send?phone=${phone}&text=${message}`
+        : `whatsapp://send?text=${message}`;
+      const canOpenNative = await Linking.canOpenURL(nativeUrl).catch(() => false);
+      await Linking.openURL(canOpenNative ? nativeUrl : whatsappUrl);
+
+      if (imageUrl) {
+        Alert.alert('Cotizacion lista', 'WhatsApp se abrio con el mensaje y enlace de la imagen generada.');
+      }
+    } catch (error: any) {
+      const msg = error.response?.data?.error || error.message || 'No se pudo generar la cotizacion para WhatsApp.';
+      Alert.alert('Error', msg);
+    } finally {
+      setActionLoading(null);
+    }
+  }, [sale, saleId]);
+
   const savePdfCorrection = useCallback(async () => {
     if (!sale) return;
     setPdfSaving(true);
@@ -509,6 +539,14 @@ export default function ExpedienteDetail({ saleId, onClose, onOpenCalculator, is
       icon: 'calculator-outline',
       variant: 'primary',
       onPress: () => onOpenCalculator?.(sale)
+    }] : []),
+    ...((sale.cotizacion_monto || sale.simulacion_monto || sale.simulacion_id) ? [{
+      key: 'cotizacion-whatsapp',
+      label: 'ENVIAR COTIZACION POR WHATSAPP',
+      icon: 'logo-whatsapp',
+      variant: 'success',
+      onPress: sendCotizacionWhatsApp,
+      hint: 'Genera la imagen oficial de cotizacion y abre WhatsApp con el mensaje listo.'
     }] : []),
     ...(['COTIZACION_ENVIADA', 'PENDIENTE_ACEPTACION_CLIENTE'].includes(sale.estado) ? [
       {

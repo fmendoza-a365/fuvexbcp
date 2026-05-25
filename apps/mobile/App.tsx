@@ -130,6 +130,9 @@ export default function App() {
 
   const [mySales, setMySales] = useState<any[]>([]);
   const [kpi, setKpi] = useState<any>(null);
+  const [operations, setOperations] = useState<any>(null);
+  const [rankings, setRankings] = useState<any>(null);
+  const [dashboardView, setDashboardView] = useState<'general' | 'equipos' | 'zonas' | 'embudo'>('general');
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -165,6 +168,7 @@ export default function App() {
   const [clientData, setClientData] = useState<any>(null);
   const [isSearchingDni, setIsSearchingDni] = useState(false);
   const [isSearchingConyugeDni, setIsSearchingConyugeDni] = useState(false);
+  const canViewLeadershipDashboard = ['SUPERADMIN', 'GERENTE', 'JEFE_ZONAL', 'SUPERVISOR'].includes(user?.role);
 
   useEffect(() => {
     let mounted = true;
@@ -228,12 +232,20 @@ export default function App() {
   const fetchData = async () => {
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const [salesRes, kpiRes] = await Promise.all([
+      const [salesRes, kpiRes, operationsRes, rankingsRes] = await Promise.all([
         axios.get(`${apiUrl}/sales`, { headers }),
-        axios.get(`${apiUrl}/analytics/dashboard`, { headers })
+        axios.get(`${apiUrl}/analytics/dashboard`, { headers }),
+        canViewLeadershipDashboard
+          ? axios.get(`${apiUrl}/analytics/operations`, { headers }).catch(() => ({ data: null }))
+          : Promise.resolve({ data: null }),
+        canViewLeadershipDashboard
+          ? axios.get(`${apiUrl}/analytics/rankings`, { headers }).catch(() => ({ data: null }))
+          : Promise.resolve({ data: null })
       ]);
       setMySales(normalizeSalesResponse(salesRes.data));
       setKpi(kpiRes.data);
+      setOperations(operationsRes.data);
+      setRankings(rankingsRes.data);
     } catch (error) {
       console.warn('Fetch error:', error);
     }
@@ -501,18 +513,6 @@ export default function App() {
     return () => subscription.remove();
   }, [token, selectedSaleId, activeTab]);
 
-  const testPush = async () => {
-    try {
-      await axios.post(`${apiUrl}/notifications/test`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      Alert.alert('Enviado', 'Se solicito una notificacion de prueba.');
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo enviar la prueba.');
-    }
-  };
-
-
   const handleLogin = async () => {
     if (!apiReady) {
       Alert.alert('Preparando API', 'Espera unos segundos y vuelve a intentar.');
@@ -569,8 +569,23 @@ export default function App() {
     const totalDisbursed = kpi?.totalDisbursed || 0;
     return calculateCommission(totalDisbursed);
   }, [kpi]);
-  const canViewLeadershipDashboard = ['SUPERADMIN', 'GERENTE', 'JEFE_ZONAL', 'SUPERVISOR'].includes(user?.role);
 
+  const formatCurrencyShort = (value: any) => {
+    const amount = Number(value) || 0;
+    if (Math.abs(amount) >= 1000000) return `S/ ${(amount / 1000000).toFixed(1)}M`;
+    if (Math.abs(amount) >= 1000) return `S/ ${Math.round(amount / 1000)}K`;
+    return `S/ ${Math.round(amount).toLocaleString()}`;
+  };
+
+  const formatCurrencyFull = (value: any) => `S/ ${Math.round(Number(value) || 0).toLocaleString()}`;
+  const formatPct = (value: any) => `${Number(value || 0).toFixed(1)}%`;
+
+  const dashboardTabs = [
+    { key: 'general' as const, label: 'General', icon: 'speedometer-outline' },
+    { key: 'equipos' as const, label: 'Equipos', icon: 'people-outline' },
+    { key: 'zonas' as const, label: 'Zonas', icon: 'map-outline' },
+    { key: 'embudo' as const, label: 'Embudo', icon: 'filter-outline' }
+  ];
   const handleSubmit = async () => {
     const evaluaConyuge = requiresSpouseEvaluation(estadoCivil);
 
@@ -739,6 +754,171 @@ export default function App() {
     </View>
   );
 
+  const renderExecutiveRow = (item: any, index: number, mode: 'team' | 'zone' | 'ranking' = 'team') => {
+    const name = item?.name || item?.nombre || 'Sin responsable';
+    const total = item?.total_desembolso ?? item?.value ?? 0;
+    const pipeline = item?.pipeline ?? 0;
+    const prospectos = item?.prospectos ?? item?.count ?? 0;
+    const avance = item?.avance ?? 0;
+
+    return (
+      <View key={`${mode}-${name}-${index}`} style={styles.executiveRow}>
+        <View style={[styles.executiveRank, { backgroundColor: index === 0 ? theme.orange : theme.blueSoft }]}>
+          <Text style={[styles.executiveRankText, { color: index === 0 ? theme.whiteText : theme.blue }]}>{index + 1}</Text>
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.executiveRowTitle} numberOfLines={1}>{name}</Text>
+          <Text style={styles.executiveRowMeta} numberOfLines={1}>
+            {mode === 'ranking'
+              ? 'Ranking mensual'
+              : `${prospectos} prospectos | Pipeline ${formatCurrencyShort(pipeline)}`}
+          </Text>
+          {mode !== 'ranking' && (
+            <View style={[styles.progressBarBg, { height: 6, marginTop: 7, marginBottom: 0 }]}>
+              <View style={[styles.progressBarFill, { width: `${Math.min(Number(avance) || 0, 100)}%`, backgroundColor: theme.orange }]} />
+            </View>
+          )}
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={styles.executiveMoney}>{formatCurrencyShort(total)}</Text>
+          <Text style={styles.executiveRowMeta}>{mode === 'ranking' ? 'Desembolso' : `${formatPct(avance)} avance`}</Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderLeadershipDashboard = () => {
+    const supervisors = operations?.summaries?.supervisors || [];
+    const zones = operations?.summaries?.zones || [];
+    const funnel = Array.isArray(operations?.funnel) ? operations.funnel : [];
+    const risk = Array.isArray(operations?.risk) ? operations.risk : [];
+    const topVendedores = rankings?.vendedores || [];
+    const slaAlerts = operations?.sla?.alertas_inactividad?.total || 0;
+
+    return (
+      <View style={styles.fullSaleCard}>
+        <View style={styles.sectionHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+            <View style={{ backgroundColor: theme.blueSoft, padding: 9, borderRadius: 10, marginRight: 10 }}>
+              <Ionicons name="analytics-outline" size={18} color={theme.blue} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>DASHBOARD EJECUTIVO</Text>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: theme.subtext, marginTop: 2 }}>
+                Control de agentes, supervisores, zonas y embudo comercial.
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+          <View style={styles.executiveTabs}>
+            {dashboardTabs.map((tab) => {
+              const active = dashboardView === tab.key;
+              return (
+                <TouchableOpacity
+                  key={tab.key}
+                  onPress={() => setDashboardView(tab.key)}
+                  style={[styles.executiveTab, active && { backgroundColor: theme.blue, borderColor: theme.blue }]}
+                >
+                  <Ionicons name={tab.icon as any} size={14} color={active ? theme.whiteText : theme.blue} />
+                  <Text style={[styles.executiveTabText, active && { color: theme.whiteText }]}>{tab.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        {dashboardView === 'general' && (
+          <View>
+            <View style={styles.saleMetricGrid}>
+              <View style={styles.saleMetricBox}>
+                <Text style={styles.saleMetricLabel}>PIPELINE</Text>
+                <Text style={styles.saleMetricValue}>{formatCurrencyShort(kpi?.pipelineValue)}</Text>
+              </View>
+              <View style={styles.saleMetricBox}>
+                <Text style={styles.saleMetricLabel}>ACTIVOS</Text>
+                <Text style={styles.saleMetricValue}>{kpi?.pipelineCount || 0} exp.</Text>
+              </View>
+            </View>
+            <View style={[styles.saleMetricGrid, { marginTop: 10 }]}>
+              <View style={styles.saleMetricBox}>
+                <Text style={styles.saleMetricLabel}>CONVERSION</Text>
+                <Text style={styles.saleMetricValue}>{formatPct(kpi?.conversionRate)}</Text>
+              </View>
+              <View style={styles.saleMetricBox}>
+                <Text style={styles.saleMetricLabel}>PROYECCION</Text>
+                <Text style={styles.saleMetricValue}>{formatCurrencyShort(kpi?.forecasting)}</Text>
+              </View>
+            </View>
+            <View style={styles.executiveInsight}>
+              <Ionicons name="notifications-outline" size={18} color={theme.orange} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.executiveRowTitle}>Alertas operativas reales</Text>
+                <Text style={styles.executiveRowMeta}>
+                  {slaAlerts} expedientes requieren seguimiento por SLA o inactividad.
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.metaLabel, { marginTop: 10 }]}>
+              Productividad: {Number(kpi?.productivity || 0).toFixed(1)} expedientes por asesor activo.
+            </Text>
+          </View>
+        )}
+
+        {dashboardView === 'equipos' && (
+          <View>
+            <Text style={styles.executiveBlockTitle}>SUPERVISORES Y EQUIPOS</Text>
+            {supervisors.slice(0, 5).map((item: any, index: number) => renderExecutiveRow(item, index, 'team'))}
+            {supervisors.length === 0 && <Text style={styles.emptyText}>Sin datos de equipos para este mes.</Text>}
+            {topVendedores.length > 0 && (
+              <View style={{ marginTop: 14 }}>
+                <Text style={styles.executiveBlockTitle}>TOP ASESORES</Text>
+                {topVendedores.slice(0, 3).map((item: any, index: number) => renderExecutiveRow(item, index, 'ranking'))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {dashboardView === 'zonas' && (
+          <View>
+            <Text style={styles.executiveBlockTitle}>AVANCE POR ZONA</Text>
+            {zones.slice(0, 6).map((item: any, index: number) => renderExecutiveRow(item, index, 'zone'))}
+            {zones.length === 0 && <Text style={styles.emptyText}>Sin zonas con actividad mensual.</Text>}
+          </View>
+        )}
+
+        {dashboardView === 'embudo' && (
+          <View>
+            <Text style={styles.executiveBlockTitle}>ESTADOS DEL PIPELINE</Text>
+            {funnel.slice(0, 6).map((item: any, index: number) => (
+              <View key={`${item.estado}-${index}`} style={styles.funnelRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.executiveRowTitle} numberOfLines={1}>{item.estado || 'Sin estado'}</Text>
+                  <Text style={styles.executiveRowMeta}>{item._count || 0} expedientes</Text>
+                </View>
+                <Text style={styles.executiveMoney}>{item._count || 0}</Text>
+              </View>
+            ))}
+            {risk.length > 0 && (
+              <View style={{ marginTop: 14 }}>
+                <Text style={styles.executiveBlockTitle}>RIESGO INFOBURO</Text>
+                <View style={styles.saleMetricGrid}>
+                  {risk.slice(0, 3).map((item: any) => (
+                    <View key={item.rcc_semaforo || 'SIN'} style={styles.saleMetricBox}>
+                      <Text style={styles.saleMetricLabel}>{item.rcc_semaforo || 'SIN DATO'}</Text>
+                      <Text style={styles.saleMetricValue}>{item._count}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  };
+
   const renderHome = () => (
     <ScrollView style={styles.mainScroll} showsVerticalScrollIndicator={false}>
       {renderHeader(
@@ -774,84 +954,7 @@ export default function App() {
         </View>
       </View>
 
-      {canViewLeadershipDashboard && (
-        <View style={styles.fullSaleCard}>
-          <View style={styles.sectionHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <View style={{ backgroundColor: theme.blueSoft, padding: 9, borderRadius: 10, marginRight: 10 }}>
-                <Ionicons name="analytics-outline" size={18} color={theme.blue} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>DASHBOARD EJECUTIVO</Text>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: theme.subtext, marginTop: 2 }}>
-                  Evolucion comercial segun tu jerarquia
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.saleMetricGrid}>
-            <View style={styles.saleMetricBox}>
-              <Text style={styles.saleMetricLabel}>PIPELINE</Text>
-              <Text style={styles.saleMetricValue}>S/ {Math.round(kpi?.pipelineValue || 0).toLocaleString()}</Text>
-            </View>
-            <View style={styles.saleMetricBox}>
-              <Text style={styles.saleMetricLabel}>ACTIVOS</Text>
-              <Text style={styles.saleMetricValue}>{kpi?.pipelineCount || 0} exp.</Text>
-            </View>
-          </View>
-
-          <View style={[styles.saleMetricGrid, { marginTop: 10 }]}>
-            <View style={styles.saleMetricBox}>
-              <Text style={styles.saleMetricLabel}>CONVERSION</Text>
-              <Text style={styles.saleMetricValue}>{Number(kpi?.conversionRate || 0).toFixed(1)}%</Text>
-            </View>
-            <View style={styles.saleMetricBox}>
-              <Text style={styles.saleMetricLabel}>PROYECCION</Text>
-              <Text style={styles.saleMetricValue}>S/ {Math.round(kpi?.forecasting || 0).toLocaleString()}</Text>
-            </View>
-          </View>
-
-          <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: theme.divider }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={styles.metaLabel}>Pendiente de cierre</Text>
-              <Text style={[styles.metaLabel, { color: theme.blue, fontWeight: '900' }]}>
-                S/ {Math.round(kpi?.pendingValue || 0).toLocaleString()}
-              </Text>
-            </View>
-            <View style={[styles.progressBarBg, { backgroundColor: theme.track }]}>
-              <View style={[styles.progressBarFill, { width: `${Math.min(kpi?.conversionRate || 0, 100)}%`, backgroundColor: theme.blue }]} />
-            </View>
-            <Text style={styles.metaLabel}>
-              Productividad: {Number(kpi?.productivity || 0).toFixed(1)} expedientes por asesor activo
-            </Text>
-          </View>
-        </View>
-      )}
-
-      <TouchableOpacity
-        style={[
-          styles.fullSaleCard,
-          {
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: 20
-          }
-        ]}
-        onPress={testPush}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-          <View style={{ backgroundColor: theme.orangeSoft, padding: 10, borderRadius: 10, marginRight: 14 }}>
-            <Ionicons name="notifications" size={20} color={theme.orange} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: '900', color: theme.text }}>Sistema de alertas</Text>
-            <Text style={{ fontSize: 11, color: theme.subtext, marginTop: 2 }}>Probar recepcion de notificaciones</Text>
-          </View>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
-      </TouchableOpacity>
+      {canViewLeadershipDashboard && renderLeadershipDashboard()}
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>GESTIONES DEL DIA</Text>

@@ -29,7 +29,8 @@
       "package": "com.fmendozaa365.mobile"
     },
     "plugins": [
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-notifications"
     ],
     "extra": {
       "apiUrl": "https://bcp.fuvexa365.com/api",
