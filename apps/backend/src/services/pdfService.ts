@@ -5,18 +5,40 @@ import { prisma } from '../db';
 import { storeDocumentFromBuffer } from './storage';
 import { logger } from './logger';
 
+function normalizeTemplateKey(value: string): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Z0-9]+/gi, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+function resolveTemplatePath(templateName: string): string | null {
+  const candidates = [
+    path.resolve(process.cwd(), 'apps/backend/templates', templateName),
+    path.resolve(process.cwd(), 'templates', templateName),
+    path.resolve(__dirname, '..', '..', '..', 'templates', templateName),
+    path.resolve(__dirname, '..', '..', 'templates', templateName)
+  ];
+
+  return candidates.find(candidate => fs.existsSync(candidate)) || null;
+}
 export function getTemplateFilename(convenio: string): string | null {
-  const conv = String(convenio || '').toUpperCase();
+  const conv = normalizeTemplateKey(convenio);
+  if (!conv) return null;
+
   if (conv.includes('DIRIS')) return 'EDITABLE DIRIS NORTE.pdf';
   if (conv.includes('EJERCITO')) return 'EDITABLE EJERCITO.pdf';
   if (conv.includes('ESSALUD')) return 'EDITABLE ESSALUD1.pdf';
-  if (conv.includes('HAI')) return 'EDITABLE HAI.pdf';
+  if (conv.includes('HAI') || (conv.includes('HOSPITAL') && (conv.includes('ALMENARA') || conv.includes('IRIGOYEN')))) return 'EDITABLE HAI.pdf';
   if (conv.includes('MARINA')) return 'EDITABLE MARINA.pdf';
   if (conv.includes('ONPE')) return 'EDITABLE ONPE.pdf';
-  if (conv.includes('PNP')) return 'EDITABLE PNP.pdf';
+  if (conv.includes('PNP') || conv.includes('POLICIA')) return 'EDITABLE PNP.pdf';
   if (conv.includes('RENIEC')) return 'EDITABLE RENIEC.pdf';
   if (conv.includes('SENASA')) return 'EDITABLE SENASA.pdf';
-  if (conv.includes('UPSJB')) return 'EDITABLE UPSJB.pdf';
+  if (conv.includes('UPSJB') || conv.includes('SAN JUAN BAUTISTA')) return 'EDITABLE UPSJB.pdf';
+
   return null;
 }
 
@@ -33,11 +55,9 @@ export async function generateAndStoreFilledAgreement(saleId: string, userId: st
       logger.warn('pdfService', `No PDF template found for convenio: ${sale.convenio}`);
       return null;
     }
-
-    // Resolve template path inside apps/backend/templates
-    const templatePath = path.resolve(process.cwd(), 'templates', templateName);
-    if (!fs.existsSync(templatePath)) {
-      logger.error('pdfService', `PDF Template file not found: ${templatePath}`);
+    const templatePath = resolveTemplatePath(templateName);
+    if (!templatePath) {
+      logger.error('pdfService', `PDF Template file not found for ${templateName}. cwd=${process.cwd()}`);
       return null;
     }
 
