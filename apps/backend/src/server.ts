@@ -32,6 +32,7 @@ import { logger } from './services/logger';
 import { globalErrorHandler } from './middleware/errorHandler';
 import { firstExistingPath, publicDownloadsPath } from './services/storage';
 import { validateEnvironment } from './config/env';
+import { startPushNotificationScheduler } from './services/pushScheduler';
 
 dotenv.config();
 validateEnvironment();
@@ -375,4 +376,5 @@ app.use(globalErrorHandler);
 
 app.listen(PORT, '0.0.0.0', () => {
   logger.info('SERVER', `Servidor Fuvex Manager corriendo en http://localhost:${PORT}`);
+  startPushNotificationScheduler();
 });

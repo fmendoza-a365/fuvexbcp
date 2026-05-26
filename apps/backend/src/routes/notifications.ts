@@ -3,15 +3,14 @@ import { prisma } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { getSalesFilter } from '../services/hierarchy';
 import { logger } from '../services/logger';
+import { sendPushNotification } from '../services/push';
 
 const router = Router();
 
-// GET Recent Notifications (based on Audit Logs)
 router.get('/', authMiddleware, async (req: any, res: any) => {
   try {
     const filter = await getSalesFilter(req.user);
-    
-    // Get recent audit logs related to sales the user can see
+
     const notifications = await prisma.auditLog.findMany({
       where: {
         sale: filter
@@ -35,15 +34,11 @@ router.get('/', authMiddleware, async (req: any, res: any) => {
 
     res.json(notifications);
   } catch (error) {
-    console.error(error);
+    logger.error('PUSH', 'Error al obtener notificaciones', { error });
     res.status(500).json({ error: 'Error al obtener notificaciones' });
   }
 });
 
-// ═══════════════════════════════════════════════════
-// POST /api/notifications/push-token
-// Registrar o actualizar el push token del usuario
-// ═══════════════════════════════════════════════════
 router.post('/push-token', authMiddleware, async (req: any, res: any) => {
   try {
     const { push_token } = req.body;
@@ -64,10 +59,6 @@ router.post('/push-token', authMiddleware, async (req: any, res: any) => {
   }
 });
 
-// ═══════════════════════════════════════════════════
-// DELETE /api/notifications/push-token
-// Eliminar el push token del usuario (logout, desregistro)
-// ═══════════════════════════════════════════════════
 router.delete('/push-token', authMiddleware, async (req: any, res: any) => {
   try {
     await prisma.user.update({
@@ -83,10 +74,6 @@ router.delete('/push-token', authMiddleware, async (req: any, res: any) => {
   }
 });
 
-// ═══════════════════════════════════════════════════
-// GET /api/notifications/push-token/status
-// Verificar si el usuario actual tiene push token registrado
-// ═══════════════════════════════════════════════════
 router.get('/push-token/status', authMiddleware, async (req: any, res: any) => {
   try {
     const user = await prisma.user.findUnique({
@@ -104,19 +91,24 @@ router.get('/push-token/status', authMiddleware, async (req: any, res: any) => {
   }
 });
 
-// TEST Notification
 router.post('/test', authMiddleware, async (req: any, res: any) => {
   try {
-    const { sendPushNotification } = require('../services/push');
-    await sendPushNotification(
+    const result = await sendPushNotification(
       req.user.id,
-      '¡Prueba de Fuvex!',
-      'Si estás viendo esto, tus notificaciones están configuradas correctamente. 🚀',
-      { type: 'TEST' }
+      'Prueba de Fuvex',
+      'Las notificaciones push ya estan conectadas a este dispositivo.',
+      { type: 'TEST', screen: 'home' }
     );
-    res.json({ message: 'Notificación de prueba enviada' });
+
+    res.json({
+      message: result.sent > 0
+        ? 'Notificacion de prueba enviada'
+        : 'No hay un token push activo para este usuario',
+      sent_count: result.sent,
+      has_token: result.registered > 0
+    });
   } catch (error) {
-    console.error(error);
+    logger.error('PUSH', 'Error al enviar prueba push', { error });
     res.status(500).json({ error: 'Error al enviar prueba' });
   }
 });

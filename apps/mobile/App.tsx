@@ -26,10 +26,11 @@ import ExpedienteDetail from './src/components/ExpedienteDetail';
 import {
   registerForPushNotifications,
   unregisterPushToken,
+  checkPushTokenStatus,
   addNotificationReceivedListener,
   addNotificationResponseListener
 } from './src/services/pushService';
-import { setApiBaseUrl, setAuthToken } from './src/api/client';
+import api, { setApiBaseUrl, setAuthToken } from './src/api/client';
 import { loadSavedApiUrl } from './src/config/api';
 
 interface SimulatorCatalog {
@@ -71,7 +72,7 @@ interface GeoDistrito {
   departamento_id: number;
 }
 
-type ActiveTab = 'home' | 'list' | 'form' | 'simulator';
+type ActiveTab = 'home' | 'list' | 'form' | 'simulator' | 'alerts';
 
 const EMAIL_DOMAIN_OPTIONS = ['gmail.com', 'outlook.com', 'yahoo.com'];
 const ESTADO_CIVIL_OPTIONS = [
@@ -133,6 +134,8 @@ export default function App() {
   const [operations, setOperations] = useState<any>(null);
   const [rankings, setRankings] = useState<any>(null);
   const [dashboardView, setDashboardView] = useState<'general' | 'equipos' | 'zonas' | 'embudo'>('general');
+  const [pushStatus, setPushStatus] = useState<{ has_token: boolean; token_preview: string | null } | null>(null);
+  const [pushBusy, setPushBusy] = useState(false);
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -442,10 +445,74 @@ export default function App() {
     fetchData();
   };
 
+  const refreshPushStatus = async () => {
+    setPushBusy(true);
+    try {
+      const status = await checkPushTokenStatus();
+      setPushStatus(status);
+      return status;
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const openNotificationTarget = (data: any) => {
+    const saleId = data?.saleId || data?.sale_id;
+    if (typeof saleId === 'string' && saleId.length > 0) {
+      setActiveTab('list');
+      setSelectedSaleId(saleId);
+    } else if (data?.screen === 'home') {
+      setActiveTab('home');
+    }
+    fetchData();
+  };
+
+  const handleRegisterPush = async () => {
+    setPushBusy(true);
+    try {
+      const registeredToken = await registerForPushNotifications();
+      const status = await checkPushTokenStatus();
+      setPushStatus(status);
+      Alert.alert(
+        status.has_token ? 'Notificaciones activas' : 'Notificaciones no activas',
+        status.has_token
+          ? 'Este dispositivo ya esta conectado para recibir alertas reales.'
+          : 'No se pudo registrar el dispositivo. Usa la APK instalada en un telefono fisico y acepta el permiso de notificaciones.'
+      );
+      return registeredToken;
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleTestPush = async () => {
+    setPushBusy(true);
+    try {
+      const res = await api.post('/notifications/test');
+      Alert.alert(
+        res.data?.sent_count > 0 ? 'Prueba enviada' : 'Token no activo',
+        res.data?.message || 'Solicitud procesada.'
+      );
+      await refreshPushStatus();
+    } catch (error: any) {
+      Alert.alert('No se pudo enviar', error.response?.data?.error || 'Revisa la conexion y vuelve a intentar.');
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (!token) return;
 
-    registerForPushNotifications();
+    let mounted = true;
+
+    const setupPush = async () => {
+      await registerForPushNotifications();
+      const status = await checkPushTokenStatus();
+      if (mounted) setPushStatus(status);
+    };
+
+    setupPush();
 
     const receivedSub = addNotificationReceivedListener((notification) => {
       console.log('Notification received in foreground:', notification.request.content.title);
@@ -454,12 +521,11 @@ export default function App() {
 
     const responseSub = addNotificationResponseListener((response) => {
       const data = response.notification.request.content.data;
-      if (data?.saleId) {
-        setSelectedSaleId(data.saleId as string);
-      }
+      openNotificationTarget(data);
     });
 
     return () => {
+      mounted = false;
       receivedSub.remove();
       responseSub.remove();
     };
@@ -553,6 +619,7 @@ export default function App() {
     setUser(null);
     setSelectedSaleId(null);
     setCalculatorSale(null);
+    setPushStatus(null);
     setActiveTab('home');
   };
 
@@ -793,7 +860,7 @@ export default function App() {
     const funnel = Array.isArray(operations?.funnel) ? operations.funnel : [];
     const risk = Array.isArray(operations?.risk) ? operations.risk : [];
     const topVendedores = rankings?.vendedores || [];
-    const slaAlerts = operations?.sla?.alertas_inactividad?.total || 0;
+    const slaAlerts = Number(operations?.sla?.por_vencer || 0) + Number(operations?.sla?.vencidos || 0);
 
     return (
       <View style={styles.fullSaleCard}>
@@ -924,9 +991,14 @@ export default function App() {
       {renderHeader(
         `Hola, ${user?.nombre?.split(' ')[0] || 'equipo'}`,
         'Gestiona tu avance y expedientes activos.',
-        <TouchableOpacity style={styles.profileBtn} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={20} color={theme.orange} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity style={[styles.profileBtn, { marginRight: 8 }]} onPress={() => setActiveTab('alerts')}>
+            <Ionicons name="notifications-outline" size={20} color={theme.blue} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.profileBtn} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={20} color={theme.orange} />
+          </TouchableOpacity>
+        </View>
       )}
 
       <View style={[styles.kpiGrid, isLandscape && styles.kpiGridLandscape]}>
@@ -989,6 +1061,93 @@ export default function App() {
 
       <View style={{ height: 100 }} />
     </ScrollView>
+  );
+
+  const renderAlerts = () => (
+    <View style={styles.container}>
+      <ScrollView style={styles.mainScroll} showsVerticalScrollIndicator={false}>
+        {renderHeader(
+          'Alertas push',
+          'Activa y prueba las notificaciones reales del sistema.',
+          <TouchableOpacity style={styles.profileBtn} onPress={refreshPushStatus} disabled={pushBusy}>
+            {pushBusy ? (
+              <ActivityIndicator size="small" color={theme.orange} />
+            ) : (
+              <Ionicons name="refresh" size={20} color={theme.orange} />
+            )}
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.fullSaleCard}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+            <View style={{ backgroundColor: theme.blueSoft, padding: 10, borderRadius: 12, marginRight: 12 }}>
+              <Ionicons
+                name={pushStatus?.has_token ? 'checkmark-circle' : 'warning-outline'}
+                size={22}
+                color={pushStatus?.has_token ? theme.emerald : theme.amber}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardName}>
+                {pushStatus?.has_token ? 'Dispositivo conectado' : 'Dispositivo pendiente'}
+              </Text>
+              <Text style={styles.saleMeta}>
+                {pushStatus?.token_preview || 'Sin token registrado para este usuario.'}
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.primaryButton, { backgroundColor: theme.orange }]}
+            onPress={handleRegisterPush}
+            disabled={pushBusy}
+          >
+            {pushBusy ? (
+              <ActivityIndicator color={theme.whiteText} />
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={styles.buttonText}>ACTIVAR EN ESTE TELEFONO</Text>
+                <Ionicons name="notifications" size={18} color={theme.whiteText} style={{ marginLeft: 10 }} />
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.primaryButton,
+              { backgroundColor: theme.blueDark, marginTop: 12, opacity: pushStatus?.has_token ? 1 : 0.74 }
+            ]}
+            onPress={handleTestPush}
+            disabled={pushBusy}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={styles.buttonText}>ENVIAR PRUEBA PUSH</Text>
+              <Ionicons name="send" size={18} color={theme.whiteText} style={{ marginLeft: 10 }} />
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.quickList}>
+          {[
+            { icon: 'git-compare-outline', title: 'Cambios de estado', text: 'Avisa al asesor y su jerarquia cuando un expediente cambia de etapa.' },
+            { icon: 'timer-outline', title: 'SLA e inactividad', text: 'Revisa expedientes por vencer, vencidos o criticos cada 15 minutos.' },
+            { icon: 'shield-checkmark-outline', title: 'Escalamiento', text: 'Los casos criticos tambien notifican a gerencia y superadministracion.' }
+          ].map((item) => (
+            <View key={item.title} style={styles.saleItem}>
+              <View style={[styles.traceIconBox, { marginRight: 12 }]}>
+                <Ionicons name={item.icon as any} size={16} color={theme.blue} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.saleName}>{item.title}</Text>
+                <Text style={styles.saleMeta}>{item.text}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <View style={{ height: 100 }} />
+      </ScrollView>
+    </View>
   );
 
   const renderList = () => (
@@ -1516,6 +1675,7 @@ export default function App() {
           {activeTab === 'home' && renderHome()}
           {activeTab === 'list' && renderList()}
           {activeTab === 'form' && renderForm()}
+          {activeTab === 'alerts' && renderAlerts()}
           {activeTab === 'simulator' && renderSimulator()}
 
           {activeTab !== 'simulator' && (
@@ -1566,6 +1726,22 @@ export default function App() {
                 />
               </View>
               <Text numberOfLines={1} style={[styles.tabText, activeTab === 'form' && styles.tabActive]}>NUEVO</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.86}
+              style={[styles.tabItem, activeTab === 'alerts' && styles.tabItemActive]}
+              onPress={() => setActiveTab('alerts')}
+            >
+              {activeTab === 'alerts' && <View style={styles.tabActiveIndicator} />}
+              <View style={[styles.tabIconWrap, activeTab === 'alerts' && styles.tabIconWrapActive]}>
+                <Ionicons
+                  name={activeTab === 'alerts' ? 'notifications' : 'notifications-outline'}
+                  size={21}
+                  color={activeTab === 'alerts' ? activeTabColor : inactiveTabColor}
+                />
+              </View>
+              <Text numberOfLines={1} style={[styles.tabText, activeTab === 'alerts' && styles.tabActive]}>ALERTAS</Text>
             </TouchableOpacity>
           </View>
           )}
