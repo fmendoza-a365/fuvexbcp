@@ -13,7 +13,8 @@
     "prisma:pg:status": "prisma migrate status --schema prisma-postgres/schema.prisma",
     "prisma:pg:seed": "prisma generate --schema prisma-postgres/schema.prisma && prisma db seed --schema prisma-postgres/schema.prisma",
     "test": "ts-node tests/workflow.test.ts",
-    "test:workflow": "ts-node tests/workflow.test.ts"
+    "test:workflow": "ts-node tests/workflow.test.ts",
+    "sbi:test": "ts-node src/scripts/sbi-test.ts"
   },
   "keywords": [],
   "author": "",

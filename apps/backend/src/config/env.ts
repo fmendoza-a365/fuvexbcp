@@ -80,6 +80,9 @@ export const validateEnvironment = () => {
     requireValue(issues, 'INFOBURO_PASS');
     requireStrongSecret(issues, 'SEED_ADMIN_PASSWORD', 12);
 
+    requireValue(issues, 'SBI_API_USER');
+    requireValue(issues, 'SBI_API_KEY');
+
     const storageProvider = process.env.STORAGE_PROVIDER?.trim() || 'local';
     if (!['local', 's3'].includes(storageProvider)) {
       issues.push({ key: 'STORAGE_PROVIDER', message: 'Valores permitidos: local, s3.' });

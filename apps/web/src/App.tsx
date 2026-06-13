@@ -16,6 +16,7 @@ const Simulator = lazy(() => import('./pages/Simulator'));
 const SimulatorRules = lazy(() => import('./pages/SimulatorRules'));
 const Kanban = lazy(() => import('./pages/Kanban'));
 const PdfTemplates = lazy(() => import('./pages/PdfTemplates'));
+const SbiIntegration = lazy(() => import('./pages/SbiIntegration'));
 
 // Componente de carga
 const PageLoader = () => (
@@ -53,6 +54,7 @@ function App() {
             <Route path="funnel" element={<Navigate to="/app/dashboard" replace />} />
             <Route path="digitalizacion" element={<Navigate to="/app/expedientes" replace />} />
             <Route path="plantillas-pdf" element={<PdfTemplates />} />
+            <Route path="sbi" element={<SbiIntegration />} />
             <Route path="reniec" element={<DniSearch />} />
             <Route path="usuarios" element={<UserManagement />} />
             <Route path="zonas" element={<ZoneManagement />} />

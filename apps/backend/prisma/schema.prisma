@@ -46,6 +46,7 @@ model User {
   institucionEnvios ExpedienteInstitucion[]
   expediente_bcp    ExpedienteBCP[]
   pdfTemplates      PdfTemplate[]
+  sbiApiRequests    SbiApiRequest[]
 }
 
 model PdfTemplate {
@@ -374,4 +375,44 @@ model ConfiguracionGlobal {
   valor_texto    String?
   descripcion    String?
   updated_at     DateTime @updatedAt
+}
+
+model SbiApiRequest {
+  id               String         @id @default(uuid())
+  user_id          String?
+  endpoint         String
+  method           String
+  base_url         String
+  auth_mode        String
+  request_params   String?        // JSON stringificado
+  request_headers  String?        // JSON stringificado
+  status_code      Int?
+  success          Boolean        @default(false)
+  error_id         Int?
+  error_message    String?
+  response_summary String?        // JSON resumen
+  duration_ms      Int?
+  server_public_ip String?
+  executed_at      DateTime?      @default(now())
+  created_at       DateTime       @default(now())
+  updated_at       DateTime       @updatedAt
+  user             User?          @relation(fields: [user_id], references: [id])
+  results          SbiApiResult[]
+
+  @@index([user_id])
+  @@index([created_at])
+  @@index([success])
+}
+
+model SbiApiResult {
+  id                 String        @id @default(uuid())
+  sbi_api_request_id String
+  external_id        String?
+  payload            String        // JSON original completo
+  normalized_data    String?       // JSON normalizado
+  created_at         DateTime      @default(now())
+  updated_at         DateTime      @updatedAt
+  request            SbiApiRequest @relation(fields: [sbi_api_request_id], references: [id], onDelete: Cascade)
+
+  @@index([sbi_api_request_id])
 }

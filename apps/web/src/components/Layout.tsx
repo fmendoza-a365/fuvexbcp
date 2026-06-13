@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, Link, useLocation } from 'react-router-dom';
 const OutletAny = Outlet as any;
 const LinkAny = Link as any;
-import { LogOut, FileText, Menu, X, Users, MapPin, ChevronLeft, ChevronRight, User, LayoutDashboard, Target, Search, Shield, Moon, Sun, Calculator, Settings, Columns3, FileCog } from 'lucide-react';
+import { LogOut, FileText, Menu, X, Users, MapPin, ChevronLeft, ChevronRight, User, LayoutDashboard, Target, Search, Shield, Moon, Sun, Calculator, Settings, Columns3, FileCog, Globe } from 'lucide-react';
 
 import axios from 'axios';
 
@@ -135,6 +135,7 @@ export default function Layout() {
     { to: '/app/reniec', icon: <Search size={20} />, label: 'RENIEC Emergencia', show: true },
     { to: '/app/simulador-reglas', icon: <Settings size={20} />, label: 'Reglas del Simulador', show: isAdmin },
     { to: '/app/plantillas-pdf', icon: <FileCog size={20} />, label: 'Plantillas PDF', show: canManagePdfTemplates },
+    { to: '/app/sbi', icon: <Globe size={20} />, label: 'Integración SBI', show: true },
     { to: '/app/usuarios', icon: <Users size={20} />, label: 'Usuarios', show: isAdmin },
     { to: '/app/zonas', icon: <MapPin size={20} />, label: 'Zonas', show: isSuperAdminOrGerente },
   ];
